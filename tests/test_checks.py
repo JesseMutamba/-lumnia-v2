@@ -203,6 +203,78 @@ def test_constant_columns_do_not_fake_totals():
     assert tidy["total_rows"] is None
 
 
+def test_mismatch_carries_excel_cell_and_fix_confidence():
+    findings = _findings(_sheet_qty_unit_total())
+    prod = next(f for f in findings if f["kind"] == "product")
+    # rule holds on 5/6 rows -> the cell is wrong, suggest with confidence
+    assert prod["fix_confidence"] == "high"
+    m = prod["mismatches"][0]
+    assert m["cell"] == "D3"                 # Montant column, sheet row 3
+    assert m["expected"] == 40               # the suggested correction
+
+    clean = _findings(pd.DataFrame([
+        ["Description", "Qté", "Cout unit", "Montant"],
+        ["A", 2, 3, 6], ["B", 4, 5, 20], ["C", 10, .5, 5],
+        ["D", 7, 2, 14], ["E", 3, 9, 27],
+    ]))
+    ok = next(f for f in clean if f["status"] == "ok")
+    assert ok["fix_confidence"] is None      # nothing to fix
+
+
+def test_cell_addresses_shift_with_panel_offset():
+    """A broken table in the RIGHT panel must report absolute sheet cells."""
+    left = [
+        ["PARCELLE", "HA", "REGIMES"],
+        ["BLOC 1", 10, 100],
+        ["BLOC 2", 12, 120],
+        ["BLOC 3", 8, 80],
+        ["BLOC 4", 9, 90],
+        ["BLOC 5", 11, 110],
+        ["BLOC 6", 7, 70],
+    ]
+    right = [
+        ["Description", "Qté", "Prix", "Montant"],
+        ["A", 100, 2.4, 240],
+        ["B", 5, 8, 400],                    # should be 40 -> col H (7), row 3
+        ["C", 4, 8, 32],
+        ["D", 10, 1.5, 15],
+        ["E", 3, 45, 135],
+        ["F", 200, 0.25, 50],
+    ]
+    df = pd.DataFrame([l + [None] + r for l, r in zip(left, right)])
+    out = orient_sheet(df)
+    panel = next(p for p in out["panels"] if p["col_start"] == 4)
+    prod = next(f for f in panel["tidy"]["checks"] if f["kind"] == "product")
+    assert prod["mismatches"][0]["cell"] == "H3"
+
+
+def test_cross_examination_vetoes_multi_rule_breakers():
+    """A row that violates TWO different rules is structurally different (a
+    summary line or a broken input), not a typo — no cell replacement is
+    suggested for it, while a clean single-rule typo keeps its suggestion."""
+    df = pd.DataFrame([
+        ["Description", "Qté", "Prix", "Montant", "Montant2"],
+        ["A", 100, 2.4, 240, 240],
+        ["B", 5, 8, 400, 400],       # breaks BOTH products -> input suspect
+        ["C", 4, 8, 32, 320],        # breaks only Montant2 -> genuine typo
+        ["D", 10, 1.5, 15, 15],
+        ["E", 3, 45, 135, 135],
+        ["F", 200, 0.25, 50, 50],
+        ["G", 6, 7, 42, 42],
+    ])
+    findings = orient_sheet(df)["tidy"]["checks"]
+    m1 = next(f for f in findings if f["target"] == "Montant")
+    m2 = next(f for f in findings if f["target"] == "Montant2")
+    row_b_1 = next(m for m in m1["mismatches"] if m["label"] == "B")
+    row_b_2 = next(m for m in m2["mismatches"] if m["label"] == "B")
+    row_c = next(m for m in m2["mismatches"] if m["label"] == "C")
+    assert row_b_1["suggest"] is False       # vetoed: breaks 2 rules
+    assert row_b_2["suggest"] is False
+    assert row_c["suggest"] is True          # single-rule typo: suggest fix
+    assert m1["fix_confidence"] == "review"  # its only mismatch was vetoed
+    assert m2["fix_confidence"] == "review"  # one of two vetoed -> review
+
+
 def test_blank_months_count_as_zero_in_row_sums():
     df = pd.DataFrame([
         ["Poste", "Total", "Jan", "Fev", "Mar"],
