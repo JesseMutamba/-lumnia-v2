@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lumnia — light where there was none</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='7' fill='%23c9992a'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --surface: #f4f0e8;
+    --card: #fbf9f3;
+    --border: #e4dcc9;
+    --hairline: #ece5d5;
+    --ink: #201d17;
+    --ink-2: #5c564a;
+    --ink-3: #99917e;
+    --gold: #a8821f;
+    --gold-strong: #c9992a;
+    --good: #0ca30c;
+    --warning: #8a6100;
+    --critical: #d03b3b;
+    --serif: "Didot", "Bodoni MT", "Playfair Display", Georgia, "Times New Roman", serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--surface); color: var(--ink);
+    font: 14px/1.5 var(--sans);
+  }
+  main { max-width: 1150px; margin: 0 auto; padding: 0 28px 80px; }
+
+  /* masthead */
+  .mast { text-align: center; padding: 52px 0 34px; }
+  .mast .sun { display: block; margin: 0 auto 18px; }
+  .mast h1 {
+    font-family: var(--serif); font-size: 40px; font-weight: 500;
+    letter-spacing: .14em; margin: 0; text-indent: .14em;
+  }
+  .mast .tagline {
+    font-family: var(--serif); font-style: italic; color: var(--gold);
+    font-size: 17px; margin-top: 8px;
+  }
+  .kicker {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .22em;
+    text-transform: uppercase; color: var(--ink-3);
+  }
+  .mast .kicker { margin-top: 22px; }
+
+  /* upload */
+  #drop {
+    border: 1px dashed var(--border); border-radius: 2px; padding: 30px;
+    text-align: center; color: var(--ink-2); cursor: pointer;
+    transition: border-color .2s, background .2s;
+  }
+  #drop.hover, #drop:hover { border-color: var(--gold-strong); background: var(--card); }
+  #drop input { display: none; }
+  #drop .big { font-family: var(--serif); font-size: 17px; color: var(--ink); }
+  #drop .hint { font-family: var(--mono); font-size: 11px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--ink-3); margin-top: 8px; }
+  #status { margin: 12px 2px; font-family: var(--mono); font-size: 12px;
+    color: var(--ink-2); min-height: 18px; letter-spacing: .04em; }
+  #status.err { color: var(--critical); }
+
+  /* layout */
+  .cols { display: grid; grid-template-columns: 240px 1fr; gap: 34px; margin-top: 26px; }
+  .cols > * { min-width: 0; }   /* keep wide tables inside the grid column */
+  @media (max-width: 860px) { .cols { grid-template-columns: 1fr; } }
+
+  /* history */
+  #history .kicker { display: block; margin-bottom: 14px; }
+  .hist-item {
+    padding: 11px 2px; border-bottom: 1px solid var(--hairline);
+    cursor: pointer;
+  }
+  .hist-item:first-of-type { border-top: 1px solid var(--hairline); }
+  .hist-item .name { font-weight: 600; font-size: 13px; overflow-wrap: anywhere; }
+  .hist-item.active .name { color: var(--gold); }
+  .hist-item .meta { color: var(--ink-3); font-size: 11.5px; margin-top: 3px;
+    font-family: var(--mono); letter-spacing: .02em; }
+  .hist-item .row2 { display: flex; justify-content: space-between; align-items: center; }
+  .hist-item button {
+    border: none; background: none; color: var(--ink-3); cursor: pointer;
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em;
+    text-transform: uppercase; padding: 2px 3px;
+  }
+  .hist-item button:hover { color: var(--critical); }
+
+  /* stat tiles */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 14px; margin-bottom: 22px; }
+  .tile { background: var(--card); border: 1px solid var(--hairline);
+    border-radius: 2px; padding: 15px 17px; }
+  .tile .label { font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--ink-3); }
+  .tile .value { font-size: 27px; font-weight: 600; margin-top: 5px; }
+  .tile .value .ico { font-size: 15px; vertical-align: 3px; margin-right: 6px; }
+
+  /* sections, cards, tables */
+  section .kicker { display: block; margin: 40px 0 14px; }
+  .card { background: var(--card); border: 1px solid var(--hairline);
+    border-radius: 2px; padding: 17px 19px; margin-bottom: 14px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th { text-align: left; font-family: var(--mono); font-weight: 500;
+    color: var(--ink-3); font-size: 10.5px; letter-spacing: .1em;
+    text-transform: uppercase; padding: 6px 12px 6px 0;
+    border-bottom: 1px solid var(--border); }
+  td { padding: 7px 12px 7px 0; border-bottom: 1px solid var(--hairline);
+    vertical-align: top; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr:last-child td { border-bottom: none; }
+
+  .badge { display: inline-block; padding: 1px 9px; border-radius: 999px;
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em;
+    text-transform: uppercase; border: 1px solid var(--border);
+    color: var(--ink-2); background: transparent; }
+  .badge.tidy    { color: #48628f; border-color: #c4cfe0; }
+  .badge.matrix  { color: #6d5590; border-color: #d4c9e2; }
+  .badge.multi   { color: #3e7466; border-color: #bcd6cd; }
+  .badge.form    { color: var(--gold); border-color: #ddc98f; }
+  .badge.unknown { color: var(--ink-3); }
+
+  .st { font-weight: 600; font-size: 12.5px; white-space: nowrap; }
+  .st.ok        { color: var(--good); }
+  .st.mismatch  { color: var(--critical); }
+  .st.unverified{ color: var(--warning); }
+
+  .sheet-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .sheet-head .nm { font-weight: 650; font-size: 14.5px; }
+  .sheet-head .dims { color: var(--ink-3); font-size: 11.5px; font-family: var(--mono); }
+  .reason { color: var(--ink-2); font-size: 12.5px; margin: 7px 0 0; }
+  details { margin-top: 9px; }
+  summary { cursor: pointer; color: var(--gold); font-size: 12.5px; }
+  summary:hover { color: var(--gold-strong); }
+  .preview-wrap { overflow-x: auto; margin-top: 10px; }
+  .preview-wrap table { font-size: 12px; }
+  .preview-wrap th, .preview-wrap td { padding: 4px 9px; white-space: nowrap;
+    max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+  .panel { border-left: 2px solid var(--border); padding-left: 14px; margin-top: 12px; }
+  .muted { color: var(--ink-3); }
+  .empty { color: var(--ink-3); padding: 46px 0; text-align: center;
+    font-family: var(--mono); font-size: 11.5px; letter-spacing: .16em;
+    text-transform: uppercase; }
+</style>
+</head>
+<body>
+<main>
+  <div class="mast">
+    <svg class="sun" id="sun" width="92" height="92" viewBox="-50 -50 100 100" aria-hidden="true"></svg>
+    <h1>LUMNIA</h1>
+    <div class="tagline">Light where there was none.</div>
+    <div class="kicker">Spreadsheet audit &nbsp;&middot;&nbsp; structure &middot; statistics &middot; reconciliation</div>
+  </div>
+
+  <div id="drop">
+    <input type="file" id="file" accept=".xlsx,.xlsm,.xls,.xlsb,.csv,.tsv,.txt">
+    <div class="big">Drop a CSV / Excel file here, or click to browse</div>
+    <div class="hint">Every sheet classified &amp; extracted &middot; totals &amp; formulas verified</div>
+  </div>
+  <div id="status"></div>
+
+  <div class="cols">
+    <aside id="history"><span class="kicker">Analyses</span><div id="hist-list"></div></aside>
+    <div id="report"><div class="empty">No analysis selected</div></div>
+  </div>
+</main>
+
+<script>
+"use strict";
+const $ = (s, el) => (el || document).querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g,
+  c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const nf = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
+const num = v => typeof v === "number" ? nf.format(v) : (v ?? "");
+const compact = v => {
+  const a = Math.abs(v);
+  if (a >= 1e6) return (v / 1e6).toFixed(1) + "M";
+  if (a >= 1e4) return (v / 1e3).toFixed(1) + "K";
+  return nf.format(v);
+};
+let current = null;
+
+/* ---------- halftone sun motif ---------- */
+(function drawSun() {
+  const svg = $("#sun");
+  let dots = `<circle cx="0" cy="0" r="7.5" fill="#c9992a"/>`;
+  for (let ring = 1; ring <= 10; ring++) {
+    const R = 9 + ring * 4;
+    const n = 10 + ring * 6;
+    const r = Math.max(0.45, 2.1 - ring * 0.17);
+    const o = Math.max(0.25, 1 - ring * 0.07);
+    for (let k = 0; k < n; k++) {
+      const a = (k / n) * 2 * Math.PI + ring * 0.35;
+      dots += `<circle cx="${(R * Math.cos(a)).toFixed(2)}" cy="${(R * Math.sin(a)).toFixed(2)}" r="${r}" fill="#c9992a" opacity="${o.toFixed(2)}"/>`;
+    }
+  }
+  svg.innerHTML = dots;
+})();
+
+/* ---------- upload ---------- */
+const drop = $("#drop"), fileInput = $("#file"), statusEl = $("#status");
+drop.addEventListener("click", () => fileInput.click());
+drop.addEventListener("dragover", e => { e.preventDefault(); drop.classList.add("hover"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("hover"));
+drop.addEventListener("drop", e => {
+  e.preventDefault(); drop.classList.remove("hover");
+  if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener("change", () => {
+  if (fileInput.files[0]) upload(fileInput.files[0]);
+});
+
+async function upload(file) {
+  setStatus(`Analyzing ${file.name}…`);
+  const fd = new FormData();
+  fd.append("file", file);
+  try {
+    const r = await fetch("/analyze", { method: "POST", body: fd });
+    if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+    const body = await r.json();
+    setStatus("");
+    await loadHistory();
+    select(body.id);
+  } catch (err) { setStatus("Analysis failed: " + err.message, true); }
+  fileInput.value = "";
+}
+function setStatus(msg, isErr) {
+  statusEl.textContent = msg;
+  statusEl.className = isErr ? "err" : "";
+}
+
+/* ---------- history ---------- */
+async function loadHistory() {
+  const items = await (await fetch("/analyses")).json();
+  $("#hist-list").innerHTML = items.length ? items.map(i => `
+    <div class="hist-item ${i.id === current ? "active" : ""}" data-id="${esc(i.id)}">
+      <div class="name">${esc(i.filename)}</div>
+      <div class="row2">
+        <span class="meta">${i.n_sheets} sheet${i.n_sheets === 1 ? "" : "s"} &middot; ${(i.size_bytes/1024).toFixed(0)} KB</span>
+        <span>
+          <button data-act="rerun" title="Re-analyze with the current pipeline">rerun</button>
+          <button data-act="del" title="Delete">delete</button>
+        </span>
+      </div>
+    </div>`).join("") : `<div class="muted" style="font-size:12.5px">Nothing yet.</div>`;
+  $("#hist-list").querySelectorAll(".hist-item").forEach(el => {
+    el.addEventListener("click", async e => {
+      const act = e.target.dataset && e.target.dataset.act;
+      const id = el.dataset.id;
+      if (act === "del") {
+        e.stopPropagation();
+        await fetch(`/analyses/${id}`, { method: "DELETE" });
+        if (current === id) { current = null; $("#report").innerHTML = `<div class="empty">No analysis selected</div>`; }
+        loadHistory();
+      } else if (act === "rerun") {
+        e.stopPropagation();
+        setStatus("Re-analyzing…");
+        await fetch(`/analyses/${id}/rerun`, { method: "POST" });
+        setStatus("");
+        select(id);
+      } else select(id);
+    });
+  });
+}
+
+/* ---------- report ---------- */
+async function select(id) {
+  current = id;
+  loadHistory();
+  const [report, audit] = await Promise.all([
+    fetch(`/analyses/${id}`).then(r => r.json()),
+    fetch(`/analyses/${id}/findings`).then(r => r.json()),
+  ]);
+  $("#report").innerHTML = renderAudit(audit) + renderSheets(report);
+}
+
+const STATUS = {
+  ok:        { ico: "✓", cls: "ok",         word: "OK" },
+  mismatch:  { ico: "✕", cls: "mismatch",   word: "Mismatch" },
+  unverified:{ ico: "?", cls: "unverified", word: "Unverified" },
+};
+const stBadge = s => {
+  const t = STATUS[s] || STATUS.unverified;
+  return `<span class="st ${t.cls}">${t.ico} ${t.word}</span>`;
+};
+
+function renderAudit(a) {
+  const tiles = `
+    <div class="tiles">
+      <div class="tile"><div class="label">Total discrepancy</div>
+        <div class="value">${compact(a.total_abs_delta)}</div></div>
+      <div class="tile"><div class="label">Mismatched</div>
+        <div class="value"><span class="ico" style="color:var(--critical)">✕</span>${a.n_mismatched_relations}</div></div>
+      <div class="tile"><div class="label">Verified</div>
+        <div class="value"><span class="ico" style="color:var(--good)">✓</span>${a.n_verified_relations}</div></div>
+      <div class="tile"><div class="label">Unverified totals</div>
+        <div class="value"><span class="ico" style="color:var(--warning)">?</span>${a.n_unverified_relations}</div></div>
+    </div>`;
+
+  const row = f => {
+    const worst = f.mismatches[0];
+    return `<tr>
+      <td>${stBadge(f.status)}</td>
+      <td>${esc(f.sheet)}${f.panel ? ` <span class="muted">[${esc(f.panel)}]</span>` : ""}</td>
+      <td>${esc(f.formula)}</td>
+      <td class="num">${f.n_mismatched}/${f.n_checked}</td>
+      <td class="num">${num(f.total_abs_delta)}</td>
+      <td>${worst ? `row ${worst.row} (${esc(worst.label)}): expected ${num(worst.expected)}, got ${num(worst.actual)}` : ""}</td>
+    </tr>`;
+  };
+  const table = rows => `
+    <div class="preview-wrap"><table>
+      <tr><th>Status</th><th>Sheet</th><th>Relation</th><th class="num">Rows off</th>
+          <th class="num">|&Delta;|</th><th>Worst row</th></tr>
+      ${rows.map(row).join("")}
+    </table></div>`;
+
+  let html = `<section><span class="kicker" style="margin-top:0">Audit — ${esc(a.filename)}</span>${tiles}`;
+  html += a.findings.length
+    ? `<div class="card">${table(a.findings)}</div>`
+    : `<div class="card muted">✓ No mismatched relations found.</div>`;
+  if (a.verified.length || a.unverified.length) {
+    html += `<details><summary>${a.verified.length} verified &middot; ${a.unverified.length} unverified</summary>
+      <div class="card" style="margin-top:10px">${table([...a.verified, ...a.unverified])}</div></details>`;
+  }
+  return html + `</section>`;
+}
+
+function renderSheets(report) {
+  return `<section><span class="kicker">Sheets (${report.n_sheets})</span>` +
+    report.sheets.map(sheetCard).join("") + `</section>`;
+}
+
+function sheetCard(s) {
+  let body = "";
+  if (s.panels) {
+    body = s.panels.map(p => {
+      const where = "col_start" in p && p.col_start != null
+        ? `cols ${p.col_start}–${p.col_end}` : `rows ${p.row_start}–${p.row_end}`;
+      return `<div class="panel">
+        <span class="badge ${esc(p.orientation)}">${esc(p.orientation)}</span>
+        <span class="muted" style="font-size:11.5px;font-family:var(--mono)">${where}</span>
+        <div class="reason">${esc(p.reason)}</div>
+        ${p.tidy ? tidyBlock(p.tidy) : ""}
+      </div>`;
+    }).join("");
+  } else if (s.tidy) {
+    body = tidyBlock(s.tidy);
+  }
+  return `<div class="card">
+    <div class="sheet-head">
+      <span class="nm">${esc(s.name)}</span>
+      <span class="badge ${esc(s.orientation)}">${esc(s.orientation)}</span>
+      <span class="dims">${s.n_rows} &times; ${s.n_cols} &middot; ${(s.fill_ratio*100).toFixed(0)}% filled</span>
+    </div>
+    <div class="reason">${esc(s.orientation_reason)}</div>
+    ${body}
+  </div>`;
+}
+
+function tidyBlock(t) {
+  const cols = t.columns;
+  const shown = cols.slice(0, 10);
+  const recs = t.records.slice(0, 5);
+  const preview = recs.length ? `
+    <div class="preview-wrap"><table>
+      <tr>${shown.map(c => `<th>${esc(c)}</th>`).join("")}${cols.length > shown.length ? "<th>&hellip;</th>" : ""}</tr>
+      ${recs.map(r => `<tr>${shown.map(c =>
+        `<td class="${typeof r[c] === "number" ? "num" : ""}">${typeof r[c] === "number" ? num(r[c]) : esc(r[c])}</td>`).join("")}
+        ${cols.length > shown.length ? "<td>&hellip;</td>" : ""}</tr>`).join("")}
+    </table></div>` : "";
+  const s = t.summary || {};
+  const bits = [`${t.n_records} records`, `${t.n_columns} columns`];
+  if (s.n_periods) bits.push(`${s.n_series} series &times; ${s.n_periods} periods (${esc(s.period_min)} → ${esc(s.period_max)})`);
+  if (t.total_rows) bits.push(`totals rows: ${t.total_rows.join(", ")}`);
+  return `<details><summary>${bits.join(" &middot; ")}</summary>${preview}</details>`;
+}
+
+loadHistory();
+</script>
+</body>
+</html>

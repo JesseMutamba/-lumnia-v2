@@ -19,6 +19,13 @@ def _xlsx_bytes() -> bytes:
     return buf.getvalue()
 
 
+def test_index_serves_ui():
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers["content-type"]
+    assert "Lumnia" in resp.text
+
+
 def test_health():
     resp = client.get("/health")
     assert resp.status_code == 200
