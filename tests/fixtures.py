@@ -34,6 +34,18 @@ def matrix_sheet() -> pd.DataFrame:
     ])
 
 
+def year_matrix_sheet() -> pd.DataFrame:
+    """RECAP-style cross-tab: metric labels down column 0, *year numbers*
+    (plus a year-range label and a grand-total column) across the top."""
+    return pd.DataFrame([
+        ["PROJECTIONS EXPLOITATION", None, None, None, None, None],
+        [None, "2019-2021", 2025, 2026, 2027, "GT"],
+        ["HECTARES", 475, 304, 800, 1200, 2779],
+        ["PRODUCTION", None, 1186.8, 3353, 4704, 9243.8],
+        ["REVENUES", None, 238939, 771190, 1081920, 2092049],
+    ])
+
+
 def form_sheet() -> pd.DataFrame:
     """Sparse key/value report."""
     return pd.DataFrame([

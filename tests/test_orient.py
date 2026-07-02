@@ -2,7 +2,7 @@ from app.pipeline.orient import classify, orient_sheet
 from tests.fixtures import (
     tidy_sheet, matrix_sheet, form_sheet, unknown_sheet, empty_sheet,
     multi_header_sheet, french_numbers_sheet,
-    complementary_header_sheet, blank_header_cells_sheet,
+    complementary_header_sheet, blank_header_cells_sheet, year_matrix_sheet,
 )
 
 
@@ -16,6 +16,37 @@ def test_classify_matrix():
     r = classify(matrix_sheet())
     assert r["orientation"] == "matrix"
     assert r["confidence"] > 0
+
+
+def test_classify_year_matrix():
+    r = classify(year_matrix_sheet())
+    assert r["orientation"] == "matrix"
+    assert r["meta"]["axis"] == "year"
+    # The grand-total column (text 'GT' header) is NOT a period.
+    assert len(r["meta"]["period_cols"]) == 4
+
+
+def test_year_matrix_unpivots_with_year_periods():
+    tidy = orient_sheet(year_matrix_sheet())["tidy"]
+    assert tidy["columns"][-2:] == ["period", "value"]
+    # HECTARES has 4 period cells, PRODUCTION/REVENUES have 3 each.
+    assert tidy["n_records"] == 10
+    first = tidy["records"][0]
+    assert first["period"] == "2019-2021"    # range label kept verbatim
+    assert first["value"] == 475
+    assert tidy["records"][1]["period"] == 2025
+
+    s = tidy["summary"]
+    assert s["n_series"] == 3
+    assert s["n_periods"] == 4
+    assert s["period_min"] == 2019
+    assert s["period_max"] == 2027
+
+
+def test_data_rows_with_one_year_are_not_an_axis():
+    """A tidy table whose records merely contain a year value must stay tidy."""
+    r = classify(tidy_sheet())                # rows carry ANNEE=2019/2020 cells
+    assert r["orientation"] == "tidy"
 
 
 def test_classify_form():

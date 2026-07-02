@@ -14,6 +14,7 @@ special cases.
 """
 from __future__ import annotations
 
+import re
 from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
@@ -30,6 +31,17 @@ MIN_DATE_RUN = 3          # a period axis needs at least this many date cells
 DATE_AXIS_FRAC = 0.6      # ... and this fraction of the axis's filled cells
 INTERIOR_NUMERIC = 0.5    # matrix interior must be at least this numeric
 SCAN_ROWS = 15            # how deep to look for a period/header row
+
+# Plausible calendar years for a year-number period axis (RECAP-style sheets
+# where the columns are 2025, 2026, ... instead of real dates).
+YEAR_MIN, YEAR_MAX = 1990, 2100
+# "2019-2021" / "2025/2026" style year-range labels also count as periods.
+_YEAR_RANGE_RE = re.compile(
+    r"^\s*((?:19|20)\d{2})\s*(?:[-/à–]\s*(?:19|20)\d{2})?\s*$")
+# A year axis must sit above almost all the numeric columns; when years are
+# sparse *group bands* over multi-column blocks, the sheet is not a plain
+# cross-tab and unpivoting on the year cells alone would drop data.
+YEAR_AXIS_COVERAGE = 0.7
 
 
 # --------------------------------------------------------------------------- #
@@ -77,6 +89,56 @@ def _find_date_row(kinds, r0, r1, c0, c1) -> Optional[Tuple[int, List[int], floa
         strength = frac * min(1.0, cnt[DATE] / 5.0)
         if best is None or cnt[DATE] > len(best[1]):
             best = (i, period_cols, strength)
+    return best
+
+
+def _year_value(v) -> Optional[int]:
+    """The year a cell represents, or ``None``.
+
+    Accepts integer cells in [YEAR_MIN, YEAR_MAX] and text like ``2025`` or
+    ``2019-2021`` (a range labels the period by its first year).
+    """
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        if float(v).is_integer() and YEAR_MIN <= v <= YEAR_MAX:
+            return int(v)
+        return None
+    if isinstance(v, str):
+        m = _YEAR_RANGE_RE.match(v)
+        if m:
+            y = int(m.group(1))
+            if YEAR_MIN <= y <= YEAR_MAX:
+                return y
+    return None
+
+
+def _find_year_row(df, kinds, r0, r1, c0, c1) -> Optional[Tuple[int, List[int], float]]:
+    """Best horizontal *year* axis: (row_index, period_col_indices, strength).
+
+    Stricter than the date axis, because plain numbers are ambiguous: the
+    years must be strictly increasing left-to-right. A data row that happens
+    to contain a few 4-digit values almost never is.
+    """
+    best = None
+    for i in range(r0, min(r1 + 1, r0 + SCAN_ROWS)):
+        cnt = _counts(kinds[i], c0, c1)
+        filled = cnt[NUMBER] + cnt[DATE] + cnt[TEXT]
+        if filled == 0:
+            continue
+        year_cols = [j for j in range(c0, c1 + 1)
+                     if kinds[i][j] != BLANK and _year_value(df.iat[i, j]) is not None]
+        if len(year_cols) < MIN_DATE_RUN:
+            continue
+        frac = len(year_cols) / filled
+        if frac < DATE_AXIS_FRAC:
+            continue
+        years = [_year_value(df.iat[i, j]) for j in year_cols]
+        if any(a >= b for a, b in zip(years, years[1:])):
+            continue                      # not strictly increasing -> not an axis
+        strength = frac * min(1.0, len(year_cols) / 5.0)
+        if best is None or len(year_cols) > len(best[1]):
+            best = (i, year_cols, strength)
     return best
 
 
@@ -133,11 +195,24 @@ def classify(df: pd.DataFrame) -> dict:
                 "reason": "sheet is empty"}
     r0, r1, c0, c1 = box
 
-    # 1) Matrix: a strong horizontal date axis with a numeric interior and at
-    #    least one text label column to the left.
-    dr = _find_date_row(kinds, r0, r1, c0, c1)
-    if dr is not None:
-        date_row, period_cols, strength = dr
+    # 1) Matrix: a strong horizontal period axis — real dates, or strictly
+    #    increasing year numbers — with a numeric interior and at least one
+    #    text label column to the left.
+    for axis, found in (("date", _find_date_row(kinds, r0, r1, c0, c1)),
+                        ("year", _find_year_row(df, kinds, r0, r1, c0, c1))):
+        if found is None:
+            continue
+        date_row, period_cols, strength = found
+        if axis == "year":
+            # Numeric body columns from the first period onward that are NOT
+            # under a year cell mean the years are group bands, not an axis.
+            numeric_body = [
+                j for j in range(period_cols[0], c1 + 1)
+                if any(kinds[i][j] == NUMBER for i in range(date_row + 1, r1 + 1))
+            ]
+            covered = len(set(period_cols) & set(numeric_body))
+            if numeric_body and covered / len(numeric_body) < YEAR_AXIS_COVERAGE:
+                continue
         interior = _interior_numeric_frac(kinds, date_row, period_cols, r1)
         labels = _label_cols(kinds, date_row, r1, c0, period_cols[0])
         if interior >= INTERIOR_NUMERIC and labels:
@@ -146,8 +221,8 @@ def classify(df: pd.DataFrame) -> dict:
                 "orientation": "matrix",
                 "confidence": conf,
                 "meta": {"date_row": date_row, "period_cols": period_cols,
-                         "label_cols": labels, "box": box},
-                "reason": (f"date axis across columns at row {date_row} "
+                         "label_cols": labels, "box": box, "axis": axis},
+                "reason": (f"{axis} axis across columns at row {date_row} "
                            f"({len(period_cols)} periods), interior "
                            f"{interior:.0%} numeric"),
             }
@@ -419,13 +494,17 @@ def _extract_matrix(df, kinds, meta, max_rows) -> dict:
                 rec["value"] = coerce_value(df.iat[i, p])
                 records.append(rec)
 
-    period_dates = sorted(str(v) for p, v in periods.items()
-                          if kinds[dr][p] == DATE and v is not None)
+    if meta.get("axis") == "year":
+        span = sorted(y for p in period_cols
+                      if (y := _year_value(df.iat[dr, p])) is not None)
+    else:
+        span = sorted(str(v) for p, v in periods.items()
+                      if kinds[dr][p] == DATE and v is not None)
     extra = {
         "n_series": n_series,
         "n_periods": len(period_cols),
-        "period_min": period_dates[0] if period_dates else None,
-        "period_max": period_dates[-1] if period_dates else None,
+        "period_min": span[0] if span else None,
+        "period_max": span[-1] if span else None,
     }
     return {"columns": columns, "records": records, "n_records": total,
             "n_columns": len(columns),
