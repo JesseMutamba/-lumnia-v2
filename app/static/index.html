@@ -9,6 +9,7 @@
   :root {
     --surface: #f4f0e8;
     --card: #fbf9f3;
+    --panel: #faf7ef;
     --border: #e4dcc9;
     --hairline: #ece5d5;
     --ink: #201d17;
@@ -16,193 +17,252 @@
     --ink-3: #99917e;
     --gold: #a8821f;
     --gold-strong: #c9992a;
+    --gold-tint: #f3ead2;
     --good: #0ca30c;
+    --good-track: #ddeedd;
     --warning: #8a6100;
     --critical: #d03b3b;
+    --crit-track: #f3dcd6;
     --serif: "Didot", "Bodoni MT", "Playfair Display", Georgia, "Times New Roman", serif;
     --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
     --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --shadow: 0 1px 2px rgba(70,58,25,.05), 0 6px 22px rgba(70,58,25,.06);
   }
   * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--surface); color: var(--ink);
-    font: 14px/1.5 var(--sans);
-  }
-  main { max-width: 1150px; margin: 0 auto; padding: 0 28px 80px; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--surface); color: var(--ink); font: 14px/1.5 var(--sans); }
+  .kicker { font-family: var(--mono); font-size: 10.5px; letter-spacing: .18em;
+    text-transform: uppercase; color: var(--ink-3); }
 
-  /* masthead */
-  .mast { text-align: center; padding: 52px 0 34px; }
-  .mast .sun { display: block; margin: 0 auto 18px; }
-  .mast h1 {
-    font-family: var(--serif); font-size: 40px; font-weight: 500;
-    letter-spacing: .14em; margin: 0; text-indent: .14em;
-  }
-  .mast .tagline {
-    font-family: var(--serif); font-style: italic; color: var(--gold);
-    font-size: 17px; margin-top: 8px;
-  }
-  .kicker {
-    font-family: var(--mono); font-size: 11px; letter-spacing: .22em;
-    text-transform: uppercase; color: var(--ink-3);
-  }
-  .mast .kicker { margin-top: 22px; }
+  /* ============ layout: sidebar + main ============ */
+  .app { display: grid; grid-template-columns: 240px minmax(0, 1fr); min-height: 100vh; }
+  @media (max-width: 900px) { .app { grid-template-columns: 1fr; } aside.side { display: none; } }
 
-  /* upload */
-  #drop {
-    border: 1px dashed var(--border); border-radius: 2px; padding: 30px;
-    text-align: center; color: var(--ink-2); cursor: pointer;
-    transition: border-color .2s, background .2s;
-  }
-  #drop.hover, #drop:hover { border-color: var(--gold-strong); background: var(--card); }
-  #drop input { display: none; }
-  #drop .big { font-family: var(--serif); font-size: 17px; color: var(--ink); }
-  #drop .hint { font-family: var(--mono); font-size: 11px; letter-spacing: .1em;
-    text-transform: uppercase; color: var(--ink-3); margin-top: 8px; }
-  #status { margin: 12px 2px; font-family: var(--mono); font-size: 12px;
-    color: var(--ink-2); min-height: 18px; letter-spacing: .04em; }
+  aside.side { border-right: 1px solid var(--hairline); background: var(--panel);
+    padding: 22px 16px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 2px 8px 18px; }
+  .brand h1 { font-family: var(--serif); font-size: 19px; font-weight: 500;
+    letter-spacing: .12em; margin: 0; }
+  .side .kicker { display: block; margin: 18px 8px 8px; }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+    border-radius: 8px; cursor: pointer; color: var(--ink-2); font-weight: 550;
+    font-size: 13px; margin-bottom: 2px; border: 1px solid transparent; }
+  .nav-item:hover { background: var(--card); }
+  .nav-item.active { background: var(--gold-tint); color: var(--gold);
+    border-color: #e8d9ad; }
+  .nav-item svg { flex: none; }
+  .nav-item .cnt { margin-left: auto; font-family: var(--mono); font-size: 10.5px;
+    color: var(--ink-3); }
+  .nav-item.active .cnt { color: var(--gold); }
+  .wb { padding: 7px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 2px; }
+  .wb:hover { background: var(--card); }
+  .wb .name { font-size: 12.5px; font-weight: 600; overflow-wrap: anywhere; }
+  .wb.active .name { color: var(--gold); }
+  .wb .meta { font-family: var(--mono); font-size: 10px; color: var(--ink-3);
+    display: flex; justify-content: space-between; align-items: center; }
+  .wb button { border: none; background: none; color: var(--ink-3); cursor: pointer;
+    font-family: var(--mono); font-size: 9.5px; letter-spacing: .06em;
+    text-transform: uppercase; padding: 1px 3px; visibility: hidden; }
+  .wb:hover button { visibility: visible; }
+  .wb button:hover { color: var(--critical); }
+  #newupload { color: var(--gold); }
+
+  main { padding: 26px 32px 80px; min-width: 0; }
+
+  /* ============ topbar ============ */
+  .topbar { display: flex; align-items: baseline; gap: 16px; padding-bottom: 16px;
+    border-bottom: 1px solid var(--hairline); margin-bottom: 18px; flex-wrap: wrap; }
+  .topbar h2 { font-family: var(--serif); font-size: 26px; font-weight: 500; margin: 0;
+    letter-spacing: .02em; overflow-wrap: anywhere; }
+  .topbar .sub { color: var(--ink-3); font-family: var(--mono); font-size: 11px;
+    letter-spacing: .08em; text-transform: uppercase; }
+  .topbar .grow { flex: 1; }
+  .btn { display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+    font-family: var(--mono); font-size: 11px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--ink-2); background: var(--card);
+    border: 1px solid var(--border); border-radius: 8px; padding: 7px 14px; }
+  .btn:hover { border-color: var(--gold); color: var(--gold); }
+  #status { font-family: var(--mono); font-size: 12px; color: var(--ink-2);
+    letter-spacing: .04em; min-height: 18px; margin: 0 0 10px; }
   #status.err { color: var(--critical); }
 
-  /* layout */
-  .cols { display: grid; grid-template-columns: 240px 1fr; gap: 34px; margin-top: 26px; }
-  .cols > * { min-width: 0; }   /* keep wide tables inside the grid column */
-  @media (max-width: 860px) { .cols { grid-template-columns: 1fr; } }
+  /* ============ filter pills ============ */
+  .filters { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; position: relative; }
+  .pill { position: relative; }
+  .pill > button { display: flex; align-items: center; gap: 8px; cursor: pointer;
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 9px 16px; font: 13px var(--sans); color: var(--ink-2); box-shadow: var(--shadow); }
+  .pill > button b { color: var(--ink); font-weight: 650; }
+  .pill > button .car { color: var(--ink-3); font-size: 10px; }
+  .pop { position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; min-width: 230px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: 0 10px 34px rgba(70,58,25,.14); padding: 8px; display: none; }
+  .pill.open .pop { display: block; }
+  .pop .search { display: flex; align-items: center; gap: 7px; padding: 6px 8px;
+    border-bottom: 1px solid var(--hairline); margin-bottom: 6px; }
+  .pop .search input { border: none; outline: none; background: transparent;
+    font: 13px var(--sans); color: var(--ink); width: 100%; }
+  .opt { display: flex; align-items: center; gap: 9px; padding: 7px 9px; cursor: pointer;
+    border-radius: 7px; font-size: 13px; }
+  .opt:hover { background: var(--gold-tint); }
+  .opt .radio { width: 14px; height: 14px; border-radius: 50%; flex: none;
+    border: 1.5px solid var(--ink-3); }
+  .opt.sel .radio { border-color: var(--gold); background: radial-gradient(circle at center, var(--gold) 0 4.5px, transparent 5px); }
+  .opt .box { width: 13px; height: 13px; border-radius: 4px; flex: none;
+    border: 1.5px solid var(--ink-3); }
+  .opt.sel .box { border-color: var(--gold); background: var(--gold); }
+  .pop .clear { font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--gold); cursor: pointer; padding: 7px 9px 3px; }
+  .fchips { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 8px 8px; }
+  .fchip { display: inline-flex; align-items: center; gap: 6px; background: var(--gold-tint);
+    color: var(--gold); border-radius: 999px; padding: 2px 10px; font-size: 12px; cursor: pointer; }
 
-  /* history */
-  #history .kicker { display: block; margin-bottom: 14px; }
-  .hist-item {
-    padding: 11px 2px; border-bottom: 1px solid var(--hairline);
-    cursor: pointer;
-  }
-  .hist-item:first-of-type { border-top: 1px solid var(--hairline); }
-  .hist-item .name { font-weight: 600; font-size: 13px; overflow-wrap: anywhere; }
-  .hist-item.active .name { color: var(--gold); }
-  .hist-item .meta { color: var(--ink-3); font-size: 11.5px; margin-top: 3px;
-    font-family: var(--mono); letter-spacing: .02em; }
-  .hist-item .row2 { display: flex; justify-content: space-between; align-items: center; }
-  .hist-item button {
-    border: none; background: none; color: var(--ink-3); cursor: pointer;
-    font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em;
-    text-transform: uppercase; padding: 2px 3px;
-  }
-  .hist-item button:hover { color: var(--critical); }
-
-  /* stat tiles */
-  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 14px; margin-bottom: 22px; }
-  .tile { background: var(--card); border: 1px solid var(--hairline);
-    border-radius: 2px; padding: 15px 17px; }
-  .tile .label { font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em;
+  /* ============ overview ============ */
+  .overview { display: grid; grid-template-columns: minmax(320px, 5fr) minmax(380px, 7fr);
+    gap: 16px; align-items: stretch; }
+  @media (max-width: 1100px) { .overview { grid-template-columns: 1fr; } }
+  .kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .tile { background: var(--card); border: 1px solid var(--hairline); border-radius: 14px;
+    padding: 16px 18px; box-shadow: var(--shadow); }
+  .tile .label { font-family: var(--mono); font-size: 10px; letter-spacing: .13em;
     text-transform: uppercase; color: var(--ink-3); }
-  .tile .value { font-size: 27px; font-weight: 600; margin-top: 5px; }
+  .tile .value { font-size: 26px; font-weight: 650; margin-top: 6px; line-height: 1.1; }
+  .tile .value .den { font-size: 15px; color: var(--ink-3); font-weight: 500; }
   .tile .value .ico { font-size: 15px; vertical-align: 3px; margin-right: 6px; }
 
-  /* charts */
-  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
-  .chip { font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em;
-    text-transform: uppercase; padding: 3px 12px; border-radius: 999px;
-    border: 1px solid var(--border); color: var(--ink-2); cursor: pointer;
-    background: transparent; }
-  .chip.on { border-color: var(--gold); color: var(--gold); }
-  .chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-    gap: 14px; }
-  @media (max-width: 640px) { .chart-grid { grid-template-columns: 1fr; } }
-  .chart-card { background: var(--card); border: 1px solid var(--hairline);
-    border-radius: 2px; padding: 14px 16px 10px; position: relative; }
-  .chart-card .ct { font-weight: 650; font-size: 13px; }
-  .chart-card .cs { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3);
-    letter-spacing: .08em; text-transform: uppercase; margin-left: 8px; }
-  .chart-card svg { display: block; width: 100%; height: auto; margin-top: 6px; }
-  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 4px; }
+  .card { background: var(--card); border: 1px solid var(--hairline); border-radius: 14px;
+    padding: 16px 20px; box-shadow: var(--shadow); margin-bottom: 14px; position: relative; }
+  .card-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .card-head .ct { font-weight: 650; font-size: 14px; }
+  .card-head .cs { font-family: var(--mono); font-size: 10px; color: var(--ink-3);
+    letter-spacing: .1em; text-transform: uppercase; }
+  .card-head .grow { flex: 1; }
+  .iconbtn { border: none; background: none; cursor: pointer; color: var(--ink-3);
+    font-family: var(--mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+    padding: 2px 4px; }
+  .iconbtn:hover { color: var(--gold); }
+
+  section > .kicker { display: block; margin: 30px 0 12px; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; }
+  @media (max-width: 700px) { .grid2 { grid-template-columns: 1fr; } }
+
+  .chart-card svg { display: block; width: 100%; height: auto; margin-top: 8px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; }
   .lg { display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
     color: var(--ink-2); cursor: pointer; padding: 2px 0; user-select: none; }
   .lg .sw { width: 10px; height: 10px; border-radius: 3px; }
-  .lg.off { opacity: .35; }
+  .lg.off { opacity: .32; }
+  .hint { font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--ink-3); margin-top: 6px; }
   .tooltip { position: absolute; pointer-events: none; background: #fffdf8;
-    border: 1px solid var(--border); border-radius: 2px; padding: 7px 10px;
-    font-size: 12px; display: none; z-index: 5; min-width: 140px;
-    box-shadow: 0 2px 10px rgba(60,50,20,.08); }
-  .tooltip .tp { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3);
-    letter-spacing: .06em; margin-bottom: 3px; }
-  .tooltip .tv { display: flex; justify-content: space-between; gap: 14px;
+    border: 1px solid var(--border); border-radius: 8px; padding: 8px 11px;
+    font-size: 12px; display: none; z-index: 40; min-width: 150px;
+    box-shadow: 0 4px 16px rgba(70,58,25,.13); }
+  .tooltip .tp { font-family: var(--mono); font-size: 10px; color: var(--ink-3);
+    letter-spacing: .06em; margin-bottom: 4px; }
+  .tooltip .tv { display: flex; justify-content: space-between; gap: 16px;
     font-variant-numeric: tabular-nums; }
   .tooltip .tv .lab { display: inline-flex; align-items: center; gap: 5px; }
-  .flash { animation: flash 1.6s ease-out; }
-  @keyframes flash { 0% { background: #f3e8cd; } 100% { background: var(--card); } }
-  tr.frow { cursor: pointer; }
-  tr.frow:hover td { background: #f7f2e6; }
 
-  /* sections, cards, tables */
-  section .kicker { display: block; margin: 40px 0 14px; }
-  .card { background: var(--card); border: 1px solid var(--hairline);
-    border-radius: 2px; padding: 17px 19px; margin-bottom: 14px; }
+  /* progress-bar panels (audit highlights) */
+  .bar-row { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 4px 16px;
+    padding: 10px 0; border-bottom: 1px solid var(--hairline); align-items: center; }
+  .bar-row:last-child { border-bottom: none; }
+  .bar-row .bl { font-weight: 600; font-size: 13px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .bar-row .bv { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2);
+    white-space: nowrap; }
+  .track { grid-column: 1 / -1; height: 8px; border-radius: 999px; background: var(--hairline); }
+  .track .fill { height: 100%; border-radius: 999px; }
+  .bar-row.clicky { cursor: pointer; }
+  .bar-row.clicky:hover .bl { color: var(--gold); }
+
+  /* leaderboard */
+  .lead-row { display: flex; align-items: center; gap: 12px; padding: 10px 0;
+    border-bottom: 1px solid var(--hairline); }
+  .lead-row:last-child { border-bottom: none; }
+  .lead-row .rank { font-family: var(--serif); font-size: 17px; color: var(--ink-3);
+    width: 22px; text-align: center; flex: none; }
+  .lead-row .nm { font-weight: 600; font-size: 13px; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lead-row .sub { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); }
+  .lead-row .val { margin-left: auto; font-variant-numeric: tabular-nums;
+    font-weight: 650; white-space: nowrap; }
+
+  /* audit table + sheets */
   table { border-collapse: collapse; width: 100%; font-size: 13px; }
-  th { text-align: left; font-family: var(--mono); font-weight: 500;
-    color: var(--ink-3); font-size: 10.5px; letter-spacing: .1em;
-    text-transform: uppercase; padding: 6px 12px 6px 0;
-    border-bottom: 1px solid var(--border); }
-  td { padding: 7px 12px 7px 0; border-bottom: 1px solid var(--hairline);
-    vertical-align: top; }
+  th { text-align: left; font-family: var(--mono); font-weight: 500; color: var(--ink-3);
+    font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+    padding: 6px 12px 6px 0; border-bottom: 1px solid var(--border); }
+  td { padding: 8px 12px 8px 0; border-bottom: 1px solid var(--hairline); vertical-align: top; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   tr:last-child td { border-bottom: none; }
-
-  .badge { display: inline-block; padding: 1px 9px; border-radius: 999px;
-    font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em;
-    text-transform: uppercase; border: 1px solid var(--border);
-    color: var(--ink-2); background: transparent; }
-  .badge.tidy    { color: #48628f; border-color: #c4cfe0; }
-  .badge.matrix  { color: #6d5590; border-color: #d4c9e2; }
-  .badge.multi   { color: #3e7466; border-color: #bcd6cd; }
-  .badge.form    { color: var(--gold); border-color: #ddc98f; }
-  .badge.unknown { color: var(--ink-3); }
-
+  tr.frow { cursor: pointer; }
+  tr.frow:hover td { background: #f6f1e4; }
   .st { font-weight: 600; font-size: 12.5px; white-space: nowrap; }
-  .st.ok        { color: var(--good); }
-  .st.mismatch  { color: var(--critical); }
-  .st.unverified{ color: var(--warning); }
-
+  .st.ok { color: var(--good); } .st.mismatch { color: var(--critical); }
+  .st.unverified { color: var(--warning); }
+  .badge { display: inline-block; padding: 1px 9px; border-radius: 999px;
+    font-family: var(--mono); font-size: 10px; letter-spacing: .08em;
+    text-transform: uppercase; border: 1px solid var(--border); color: var(--ink-2); }
+  .badge.tidy { color: #48628f; border-color: #c4cfe0; }
+  .badge.matrix { color: #6d5590; border-color: #d4c9e2; }
+  .badge.multi { color: #3e7466; border-color: #bcd6cd; }
+  .badge.form { color: var(--gold); border-color: #ddc98f; }
+  .badge.unknown { color: var(--ink-3); }
   .sheet-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-  .sheet-head .nm { font-weight: 650; font-size: 14.5px; }
-  .sheet-head .dims { color: var(--ink-3); font-size: 11.5px; font-family: var(--mono); }
+  .sheet-head .nm { font-weight: 650; font-size: 14px; }
+  .sheet-head .dims { color: var(--ink-3); font-size: 11px; font-family: var(--mono); }
   .reason { color: var(--ink-2); font-size: 12.5px; margin: 7px 0 0; }
   details { margin-top: 9px; }
   summary { cursor: pointer; color: var(--gold); font-size: 12.5px; }
-  summary:hover { color: var(--gold-strong); }
   .preview-wrap { overflow-x: auto; margin-top: 10px; }
   .preview-wrap table { font-size: 12px; }
   .preview-wrap th, .preview-wrap td { padding: 4px 9px; white-space: nowrap;
     max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
-  .panel { border-left: 2px solid var(--border); padding-left: 14px; margin-top: 12px; }
+  .panel-blk { border-left: 2px solid var(--border); padding-left: 14px; margin-top: 12px; }
   .muted { color: var(--ink-3); }
-  .empty { color: var(--ink-3); padding: 46px 0; text-align: center;
-    font-family: var(--mono); font-size: 11.5px; letter-spacing: .16em;
-    text-transform: uppercase; }
+  .flash { animation: flash 1.6s ease-out; }
+  @keyframes flash { 0% { background: #f3e8cd; } 100% { background: var(--card); } }
+
+  /* empty / drop */
+  #drop { border: 1px dashed var(--border); border-radius: 14px; padding: 60px 30px;
+    text-align: center; color: var(--ink-2); cursor: pointer; background: var(--card);
+    transition: border-color .2s; }
+  #drop:hover, #drop.hover { border-color: var(--gold-strong); }
+  #drop .big { font-family: var(--serif); font-size: 19px; color: var(--ink); }
+  #drop .hint2 { font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--ink-3); margin-top: 10px; }
+  .dropring { outline: 2px dashed var(--gold-strong); outline-offset: -6px; }
 </style>
 </head>
 <body>
-<main>
-  <div class="mast">
-    <svg class="sun" id="sun" width="92" height="92" viewBox="-50 -50 100 100" aria-hidden="true"></svg>
-    <h1>LUMNIA</h1>
-    <div class="tagline">Light where there was none.</div>
-    <div class="kicker">Spreadsheet audit &nbsp;&middot;&nbsp; structure &middot; statistics &middot; reconciliation</div>
-  </div>
-
-  <div id="drop">
-    <input type="file" id="file" accept=".xlsx,.xlsm,.xls,.xlsb,.csv,.tsv,.txt">
-    <div class="big">Drop a CSV / Excel file here, or click to browse</div>
-    <div class="hint">Every sheet classified &amp; extracted &middot; totals &amp; formulas verified</div>
-  </div>
-  <div id="status"></div>
-
-  <div class="cols">
-    <aside id="history"><span class="kicker">Analyses</span><div id="hist-list"></div></aside>
-    <div id="report"><div class="empty">No analysis selected</div></div>
-  </div>
-</main>
+<input type="file" id="file" accept=".xlsx,.xlsm,.xls,.xlsb,.csv,.tsv,.txt" style="display:none">
+<div class="app">
+  <aside class="side">
+    <div class="brand">
+      <svg id="sun" width="34" height="34" viewBox="-50 -50 100 100" aria-hidden="true"></svg>
+      <h1>LUMNIA</h1>
+    </div>
+    <div id="nav-analysis"></div>
+    <span class="kicker">Workbooks</span>
+    <div id="wb-list"></div>
+    <div class="nav-item" id="newupload">
+      <svg width="13" height="13" viewBox="0 0 13 13"><path d="M6.5 1v11M1 6.5h11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      New upload
+    </div>
+  </aside>
+  <main>
+    <div id="topbar"></div>
+    <div id="status"></div>
+    <div id="content"></div>
+  </main>
+</div>
 
 <script>
 "use strict";
 const $ = (s, el) => (el || document).querySelector(s);
+const $$ = (s, el) => [...(el || document).querySelectorAll(s)];
 const esc = s => String(s ?? "").replace(/[&<>"']/g,
   c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const nf = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
@@ -210,187 +270,262 @@ const num = v => typeof v === "number" ? nf.format(v) : (v ?? "");
 const compact = v => {
   const a = Math.abs(v);
   if (a >= 1e6) return (v / 1e6).toFixed(1) + "M";
-  if (a >= 1e4) return (v / 1e3).toFixed(1) + "K";
+  if (a >= 1e3) return (v / 1e3).toFixed(1) + "K";
   return nf.format(v);
 };
-let current = null;
 
-/* ---------- halftone sun motif ---------- */
+/* ---------- state ---------- */
+let current = null, REPORT = null, AUDIT = null, CHARTS = [];
+let SHEET_IDX = {};
+const FILTER = { sheets: null, status: null, periods: "all" };  // sheets: Set|null
+
+/* ---------- brand sun ---------- */
 (function drawSun() {
-  const svg = $("#sun");
   let dots = `<circle cx="0" cy="0" r="7.5" fill="#c9992a"/>`;
-  for (let ring = 1; ring <= 10; ring++) {
-    const R = 9 + ring * 4;
-    const n = 10 + ring * 6;
-    const r = Math.max(0.45, 2.1 - ring * 0.17);
-    const o = Math.max(0.25, 1 - ring * 0.07);
+  for (let ring = 1; ring <= 8; ring++) {
+    const R = 9 + ring * 4.6, n = 10 + ring * 6;
+    const r = Math.max(.5, 2.1 - ring * .18), o = Math.max(.28, 1 - ring * .09);
     for (let k = 0; k < n; k++) {
-      const a = (k / n) * 2 * Math.PI + ring * 0.35;
-      dots += `<circle cx="${(R * Math.cos(a)).toFixed(2)}" cy="${(R * Math.sin(a)).toFixed(2)}" r="${r}" fill="#c9992a" opacity="${o.toFixed(2)}"/>`;
+      const a = (k / n) * 2 * Math.PI + ring * .35;
+      dots += `<circle cx="${(R*Math.cos(a)).toFixed(1)}" cy="${(R*Math.sin(a)).toFixed(1)}" r="${r}" fill="#c9992a" opacity="${o.toFixed(2)}"/>`;
     }
   }
-  svg.innerHTML = dots;
+  $("#sun").innerHTML = dots;
 })();
 
 /* ---------- upload ---------- */
-const drop = $("#drop"), fileInput = $("#file"), statusEl = $("#status");
-drop.addEventListener("click", () => fileInput.click());
-drop.addEventListener("dragover", e => { e.preventDefault(); drop.classList.add("hover"); });
-drop.addEventListener("dragleave", () => drop.classList.remove("hover"));
-drop.addEventListener("drop", e => {
-  e.preventDefault(); drop.classList.remove("hover");
+const fileInput = $("#file"), statusEl = $("#status");
+$("#newupload").addEventListener("click", () => fileInput.click());
+fileInput.addEventListener("change", () => { if (fileInput.files[0]) upload(fileInput.files[0]); });
+window.addEventListener("dragover", e => { e.preventDefault(); document.body.classList.add("dropring"); });
+window.addEventListener("dragleave", e => { if (!e.relatedTarget) document.body.classList.remove("dropring"); });
+window.addEventListener("drop", e => {
+  e.preventDefault(); document.body.classList.remove("dropring");
   if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]);
-});
-fileInput.addEventListener("change", () => {
-  if (fileInput.files[0]) upload(fileInput.files[0]);
 });
 
 async function upload(file) {
   setStatus(`Analyzing ${file.name}…`);
-  const fd = new FormData();
-  fd.append("file", file);
+  const fd = new FormData(); fd.append("file", file);
   try {
     const r = await fetch("/analyze", { method: "POST", body: fd });
     if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
     const body = await r.json();
     setStatus("");
-    await loadHistory();
+    await loadWorkbooks();
     select(body.id);
   } catch (err) { setStatus("Analysis failed: " + err.message, true); }
   fileInput.value = "";
 }
-function setStatus(msg, isErr) {
-  statusEl.textContent = msg;
-  statusEl.className = isErr ? "err" : "";
-}
+function setStatus(msg, isErr) { statusEl.textContent = msg; statusEl.className = isErr ? "err" : ""; }
 
-/* ---------- history ---------- */
-async function loadHistory() {
+/* ---------- sidebar: workbooks + analysis nav ---------- */
+async function loadWorkbooks() {
   const items = await (await fetch("/analyses")).json();
-  $("#hist-list").innerHTML = items.length ? items.map(i => `
-    <div class="hist-item ${i.id === current ? "active" : ""}" data-id="${esc(i.id)}">
+  $("#wb-list").innerHTML = items.length ? items.map(i => `
+    <div class="wb ${i.id === current ? "active" : ""}" data-id="${esc(i.id)}">
       <div class="name">${esc(i.filename)}</div>
-      <div class="row2">
-        <span class="meta">${i.n_sheets} sheet${i.n_sheets === 1 ? "" : "s"} &middot; ${(i.size_bytes/1024).toFixed(0)} KB</span>
-        <span>
-          <button data-act="rerun" title="Re-analyze with the current pipeline">rerun</button>
-          <button data-act="del" title="Delete">delete</button>
-        </span>
-      </div>
-    </div>`).join("") : `<div class="muted" style="font-size:12.5px">Nothing yet.</div>`;
-  $("#hist-list").querySelectorAll(".hist-item").forEach(el => {
-    el.addEventListener("click", async e => {
-      const act = e.target.dataset && e.target.dataset.act;
-      const id = el.dataset.id;
-      if (act === "del") {
-        e.stopPropagation();
-        await fetch(`/analyses/${id}`, { method: "DELETE" });
-        if (current === id) { current = null; $("#report").innerHTML = `<div class="empty">No analysis selected</div>`; }
-        loadHistory();
-      } else if (act === "rerun") {
-        e.stopPropagation();
-        setStatus("Re-analyzing…");
-        await fetch(`/analyses/${id}/rerun`, { method: "POST" });
-        setStatus("");
-        select(id);
-      } else select(id);
-    });
-  });
+      <div class="meta"><span>${i.n_sheets} sheets · ${(i.size_bytes/1024).toFixed(0)} KB</span>
+        <span><button data-act="rerun">rerun</button><button data-act="del">del</button></span></div>
+    </div>`).join("") : `<div class="muted" style="font-size:12px;padding:0 10px">Nothing yet.</div>`;
+  $$("#wb-list .wb").forEach(el => el.addEventListener("click", async e => {
+    const act = e.target.dataset && e.target.dataset.act, id = el.dataset.id;
+    if (act === "del") { e.stopPropagation();
+      await fetch(`/analyses/${id}`, { method: "DELETE" });
+      if (current === id) { current = null; REPORT = null; renderEmpty(); }
+      loadWorkbooks();
+    } else if (act === "rerun") { e.stopPropagation();
+      setStatus("Re-analyzing…");
+      await fetch(`/analyses/${id}/rerun`, { method: "POST" });
+      setStatus(""); select(id);
+    } else select(id);
+  }));
 }
 
-/* ---------- report ---------- */
+const NAV = [
+  ["overview", "Overview", `<svg width="14" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.4" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="7" cy="7" r="1.8" fill="currentColor"/></svg>`],
+  ["charts", "Charts", `<svg width="14" height="14" viewBox="0 0 14 14"><path d="M1.5 11l3.4-4 2.7 2.3 4.9-6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`],
+  ["audit", "Audit", `<svg width="14" height="14" viewBox="0 0 14 14"><path d="M2.5 7.4l3 3L11.5 4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`],
+  ["sheets", "Sheets", `<svg width="14" height="14" viewBox="0 0 14 14"><rect x="1.6" y="1.6" width="10.8" height="10.8" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M1.6 5.2h10.8M5.4 5.2V12.4" stroke="currentColor" stroke-width="1.2"/></svg>`],
+];
+function renderNav(counts) {
+  $("#nav-analysis").innerHTML = `<span class="kicker">Analysis</span>` +
+    NAV.map(([id, label, icon], k) => `
+      <div class="nav-item ${k === 0 ? "active" : ""}" data-target="sec-${id}">
+        ${icon}${label}${counts[id] != null ? `<span class="cnt">${counts[id]}</span>` : ""}
+      </div>`).join("");
+  $$("#nav-analysis .nav-item").forEach(el => el.addEventListener("click", () => {
+    $$("#nav-analysis .nav-item").forEach(x => x.classList.remove("active"));
+    el.classList.add("active");
+    const t = document.getElementById(el.dataset.target);
+    if (t) t.scrollIntoView({ behavior: "smooth", block: "start" });
+  }));
+}
+
+/* ---------- select + render ---------- */
 async function select(id) {
   current = id;
-  loadHistory();
-  const [report, audit] = await Promise.all([
+  loadWorkbooks();
+  [REPORT, AUDIT] = await Promise.all([
     fetch(`/analyses/${id}`).then(r => r.json()),
     fetch(`/analyses/${id}/findings`).then(r => r.json()),
   ]);
-  $("#report").innerHTML =
-    renderTiles(audit) + renderChartsSection(report) +
-    renderFindings(audit) + renderSheets(report);
-  attachCharts();
-  attachFindingRows();
+  FILTER.sheets = null; FILTER.status = null; FILTER.periods = "all";
+  renderAll();
 }
 
-const STATUS = {
-  ok:        { ico: "✓", cls: "ok",         word: "OK" },
-  mismatch:  { ico: "✕", cls: "mismatch",   word: "Mismatch" },
-  unverified:{ ico: "?", cls: "unverified", word: "Unverified" },
-};
-const stBadge = s => {
-  const t = STATUS[s] || STATUS.unverified;
-  return `<span class="st ${t.cls}">${t.ico} ${t.word}</span>`;
-};
-
-function renderTiles(a) {
-  return `<section><span class="kicker" style="margin-top:0">Dashboard — ${esc(a.filename)}</span>
-    <div class="tiles">
-      <div class="tile"><div class="label">Total discrepancy</div>
-        <div class="value">${compact(a.total_abs_delta)}</div></div>
-      <div class="tile"><div class="label">Mismatched</div>
-        <div class="value"><span class="ico" style="color:var(--critical)">✕</span>${a.n_mismatched_relations}</div></div>
-      <div class="tile"><div class="label">Verified</div>
-        <div class="value"><span class="ico" style="color:var(--good)">✓</span>${a.n_verified_relations}</div></div>
-      <div class="tile"><div class="label">Unverified totals</div>
-        <div class="value"><span class="ico" style="color:var(--warning)">?</span>${a.n_unverified_relations}</div></div>
-    </div></section>`;
+function renderEmpty() {
+  $("#nav-analysis").innerHTML = "";
+  $("#topbar").innerHTML = `<div class="topbar"><h2>Lumnia</h2>
+    <span class="sub">Light where there was none</span></div>`;
+  $("#content").innerHTML = `<div id="drop">
+    <div class="big">Drop a CSV / Excel file anywhere, or click to browse</div>
+    <div class="hint2">Every sheet classified &amp; extracted · totals &amp; formulas verified</div></div>`;
+  $("#drop").addEventListener("click", () => fileInput.click());
 }
 
-function renderFindings(a) {
-  const row = f => {
-    const worst = f.mismatches[0];
-    return `<tr class="frow" data-sheet="${esc(f.sheet)}">
-      <td>${stBadge(f.status)}</td>
-      <td>${esc(f.sheet)}${f.panel ? ` <span class="muted">[${esc(f.panel)}]</span>` : ""}</td>
-      <td>${esc(f.formula)}</td>
-      <td class="num">${f.n_mismatched}/${f.n_checked}</td>
-      <td class="num">${num(f.total_abs_delta)}</td>
-      <td>${worst ? `row ${worst.row} (${esc(worst.label)}): expected ${num(worst.expected)}, got ${num(worst.actual)}` : ""}</td>
-    </tr>`;
-  };
-  const table = rows => `
-    <div class="preview-wrap"><table>
-      <tr><th>Status</th><th>Sheet</th><th>Relation</th><th class="num">Rows off</th>
-          <th class="num">|&Delta;|</th><th>Worst row</th></tr>
-      ${rows.map(row).join("")}
-    </table></div>`;
+function renderAll() {
+  const r = REPORT, a = AUDIT;
+  SHEET_IDX = {}; r.sheets.forEach((s, i) => { SHEET_IDX[s.name] = i; });
+  CHARTS = collectCharts(r);
 
-  let html = `<section><span class="kicker">Audit</span>`;
-  html += a.findings.length
-    ? `<div class="card">${table(a.findings)}</div>`
-    : `<div class="card muted">✓ No mismatched relations found.</div>`;
-  if (a.verified.length || a.unverified.length) {
-    html += `<details><summary>${a.verified.length} verified &middot; ${a.unverified.length} unverified</summary>
-      <div class="card" style="margin-top:10px">${table([...a.verified, ...a.unverified])}</div></details>`;
-  }
-  return html + `</section>`;
+  renderNav({
+    overview: null,
+    charts: visCharts().length,
+    audit: a.n_mismatched_relations,
+    sheets: r.n_sheets,
+  });
+  $("#topbar").innerHTML = `<div class="topbar">
+    <h2>${esc(r.filename)}</h2>
+    <span class="sub">${r.n_sheets} sheets analyzed</span>
+    <span class="grow"></span>
+    <button class="btn" id="dl-findings">⤓&nbsp; Findings CSV</button>
+  </div>`;
+  $("#dl-findings").addEventListener("click", downloadFindings);
+
+  $("#content").innerHTML =
+    renderFilters() +
+    `<section id="sec-overview">${renderOverview()}</section>` +
+    `<section id="sec-charts"><span class="kicker">Charts</span>${renderChartGrid()}</section>` +
+    `<section id="sec-audit"><span class="kicker">Audit</span>${renderHighlights()}${renderLeaderboards()}${renderFindingsTable()}</section>` +
+    `<section id="sec-sheets"><span class="kicker">Sheets (${r.n_sheets})</span>${renderSheets()}</section>`;
+
+  attachFilters(); attachCharts(); attachFindingRows(); attachBarRows();
 }
 
-function attachFindingRows() {
-  $("#report").querySelectorAll("tr.frow").forEach(tr => {
-    tr.addEventListener("click", () => jumpToSheet(tr.dataset.sheet));
+/* ---------- filters ---------- */
+function sheetVisible(name) { return !FILTER.sheets || FILTER.sheets.has(name); }
+function visCharts() { return CHARTS.filter(c => sheetVisible(c.sheet)); }
+
+function renderFilters() {
+  const sheets = [...new Set(CHARTS.map(c => c.sheet).concat(REPORT.sheets.map(s => s.name)))];
+  const selN = FILTER.sheets ? FILTER.sheets.size : 0;
+  const periodLabels = { all: "All", p30: "Last 30", p90: "Last 90" };
+  const statusLabels = { mismatch: "Mismatched", ok: "Verified", unverified: "Unverified" };
+  return `<div class="filters">
+    <div class="pill" id="pf-periods"><button>Periods: <b>${periodLabels[FILTER.periods]}</b> <span class="car">▾</span></button>
+      <div class="pop">${Object.entries(periodLabels).map(([k, l]) =>
+        `<div class="opt ${FILTER.periods === k ? "sel" : ""}" data-v="${k}"><span class="radio"></span>${l} periods</div>`).join("")}
+      </div></div>
+    <div class="pill" id="pf-sheets"><button>Sheets: <b>${selN ? selN + " selected" : "All"}</b> <span class="car">▾</span></button>
+      <div class="pop" style="min-width:280px">
+        ${selN ? `<div class="fchips">${[...FILTER.sheets].map(s =>
+          `<span class="fchip" data-v="${esc(s)}">${esc(s)} ✕</span>`).join("")}</div>` : ""}
+        <div class="search"><svg width="12" height="12" viewBox="0 0 12 12"><circle cx="5" cy="5" r="3.6" fill="none" stroke="#99917e" stroke-width="1.4"/><path d="M8 8l2.6 2.6" stroke="#99917e" stroke-width="1.4" stroke-linecap="round"/></svg>
+          <input placeholder="Search sheets" id="sheet-search"></div>
+        <div id="sheet-opts">${sheets.map(s =>
+          `<div class="opt ${FILTER.sheets && FILTER.sheets.has(s) ? "sel" : ""}" data-v="${esc(s)}"><span class="box"></span>${esc(s)}</div>`).join("")}</div>
+        ${selN ? `<div class="clear" id="sheets-clear">Clear</div>` : ""}
+      </div></div>
+    <div class="pill" id="pf-status"><button>Status: <b>${FILTER.status ? statusLabels[FILTER.status] : "All"}</b> <span class="car">▾</span></button>
+      <div class="pop">
+        <div class="opt ${!FILTER.status ? "sel" : ""}" data-v=""><span class="radio"></span>All</div>
+        ${Object.entries(statusLabels).map(([k, l]) =>
+          `<div class="opt ${FILTER.status === k ? "sel" : ""}" data-v="${k}"><span class="radio"></span>${l}</div>`).join("")}
+      </div></div>
+  </div>`;
+}
+
+document.addEventListener("click", e => {   // close popovers on outside click
+  if (!e.target.closest(".pill")) $$(".pill").forEach(p => p.classList.remove("open"));
+});
+
+function attachFilters() {
+  $$(".pill > button").forEach(btn => btn.addEventListener("click", e => {
+    e.stopPropagation();
+    const pill = btn.parentElement, was = pill.classList.contains("open");
+    $$(".pill").forEach(p => p.classList.remove("open"));
+    if (!was) pill.classList.add("open");
+  }));
+  $$(".pop").forEach(p => p.addEventListener("click", e => e.stopPropagation()));
+
+  $$("#pf-periods .opt").forEach(o => o.addEventListener("click", () => {
+    FILTER.periods = o.dataset.v; renderAll();
+  }));
+  $$("#pf-status .opt").forEach(o => o.addEventListener("click", () => {
+    FILTER.status = o.dataset.v || null; renderAll();
+  }));
+  $$("#pf-sheets #sheet-opts .opt").forEach(o => o.addEventListener("click", () => {
+    const v = o.dataset.v;
+    if (!FILTER.sheets) FILTER.sheets = new Set();
+    FILTER.sheets.has(v) ? FILTER.sheets.delete(v) : FILTER.sheets.add(v);
+    if (!FILTER.sheets.size) FILTER.sheets = null;
+    renderAll(); openPill("pf-sheets");
+  }));
+  $$("#pf-sheets .fchip").forEach(ch => ch.addEventListener("click", () => {
+    FILTER.sheets.delete(ch.dataset.v);
+    if (!FILTER.sheets.size) FILTER.sheets = null;
+    renderAll(); openPill("pf-sheets");
+  }));
+  const clr = $("#sheets-clear");
+  if (clr) clr.addEventListener("click", () => { FILTER.sheets = null; renderAll(); openPill("pf-sheets"); });
+  const search = $("#sheet-search");
+  if (search) search.addEventListener("input", () => {
+    const q = search.value.toLowerCase();
+    $$("#sheet-opts .opt").forEach(o =>
+      o.style.display = o.dataset.v.toLowerCase().includes(q) ? "" : "none");
   });
 }
+function openPill(id) {
+  const p = document.getElementById(id);
+  if (p) { p.classList.add("open"); const s = $("#sheet-search"); if (s) s.focus(); }
+}
 
-function jumpToSheet(name) {
-  const idx = SHEET_IDX[name];
-  if (idx === undefined) return;
-  const el = document.getElementById("sheetcard-" + idx);
-  if (!el) return;
-  el.scrollIntoView({ behavior: "smooth", block: "start" });
-  el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
-  const d = el.querySelector("details"); if (d) d.open = true;
+/* ---------- overview: KPIs + primary chart ---------- */
+function renderOverview() {
+  const r = REPORT, a = AUDIT;
+  const extracted = r.sheets.filter(s => s.orientation !== "unknown").length;
+  const recs = r.sheets.reduce((t, s) => {
+    let n = s.tidy ? s.tidy.n_records : 0;
+    for (const p of s.panels || []) n += p.tidy ? p.tidy.n_records : 0;
+    return t + n;
+  }, 0);
+  const tiles = `
+    <div class="tile"><div class="label">Total discrepancy</div>
+      <div class="value">${compact(a.total_abs_delta)}</div></div>
+    <div class="tile"><div class="label">Sheets extracted</div>
+      <div class="value">${extracted}<span class="den">/${r.n_sheets}</span></div></div>
+    <div class="tile"><div class="label">Mismatched</div>
+      <div class="value"><span class="ico" style="color:var(--critical)">✕</span>${a.n_mismatched_relations}</div></div>
+    <div class="tile"><div class="label">Verified</div>
+      <div class="value"><span class="ico" style="color:var(--good)">✓</span>${a.n_verified_relations}</div></div>
+    <div class="tile"><div class="label">Unverified totals</div>
+      <div class="value"><span class="ico" style="color:var(--warning)">?</span>${a.n_unverified_relations}</div></div>
+    <div class="tile"><div class="label">Records extracted</div>
+      <div class="value">${compact(recs)}</div></div>`;
+
+  const vis = visCharts();
+  const primary = vis.filter(c => c.chart.kind === "timeseries")
+    .sort((x, y) => y.chart.periods.length - x.chart.periods.length)[0];
+  const right = primary ? chartCard(primary, true)
+    : `<div class="card"><div class="muted" style="padding:40px 0;text-align:center">No time series to plot${CHARTS.length ? "" : " — press rerun on this workbook to compute charts"}.</div></div>`;
+  return `<div class="overview"><div class="kpis">${tiles}</div><div>${right}</div></div>`;
 }
 
 /* ---------- charts ---------- */
-// Categorical slots validated against the cream card surface (dataviz
-// validator: worst adjacent CVD dE 24.2). "Other" wears de-emphasis gray.
 const SERIES_COLORS = ["#2a78d6", "#1baf7a", "#eda100", "#008300", "#4a3aa7"];
 const OTHER_COLOR = "#9a9284";
 const W = 720, H = 250, ML = 52, MR = 14, MT = 12, MB = 30;
-let CHARTS = [];        // live chart state for the selected analysis
-let SHEET_IDX = {};     // sheet name -> sheet card index
 
 function collectCharts(report) {
   const out = [];
@@ -405,60 +540,63 @@ function collectCharts(report) {
         ? `cols ${p.col_start}–${p.col_end}` : `rows ${p.row_start}–${p.row_end}`);
     }
   }
-  return out;
-}
-
-function renderChartsSection(report) {
-  CHARTS = collectCharts(report).map((c, i) => {
+  return out.map((c, i) => {
     if (c.chart.kind === "timeseries") {
       const all = c.chart.series.concat(c.chart.other ? [c.chart.other] : []);
       c.lines = all.map((s, k) => ({
-        label: s.label, values: s.values, total: s.total,
-        color: k < c.chart.series.length
-          ? SERIES_COLORS[k % SERIES_COLORS.length] : OTHER_COLOR,
+        label: s.label, values: s.values,
+        color: k < c.chart.series.length ? SERIES_COLORS[k % SERIES_COLORS.length] : OTHER_COLOR,
         on: true,
       }));
     }
-    c.i = i;
+    c.i = i; c.range = null;                     // [lo,hi] from brush
     return c;
   });
-  if (!CHARTS.length) {
-    return `<section><span class="kicker">Charts</span>
-      <div class="card muted">No chartable series in this analysis —
-      if it was uploaded before charts existed, press <b>rerun</b> to recompute.</div></section>`;
-  }
-  const sheets = [...new Set(CHARTS.map(c => c.sheet))];
-  const chips = sheets.length > 1 ? `<div class="chips">
-      <button class="chip on" data-sheet="">All</button>
-      ${sheets.map(s => `<button class="chip" data-sheet="${esc(s)}">${esc(s)}</button>`).join("")}
-    </div>` : "";
-  return `<section><span class="kicker">Charts</span>${chips}
-    <div class="chart-grid">${CHARTS.map(chartCard).join("")}</div></section>`;
 }
 
-function chartCard(c) {
-  const sub = [c.loc, c.chart.kind === "timeseries"
-    ? `${c.chart.periods.length} periods` : `${c.chart.x.length} columns`,
+function chartRange(c) {
+  const n = c.chart.periods.length;
+  if (c.range) return c.range;
+  if (FILTER.periods === "p30" && n > 30) return [n - 30, n - 1];
+  if (FILTER.periods === "p90" && n > 90) return [n - 90, n - 1];
+  return [0, n - 1];
+}
+
+function renderChartGrid() {
+  const vis = visCharts();
+  if (!vis.length) return `<div class="card muted">No chartable series${CHARTS.length ? " for this filter" : " in this analysis — press rerun to recompute with the current pipeline"}.</div>`;
+  return `<div class="grid2">${vis.map(c => chartCard(c, false)).join("")}</div>`;
+}
+
+function chartCard(c, isPrimary) {
+  let span;
+  if (c.chart.kind === "timeseries") {
+    const [lo, hi] = chartRange(c);
+    span = `${hi - lo + 1} of ${c.chart.periods.length} periods`;
+  } else {
+    span = `${c.chart.x.length} columns`;
+  }
+  const sub = [c.loc, span,
     c.chart.truncated ? "truncated" : null].filter(Boolean).join(" · ");
   const legend = c.chart.kind === "timeseries" && c.lines.length > 1
     ? `<div class="legend">${c.lines.map((s, k) => `
-        <span class="lg" data-chart="${c.i}" data-k="${k}">
-          <span class="sw" style="background:${s.color}"></span>${esc(s.label)}</span>`).join("")}
-      </div>` : "";
-  return `<div class="chart-card" data-chart="${c.i}" data-sheet="${esc(c.sheet)}">
-    <span class="ct">${esc(c.sheet)}</span><span class="cs">${esc(sub)}</span>
+        <span class="lg ${s.on ? "" : "off"}" data-chart="${c.i}" data-k="${k}">
+          <span class="sw" style="background:${s.color}"></span>${esc(s.label)}</span>`).join("")}</div>` : "";
+  const hint = c.chart.kind === "timeseries"
+    ? `<div class="hint">drag to zoom · double-click to reset</div>` : "";
+  return `<div class="card chart-card" data-chart="${c.i}" data-sheet="${esc(c.sheet)}">
+    <div class="card-head"><span class="ct">${esc(c.sheet)}</span><span class="cs">${esc(sub)}</span>
+      <span class="grow"></span><button class="iconbtn" data-csv="${c.i}">⤓ csv</button></div>
     <div class="plot">${c.chart.kind === "timeseries" ? svgTimeseries(c) : svgProfile(c)}</div>
-    ${legend}<div class="tooltip"></div></div>`;
+    ${legend}${hint}<div class="tooltip"></div></div>`;
 }
 
 function yScale(vals) {
   let lo = Math.min(0, ...vals), hi = Math.max(0, ...vals);
   if (lo === hi) hi = lo + 1;
-  const pad = (hi - lo) * 0.06;
-  hi += pad; if (lo < 0) lo -= pad;
+  const pad = (hi - lo) * .06; hi += pad; if (lo < 0) lo -= pad;
   return v => MT + (H - MT - MB) * (1 - (v - lo) / (hi - lo));
 }
-
 function gridAndTicks(vals) {
   let lo = Math.min(0, ...vals), hi = Math.max(0, ...vals);
   if (lo === hi) hi = lo + 1;
@@ -466,107 +604,99 @@ function gridAndTicks(vals) {
   let g = "";
   for (let t = 0; t <= 3; t++) {
     const v = lo + (hi - lo) * t / 3, y = sy(v);
-    g += `<line x1="${ML}" x2="${W - MR}" y1="${y}" y2="${y}" stroke="#ece5d5" stroke-width="1"/>
-          <text x="${ML - 7}" y="${y + 3.5}" text-anchor="end" font-size="10"
-            fill="#99917e" font-family="ui-monospace,Menlo,monospace">${compact(v)}</text>`;
+    g += `<line x1="${ML}" x2="${W - MR}" y1="${y}" y2="${y}" stroke="#ece5d5"/>
+          <text x="${ML - 7}" y="${y + 3.5}" text-anchor="end" font-size="10" fill="#99917e"
+            font-family="ui-monospace,Menlo,monospace">${compact(v)}</text>`;
   }
   return g;
 }
 
 function svgTimeseries(c) {
+  const [lo, hi] = chartRange(c);
+  const idx = i => lo + i;
+  const n = hi - lo + 1;
   const on = c.lines.filter(s => s.on);
-  const flat = on.flatMap(s => s.values.filter(v => v != null));
+  const flat = on.flatMap(s => s.values.slice(lo, hi + 1).filter(v => v != null));
   if (!flat.length) return `<div class="muted" style="padding:30px 0;text-align:center">all series hidden</div>`;
   const sy = yScale(flat);
-  const n = c.chart.periods.length;
-  const sx = i => ML + (W - ML - MR) * (n === 1 ? 0.5 : i / (n - 1));
+  const sx = i => ML + (W - ML - MR) * (n === 1 ? .5 : i / (n - 1));
 
   let out = gridAndTicks(flat);
   const step = Math.max(1, Math.ceil(n / 6));
   for (let i = 0; i < n; i += step) {
-    out += `<text x="${sx(i)}" y="${H - 8}" text-anchor="middle" font-size="10"
-      fill="#99917e" font-family="ui-monospace,Menlo,monospace">${esc(String(c.chart.periods[i]).slice(0, 10))}</text>`;
+    out += `<text x="${sx(i)}" y="${H - 8}" text-anchor="middle" font-size="10" fill="#99917e"
+      font-family="ui-monospace,Menlo,monospace">${esc(String(c.chart.periods[idx(i)]).slice(0, 10))}</text>`;
   }
   for (const s of on) {
     let d = "", pen = false;
-    s.values.forEach((v, i) => {
-      if (v == null) { pen = false; return; }
-      d += `${pen ? "L" : "M"}${sx(i).toFixed(1)},${sy(v).toFixed(1)}`;
-      pen = true;
-    });
+    for (let i = 0; i < n; i++) {
+      const v = s.values[idx(i)];
+      if (v == null) { pen = false; continue; }
+      d += `${pen ? "L" : "M"}${sx(i).toFixed(1)},${sy(v).toFixed(1)}`; pen = true;
+    }
     out += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2"
       stroke-linejoin="round" stroke-linecap="round"/>`;
   }
-  if (on.length <= 4) {          // direct labels at line ends (relief rule)
+  if (on.length <= 4) {
     for (const s of on) {
-      const last = s.values.map((v, i) => [v, i]).filter(([v]) => v != null).pop();
-      if (last) out += `<text x="${sx(last[1]) - 4}" y="${sy(last[0]) - 6}" text-anchor="end"
-        font-size="10.5" fill="#5c564a">${esc(s.label.slice(0, 22))}</text>`;
+      let last = null;
+      for (let i = n - 1; i >= 0; i--) if (s.values[idx(i)] != null) { last = i; break; }
+      if (last != null) out += `<text x="${sx(last) - 4}" y="${sy(s.values[idx(last)]) - 6}"
+        text-anchor="end" font-size="10.5" fill="#5c564a">${esc(s.label.slice(0, 22))}</text>`;
     }
   }
-  out += `<g class="hoverlayer"></g>
-    <rect class="hitbox" x="${ML}" y="0" width="${W - ML - MR}" height="${H}" fill="transparent"/>`;
+  out += `<g class="hoverlayer"></g><rect class="brushrect" y="${MT}" height="${H - MT - MB}"
+      fill="#c9992a" opacity="0" x="0" width="0"/>
+    <rect class="hitbox" x="${ML}" y="0" width="${W - ML - MR}" height="${H}" fill="transparent" style="cursor:crosshair"/>`;
   return `<svg viewBox="0 0 ${W} ${H}" data-kind="timeseries">${out}</svg>`;
 }
 
+/* Figma-style capsule bars on light tracks, in brand gold */
 function svgProfile(c) {
   const sy = yScale(c.chart.y);
-  const y0 = sy(0);
+  const y0 = sy(0), yTop = MT, yBot = H - MB;
   const n = c.chart.x.length;
   const band = (W - ML - MR) / n;
-  const bw = Math.min(42, Math.max(6, band - 2));
+  const bw = Math.min(20, Math.max(7, band * .38));
   let out = gridAndTicks(c.chart.y);
   const step = Math.max(1, Math.ceil(n / 8));
   c.chart.y.forEach((v, i) => {
     const x = ML + band * i + (band - bw) / 2;
+    out += `<rect x="${x}" y="${yTop}" width="${bw}" height="${yBot - yTop}" rx="${bw/2}" fill="#eee3c4"/>`;
     const yv = sy(v);
-    const top = Math.min(yv, y0), h = Math.max(1, Math.abs(y0 - yv));
-    const r = Math.min(4, bw / 2, h);
-    out += `<path class="bar" data-i="${i}" d="M${x},${top + h} V${top + r}
-      Q${x},${top} ${x + r},${top} H${x + bw - r} Q${x + bw},${top} ${x + bw},${top + r}
-      V${top + h} Z" fill="${SERIES_COLORS[0]}"/>`;
-    if (i % step === 0) out += `<text x="${x + bw / 2}" y="${H - 8}" text-anchor="middle"
-      font-size="10" fill="#99917e" font-family="ui-monospace,Menlo,monospace">${esc(String(c.chart.x[i]).slice(0, 12))}</text>`;
+    const top = Math.min(yv, y0), h = Math.max(bw, Math.abs(y0 - yv));
+    out += `<rect class="bar" data-i="${i}" x="${x}" y="${Math.min(top, yBot - bw)}" width="${bw}"
+      height="${Math.min(h, yBot - yTop)}" rx="${bw/2}" fill="#a8821f"/>`;
+    if (i % step === 0) out += `<text x="${x + bw/2}" y="${H - 8}" text-anchor="middle" font-size="10"
+      fill="#99917e" font-family="ui-monospace,Menlo,monospace">${esc(String(c.chart.x[i]).slice(0, 12))}</text>`;
   });
   return `<svg viewBox="0 0 ${W} ${H}" data-kind="profile">${out}</svg>`;
 }
 
 function attachCharts() {
-  // sheet filter chips
-  $("#report").querySelectorAll(".chip").forEach(chip => {
-    chip.addEventListener("click", () => {
-      $("#report").querySelectorAll(".chip").forEach(x => x.classList.remove("on"));
-      chip.classList.add("on");
-      const sel = chip.dataset.sheet;
-      $("#report").querySelectorAll(".chart-card").forEach(card => {
-        card.style.display = !sel || card.dataset.sheet === sel ? "" : "none";
-      });
+  $$(".lg").forEach(lg => lg.addEventListener("click", () => {
+    const c = CHARTS[+lg.dataset.chart], s = c.lines[+lg.dataset.k];
+    s.on = !s.on;
+    $$(`.chart-card[data-chart="${c.i}"]`).forEach(card => {
+      card.querySelector(".plot").innerHTML = svgTimeseries(c);
     });
-  });
-  // legend toggles
-  $("#report").querySelectorAll(".lg").forEach(lg => {
-    lg.addEventListener("click", () => {
-      const c = CHARTS[+lg.dataset.chart];
-      const s = c.lines[+lg.dataset.k];
-      s.on = !s.on;
-      lg.classList.toggle("off", !s.on);
-      const card = $("#report").querySelector(`.chart-card[data-chart="${c.i}"] .plot`);
-      card.innerHTML = svgTimeseries(c);
-      bindHover(c);
-    });
-  });
-  CHARTS.forEach(bindHover);
+    lg.classList.toggle("off", !s.on);
+    bindHoverAll(c);
+  }));
+  $$(".iconbtn[data-csv]").forEach(b => b.addEventListener("click",
+    () => downloadChartCSV(CHARTS[+b.dataset.csv])));
+  CHARTS.forEach(bindHoverAll);
 }
 
-function bindHover(c) {
-  const card = $("#report").querySelector(`.chart-card[data-chart="${c.i}"]`);
-  if (!card) return;
-  const svg = card.querySelector("svg"), tip = card.querySelector(".tooltip");
-  if (!svg) return;
+function bindHoverAll(c) {
+  $$(`.chart-card[data-chart="${c.i}"]`).forEach(card => bindHover(c, card));
+}
 
+function bindHover(c, card) {
+  const svg = card.querySelector("svg"), tip = card.querySelector(".tooltip");
+  if (!svg || !tip) return;
   const show = (html, evt) => {
-    tip.innerHTML = html;
-    tip.style.display = "block";
+    tip.innerHTML = html; tip.style.display = "block";
     const r = card.getBoundingClientRect();
     let x = evt.clientX - r.left + 14, y = evt.clientY - r.top + 10;
     if (x + tip.offsetWidth > r.width - 6) x -= tip.offsetWidth + 26;
@@ -585,39 +715,175 @@ function bindHover(c) {
     });
     return;
   }
-  // timeseries: crosshair + shared tooltip on nearest period
   const hit = svg.querySelector(".hitbox"), layer = svg.querySelector(".hoverlayer");
-  const n = c.chart.periods.length;
-  hit.addEventListener("mousemove", e => {
+  const brush = svg.querySelector(".brushrect");
+  let dragFrom = null;
+
+  const toIdx = e => {
     const box = svg.getBoundingClientRect();
     const fx = (e.clientX - box.left) / box.width * W;
-    const i = Math.max(0, Math.min(n - 1,
-      Math.round((fx - ML) / (W - ML - MR) * (n - 1))));
+    const [lo, hi] = chartRange(c), n = hi - lo + 1;
+    return Math.max(0, Math.min(n - 1, Math.round((fx - ML) / (W - ML - MR) * (n - 1))));
+  };
+  const sxOf = (i, n) => ML + (W - ML - MR) * (n === 1 ? .5 : i / (n - 1));
+
+  hit.addEventListener("mousedown", e => { dragFrom = toIdx(e); });
+  hit.addEventListener("mousemove", e => {
+    const [lo, hi] = chartRange(c), n = hi - lo + 1;
+    const i = toIdx(e);
+    if (dragFrom != null) {
+      const a = Math.min(dragFrom, i), b = Math.max(dragFrom, i);
+      brush.setAttribute("x", sxOf(a, n));
+      brush.setAttribute("width", Math.max(1, sxOf(b, n) - sxOf(a, n)));
+      brush.setAttribute("opacity", ".14");
+      return;
+    }
     const on = c.lines.filter(s => s.on);
-    const flat = on.flatMap(s => s.values.filter(v => v != null));
+    const flat = on.flatMap(s => s.values.slice(lo, hi + 1).filter(v => v != null));
     if (!flat.length) return;
-    const sy = yScale(flat);
-    const x = ML + (W - ML - MR) * (n === 1 ? 0.5 : i / (n - 1));
-    let marks = `<line x1="${x}" x2="${x}" y1="${MT}" y2="${H - MB}" stroke="#d8cfb9" stroke-width="1"/>`;
+    const sy = yScale(flat), x = sxOf(i, n);
+    let marks = `<line x1="${x}" x2="${x}" y1="${MT}" y2="${H - MB}" stroke="#d8cfb9"/>`;
     let rows = "";
     for (const s of on) {
-      const v = s.values[i];
+      const v = s.values[lo + i];
       if (v == null) continue;
-      marks += `<circle cx="${x}" cy="${sy(v)}" r="4" fill="${s.color}"
-        stroke="#fbf9f3" stroke-width="2"/>`;
+      marks += `<circle cx="${x}" cy="${sy(v)}" r="4" fill="${s.color}" stroke="#fbf9f3" stroke-width="2"/>`;
       rows += `<div class="tv"><span class="lab"><span class="sw" style="width:8px;height:8px;border-radius:2px;display:inline-block;background:${s.color}"></span>${esc(s.label.slice(0, 24))}</span><b>${num(v)}</b></div>`;
     }
     layer.innerHTML = marks;
-    show(`<div class="tp">${esc(String(c.chart.periods[i]))}</div>${rows}`, e);
+    show(`<div class="tp">${esc(String(c.chart.periods[lo + i]))}</div>${rows}`, e);
   });
-  hit.addEventListener("mouseleave", () => { layer.innerHTML = ""; hide(); });
+  const endDrag = e => {
+    if (dragFrom == null) return;
+    const [lo] = chartRange(c);
+    const i = toIdx(e), a = Math.min(dragFrom, i), b = Math.max(dragFrom, i);
+    dragFrom = null; brush.setAttribute("opacity", "0");
+    if (b - a >= 2) { c.range = [lo + a, lo + b]; redrawChart(c); }
+  };
+  hit.addEventListener("mouseup", endDrag);
+  hit.addEventListener("mouseleave", e => { layer.innerHTML = ""; hide(); endDrag(e); });
+  hit.addEventListener("dblclick", () => { c.range = null; redrawChart(c); });
 }
 
-function renderSheets(report) {
-  SHEET_IDX = {};
-  report.sheets.forEach((s, i) => { SHEET_IDX[s.name] = i; });
-  return `<section><span class="kicker">Sheets (${report.n_sheets})</span>` +
-    report.sheets.map((s, i) => sheetCard(s, i)).join("") + `</section>`;
+function redrawChart(c) {
+  $$(`.chart-card[data-chart="${c.i}"]`).forEach(card => {
+    card.querySelector(".plot").innerHTML = svgTimeseries(c);
+    const cs = card.querySelector(".cs");
+    if (cs) {
+      const [lo, hi] = chartRange(c);
+      cs.textContent = [c.loc, `${hi - lo + 1} of ${c.chart.periods.length} periods`,
+        c.chart.truncated ? "truncated" : null].filter(Boolean).join(" · ");
+    }
+  });
+  bindHoverAll(c);
+}
+
+/* ---------- audit highlights (Figma topics panels) ---------- */
+function auditRows() {
+  let rows = [...AUDIT.findings, ...AUDIT.verified, ...AUDIT.unverified];
+  rows = rows.filter(f => sheetVisible(f.sheet));
+  if (FILTER.status) rows = rows.filter(f => f.status === FILTER.status);
+  return rows;
+}
+
+function renderHighlights() {
+  const mism = AUDIT.findings.filter(f => sheetVisible(f.sheet)).slice(0, 4);
+  const ok = AUDIT.verified.filter(f => sheetVisible(f.sheet))
+    .sort((a, b) => b.n_checked - a.n_checked).slice(0, 4);
+  const maxD = Math.max(1, ...mism.map(f => f.total_abs_delta));
+  const rowM = f => `<div class="bar-row clicky" data-sheet="${esc(f.sheet)}">
+    <span class="bl" title="${esc(f.formula)}">${esc(f.sheet)} — ${esc(f.formula)}</span>
+    <span class="bv">|Δ| ${num(f.total_abs_delta)}</span>
+    <div class="track" style="background:var(--crit-track)"><div class="fill"
+      style="width:${Math.max(4, f.total_abs_delta / maxD * 100)}%;background:var(--critical)"></div></div></div>`;
+  const rowV = f => `<div class="bar-row clicky" data-sheet="${esc(f.sheet)}">
+    <span class="bl" title="${esc(f.formula)}">${esc(f.sheet)} — ${esc(f.formula)}</span>
+    <span class="bv">${f.n_matched}/${f.n_checked} rows</span>
+    <div class="track" style="background:var(--good-track)"><div class="fill"
+      style="width:${f.n_checked ? f.n_matched / f.n_checked * 100 : 0}%;background:var(--good)"></div></div></div>`;
+  return `<div class="grid2">
+    <div class="card"><div class="card-head"><span class="ct">Largest discrepancies</span></div>
+      ${mism.length ? mism.map(rowM).join("") : `<div class="muted" style="padding:18px 0">✓ none for this filter</div>`}</div>
+    <div class="card"><div class="card-head"><span class="ct">Verified relations</span></div>
+      ${ok.length ? ok.map(rowV).join("") : `<div class="muted" style="padding:18px 0">none for this filter</div>`}</div>
+  </div>`;
+}
+
+function renderLeaderboards() {
+  const bySheetD = {};
+  for (const f of AUDIT.findings) bySheetD[f.sheet] = (bySheetD[f.sheet] || 0) + f.total_abs_delta;
+  const dRows = Object.entries(bySheetD).filter(([s]) => sheetVisible(s))
+    .sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const rRows = REPORT.sheets.filter(s => sheetVisible(s.name)).map(s => {
+    let n = s.tidy ? s.tidy.n_records : 0;
+    for (const p of s.panels || []) n += p.tidy ? p.tidy.n_records : 0;
+    return [s.name, n, s.orientation];
+  }).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+  const lead = (rows, fmt) => rows.map((r, i) => `<div class="lead-row">
+      <span class="rank">${i + 1}</span>${fmt(r)}</div>`).join("");
+  return `<div class="grid2">
+    <div class="card"><div class="card-head"><span class="ct">Most data extracted</span></div>
+      ${rRows.length ? lead(rRows, ([s, n, o]) => `<div style="min-width:0"><div class="nm">${esc(s)}</div>
+        <div class="sub">${esc(o)}</div></div><span class="val">${compact(n)} <span class="muted" style="font-weight:400">rows</span></span>`)
+        : `<div class="muted" style="padding:18px 0">nothing extracted</div>`}</div>
+    <div class="card"><div class="card-head"><span class="ct">Discrepancy by sheet</span></div>
+      ${dRows.length ? lead(dRows, ([s, d]) => `<div style="min-width:0"><div class="nm">${esc(s)}</div></div>
+        <span class="val" style="color:var(--critical)">${compact(d)}</span>`)
+        : `<div class="muted" style="padding:18px 0">✓ no discrepancies</div>`}</div>
+  </div>`;
+}
+
+const STATUS = {
+  ok: { ico: "✓", cls: "ok", word: "OK" },
+  mismatch: { ico: "✕", cls: "mismatch", word: "Mismatch" },
+  unverified: { ico: "?", cls: "unverified", word: "Unverified" },
+};
+const stBadge = s => {
+  const t = STATUS[s] || STATUS.unverified;
+  return `<span class="st ${t.cls}">${t.ico} ${t.word}</span>`;
+};
+
+function renderFindingsTable() {
+  const rows = auditRows();
+  if (!rows.length) return `<div class="card muted">No relations for this filter.</div>`;
+  const row = f => {
+    const worst = f.mismatches[0];
+    return `<tr class="frow" data-sheet="${esc(f.sheet)}">
+      <td>${stBadge(f.status)}</td>
+      <td>${esc(f.sheet)}${f.panel ? ` <span class="muted">[${esc(f.panel)}]</span>` : ""}</td>
+      <td>${esc(f.formula)}</td>
+      <td class="num">${f.n_mismatched}/${f.n_checked}</td>
+      <td class="num">${num(f.total_abs_delta)}</td>
+      <td>${worst ? `row ${worst.row} (${esc(worst.label)}): expected ${num(worst.expected)}, got ${num(worst.actual)}` : ""}</td>
+    </tr>`;
+  };
+  return `<div class="card"><div class="preview-wrap"><table>
+    <tr><th>Status</th><th>Sheet</th><th>Relation</th><th class="num">Rows off</th>
+        <th class="num">|Δ|</th><th>Worst row</th></tr>
+    ${rows.map(row).join("")}</table></div></div>`;
+}
+
+function attachFindingRows() {
+  $$("tr.frow").forEach(tr => tr.addEventListener("click", () => jumpToSheet(tr.dataset.sheet)));
+}
+function attachBarRows() {
+  $$(".bar-row.clicky").forEach(el => el.addEventListener("click", () => jumpToSheet(el.dataset.sheet)));
+}
+function jumpToSheet(name) {
+  const idx = SHEET_IDX[name];
+  if (idx === undefined) return;
+  const el = document.getElementById("sheetcard-" + idx);
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "start" });
+  el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
+  const d = el.querySelector("details"); if (d) d.open = true;
+}
+
+/* ---------- sheets ---------- */
+function renderSheets() {
+  return REPORT.sheets.map((s, i) =>
+    sheetVisible(s.name) ? sheetCard(s, i) : "").join("") || `<div class="card muted">No sheets for this filter.</div>`;
 }
 
 function sheetCard(s, idx) {
@@ -626,46 +892,77 @@ function sheetCard(s, idx) {
     body = s.panels.map(p => {
       const where = "col_start" in p && p.col_start != null
         ? `cols ${p.col_start}–${p.col_end}` : `rows ${p.row_start}–${p.row_end}`;
-      return `<div class="panel">
+      return `<div class="panel-blk">
         <span class="badge ${esc(p.orientation)}">${esc(p.orientation)}</span>
-        <span class="muted" style="font-size:11.5px;font-family:var(--mono)">${where}</span>
+        <span class="muted" style="font-size:11px;font-family:var(--mono)">${where}</span>
         <div class="reason">${esc(p.reason)}</div>
-        ${p.tidy ? tidyBlock(p.tidy) : ""}
-      </div>`;
+        ${p.tidy ? tidyBlock(p.tidy) : ""}</div>`;
     }).join("");
-  } else if (s.tidy) {
-    body = tidyBlock(s.tidy);
-  }
+  } else if (s.tidy) body = tidyBlock(s.tidy);
   return `<div class="card" id="sheetcard-${idx}">
     <div class="sheet-head">
       <span class="nm">${esc(s.name)}</span>
       <span class="badge ${esc(s.orientation)}">${esc(s.orientation)}</span>
-      <span class="dims">${s.n_rows} &times; ${s.n_cols} &middot; ${(s.fill_ratio*100).toFixed(0)}% filled</span>
+      <span class="dims">${s.n_rows} × ${s.n_cols} · ${(s.fill_ratio * 100).toFixed(0)}% filled</span>
     </div>
     <div class="reason">${esc(s.orientation_reason)}</div>
-    ${body}
-  </div>`;
+    ${body}</div>`;
 }
 
 function tidyBlock(t) {
-  const cols = t.columns;
-  const shown = cols.slice(0, 10);
-  const recs = t.records.slice(0, 5);
+  const cols = t.columns, shown = cols.slice(0, 10), recs = t.records.slice(0, 5);
   const preview = recs.length ? `
     <div class="preview-wrap"><table>
-      <tr>${shown.map(c => `<th>${esc(c)}</th>`).join("")}${cols.length > shown.length ? "<th>&hellip;</th>" : ""}</tr>
+      <tr>${shown.map(c => `<th>${esc(c)}</th>`).join("")}${cols.length > shown.length ? "<th>…</th>" : ""}</tr>
       ${recs.map(r => `<tr>${shown.map(c =>
         `<td class="${typeof r[c] === "number" ? "num" : ""}">${typeof r[c] === "number" ? num(r[c]) : esc(r[c])}</td>`).join("")}
-        ${cols.length > shown.length ? "<td>&hellip;</td>" : ""}</tr>`).join("")}
+        ${cols.length > shown.length ? "<td>…</td>" : ""}</tr>`).join("")}
     </table></div>` : "";
   const s = t.summary || {};
   const bits = [`${t.n_records} records`, `${t.n_columns} columns`];
-  if (s.n_periods) bits.push(`${s.n_series} series &times; ${s.n_periods} periods (${esc(s.period_min)} → ${esc(s.period_max)})`);
+  if (s.n_periods) bits.push(`${s.n_series} series × ${s.n_periods} periods (${esc(s.period_min)} → ${esc(s.period_max)})`);
   if (t.total_rows) bits.push(`totals rows: ${t.total_rows.join(", ")}`);
-  return `<details><summary>${bits.join(" &middot; ")}</summary>${preview}</details>`;
+  return `<details><summary>${bits.join(" · ")}</summary>${preview}</details>`;
 }
 
-loadHistory();
+/* ---------- CSV export ---------- */
+function downloadCSV(name, rows) {
+  const q = v => { const s = String(v ?? ""); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const blob = new Blob([rows.map(r => r.map(q).join(",")).join("\n")], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+function downloadChartCSV(c) {
+  if (c.chart.kind === "timeseries") {
+    const head = ["period", ...c.lines.map(s => s.label)];
+    const rows = c.chart.periods.map((p, i) => [p, ...c.lines.map(s => s.values[i] ?? "")]);
+    downloadCSV(`${c.sheet.trim()}-timeseries.csv`, [head, ...rows]);
+  } else {
+    downloadCSV(`${c.sheet.trim()}-profile.csv`,
+      [["column", "sum"], ...c.chart.x.map((x, i) => [x, c.chart.y[i]])]);
+  }
+}
+function downloadFindings() {
+  const rows = [["status", "sheet", "panel", "kind", "formula", "rows_mismatched",
+    "rows_checked", "total_abs_delta", "worst_row", "worst_label", "expected", "actual"]];
+  for (const f of [...AUDIT.findings, ...AUDIT.verified, ...AUDIT.unverified]) {
+    const w = f.mismatches[0] || {};
+    rows.push([f.status, f.sheet, f.panel ?? "", f.kind, f.formula, f.n_mismatched,
+      f.n_checked, f.total_abs_delta, w.row ?? "", w.label ?? "", w.expected ?? "", w.actual ?? ""]);
+  }
+  downloadCSV(`${AUDIT.filename.replace(/\.[^.]+$/, "")}-audit.csv`, rows);
+}
+
+/* ---------- boot ---------- */
+(async function boot() {
+  renderEmpty();
+  await loadWorkbooks();
+  const first = $("#wb-list .wb");
+  if (first) select(first.dataset.id);
+})();
 </script>
 </body>
 </html>
