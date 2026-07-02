@@ -77,8 +77,13 @@ _INDEX = Path(__file__).parent / "static" / "index.html"
 
 @app.get("/", include_in_schema=False)
 def index() -> FileResponse:
-    """The single-page UI: upload, history, per-sheet report, audit."""
-    return FileResponse(_INDEX, media_type="text/html")
+    """The single-page UI: upload, history, per-sheet report, audit.
+
+    no-cache so browsers revalidate on every load — the UI evolves with the
+    backend and a cached page against a newer API is a confusing failure.
+    """
+    return FileResponse(_INDEX, media_type="text/html",
+                        headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/health", response_model=HealthResponse)

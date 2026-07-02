@@ -44,14 +44,20 @@ def _close(expected: float, actual: float) -> bool:
 
 
 def _mismatch(row_number: int, label: Optional[str], expected: float,
-              actual: float) -> Dict[str, Any]:
+              actual: float, col: Optional[int] = None) -> Dict[str, Any]:
     return {
         "row": row_number,                    # 1-based sheet row, as Excel shows it
+        "col": col,                           # 0-based sheet column of the target cell
         "label": label,
         "expected": round(expected, 4),
         "actual": round(actual, 4),
         "delta": round(actual - expected, 4),
     }
+
+
+# A fix suggestion is "high" confidence when the rule holds on this share of
+# the checked rows — the rule is then almost certainly right and the cell wrong.
+FIX_CONFIDENCE_FRAC = 0.8
 
 
 def _finding(kind: str, formula: str, target: str, inputs: List[str],
@@ -68,6 +74,10 @@ def _finding(kind: str, formula: str, target: str, inputs: List[str],
         "total_abs_delta": round(sum(abs(m["delta"]) for m in mismatches), 4),
         "mismatches": mismatches[:MAX_MISMATCHES],
         "status": "ok" if checked == matched else "mismatch",
+        # resolution guidance: "high" -> replace the cell with `expected`;
+        # "review" -> the rule is contested, verify the inputs by hand
+        "fix_confidence": ("high" if checked and matched / checked >= FIX_CONFIDENCE_FRAC
+                           else "review") if checked != matched else None,
     }
 
 
@@ -158,7 +168,8 @@ def detect_total_rows(names: List[str],
 
 def check_column_sums(names: List[str], cols: Dict[str, List[Optional[float]]],
                       rows: List[int], labels: List[Optional[str]],
-                      totals: List[dict]) -> List[dict]:
+                      totals: List[dict],
+                      col_map: Optional[Dict[str, int]] = None) -> List[dict]:
     """One finding per detected totals row: does every declared total match
     the column sum it summarises? Mismatch entries reuse the standard shape
     with ``label`` naming the offending *column*.
@@ -192,18 +203,24 @@ def check_column_sums(names: List[str], cols: Dict[str, List[Optional[float]]],
             })
             continue
 
-        mism = [_mismatch(rows[i], name, base[name], v)
+        mism = [_mismatch(rows[i], name, base[name], v,
+                          (col_map or {}).get(name))
                 for name, v in declared.items() if name not in matched]
-        findings.append(_finding(
+        f = _finding(
             "column_sum",
             f"totals row {rows[i]} ({who}) = column sums of the rows above",
-            who, [], len(declared), len(declared) - len(mism), mism))
+            who, [], len(declared), len(declared) - len(mism), mism)
+        # column_sum "cells" are (column, totals-row): keyed per column
+        f["_broken"] = {(m["label"], rows[i]) for m in mism}
+        f["_ok"] = {(name, rows[i]) for name in matched}
+        findings.append(f)
     return findings
 
 
 def check_products(names: List[str], cols: Dict[str, List[Optional[float]]],
                    rows: List[int], labels: List[Optional[str]],
-                   exclude: Optional[set] = None) -> List[dict]:
+                   exclude: Optional[set] = None,
+                   col_map: Optional[Dict[str, int]] = None) -> List[dict]:
     numeric = [n for n in names if n in cols]
     if len(numeric) > MAX_PRODUCT_COLS:
         return []
@@ -235,11 +252,15 @@ def check_products(names: List[str], cols: Dict[str, List[Optional[float]]],
             continue
         n_hits, idx, a_name, b_name = best
         a, b = cols[a_name], cols[b_name]
-        mism = [_mismatch(rows[i], labels[i], a[i] * b[i], c[i])
-                for i in idx if not _close(a[i] * b[i], c[i])]
-        findings.append(_finding(
+        bad = [i for i in idx if not _close(a[i] * b[i], c[i])]
+        mism = [_mismatch(rows[i], labels[i], a[i] * b[i], c[i],
+                          (col_map or {}).get(target)) for i in bad]
+        f = _finding(
             "product", f"{target} = {a_name} x {b_name}",
-            target, [a_name, b_name], len(idx), len(idx) - len(mism), mism))
+            target, [a_name, b_name], len(idx), len(idx) - len(mism), mism)
+        f["_broken"] = {(target, rows[i]) for i in bad}
+        f["_ok"] = {(target, rows[i]) for i in idx if i not in set(bad)}
+        findings.append(f)
 
     # C = A x B, A = C / B etc. are the same relation seen from different
     # targets; keep only the best-supported finding per column triple.
@@ -268,7 +289,8 @@ def _numeric_runs(names: List[str], numeric: set, min_len: int = 3) -> List[List
 
 def check_row_sums(names: List[str], cols: Dict[str, List[Optional[float]]],
                    rows: List[int], labels: List[Optional[str]],
-                   exclude: Optional[set] = None) -> List[dict]:
+                   exclude: Optional[set] = None,
+                   col_map: Optional[Dict[str, int]] = None) -> List[dict]:
     numeric = set(cols)
     exclude = exclude or set()
     findings = []
@@ -301,12 +323,16 @@ def check_row_sums(names: List[str], cols: Dict[str, List[Optional[float]]],
                 continue
             if sum(1 for i in hits if c[i] != 0) < MIN_SUPPORT_ROWS:
                 continue                     # all-zero agreement proves nothing
-            mism = [_mismatch(rows[i], labels[i], rowsum(i), c[i])
-                    for i in idx if not _close(rowsum(i), c[i])]
-            findings.append(_finding(
+            bad = [i for i in idx if not _close(rowsum(i), c[i])]
+            mism = [_mismatch(rows[i], labels[i], rowsum(i), c[i],
+                              (col_map or {}).get(target)) for i in bad]
+            f = _finding(
                 "row_sum",
                 f"{target} = {parts[0]} + ... + {parts[-1]} ({len(parts)} cols)",
-                target, list(parts), len(idx), len(idx) - len(mism), mism))
+                target, list(parts), len(idx), len(idx) - len(mism), mism)
+            f["_broken"] = {(target, rows[i]) for i in bad}
+            f["_ok"] = {(target, rows[i]) for i in idx if i not in set(bad)}
+            findings.append(f)
     return findings
 
 
@@ -314,7 +340,8 @@ def run_checks(names: List[str],
                numeric_cols: Dict[str, List[Optional[float]]],
                row_numbers: List[int],
                row_labels: List[Optional[str]],
-               totals: Optional[List[dict]] = None) -> Optional[List[dict]]:
+               totals: Optional[List[dict]] = None,
+               col_map: Optional[Dict[str, int]] = None) -> Optional[List[dict]]:
     """Discover + verify relations. Detected totals rows are verified against
     their column sums and excluded from the row-level relation checks (they
     are derived rows, not observations). Returns findings sorted with
@@ -324,11 +351,57 @@ def run_checks(names: List[str],
         totals = detect_total_rows(names, numeric_cols, row_labels)
     exclude = {t["i"] for t in totals}
     findings = (
-        check_column_sums(names, numeric_cols, row_numbers, row_labels, totals)
-        + check_products(names, numeric_cols, row_numbers, row_labels, exclude)
-        + check_row_sums(names, numeric_cols, row_numbers, row_labels, exclude)
+        check_column_sums(names, numeric_cols, row_numbers, row_labels, totals,
+                          col_map)
+        + check_products(names, numeric_cols, row_numbers, row_labels, exclude,
+                         col_map)
+        + check_row_sums(names, numeric_cols, row_numbers, row_labels, exclude,
+                         col_map)
     )
     if not findings:
         return None
+    _cross_examine(findings)
     findings.sort(key=lambda f: (f["status"] == "ok", -f["total_abs_delta"]))
     return findings
+
+
+def _cross_examine(findings: List[dict]) -> None:
+    """Demote fix suggestions the other relations argue against.
+
+    Learned the hard way (applying naive suggestions to a real workbook made
+    its discrepancy WORSE): a violating cell only deserves a "replace with
+    expected" suggestion when the evidence is one-sided. Two vetoes:
+
+    * **row breaks several rules** — a row violating 2+ distinct relations is
+      structurally different (a summary line, another metric, a wrong *input*
+      feeding many outputs), not a typo in one cell;
+    * **cell confirmed elsewhere** — if another relation checked the same
+      (column, row) cell and it HELD, the cell is right and this rule simply
+      does not apply to that row.
+
+    Demoted mismatches get ``suggest: false``; a finding keeps
+    ``fix_confidence: "high"`` only if its support is strong AND every one of
+    its mismatches survived.
+    """
+    mismatch_findings = [f for f in findings if f.get("_broken")]
+    rows_breaking: Dict[int, int] = {}
+    for f in mismatch_findings:
+        for _, row in f["_broken"]:
+            rows_breaking[row] = rows_breaking.get(row, 0) + 1
+
+    for f in findings:
+        confirmed_elsewhere = set()
+        for g in findings:
+            if g is not f:
+                confirmed_elsewhere |= g.get("_ok", set())
+        for m in f["mismatches"]:
+            key_col = m["label"] if f["kind"] == "column_sum" else f["target"]
+            m["suggest"] = not (
+                rows_breaking.get(m["row"], 0) >= 2
+                or (key_col, m["row"]) in confirmed_elsewhere
+            )
+        if (f.get("fix_confidence") == "high"
+                and not all(m["suggest"] for m in f["mismatches"])):
+            f["fix_confidence"] = "review"
+        f.pop("_broken", None)
+        f.pop("_ok", None)

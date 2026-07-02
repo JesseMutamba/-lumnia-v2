@@ -335,9 +335,16 @@ async function loadWorkbooks() {
       if (current === id) { current = null; REPORT = null; renderEmpty(); }
       loadWorkbooks();
     } else if (act === "rerun") { e.stopPropagation();
+      const prev = (current === id && AUDIT) ? AUDIT.total_abs_delta : null;
       setStatus("Re-analyzing…");
       await fetch(`/analyses/${id}/rerun`, { method: "POST" });
-      setStatus(""); select(id);
+      await select(id);
+      if (prev != null) {
+        const d = prev - AUDIT.total_abs_delta;
+        setStatus(d > 0.01
+          ? `✓ Resolved ${compact(d)} of discrepancy (${compact(prev)} → ${compact(AUDIT.total_abs_delta)})`
+          : `Discrepancy unchanged (${compact(AUDIT.total_abs_delta)}) — fix the suggested cells in the file, save, and re-upload`);
+      } else setStatus("");
     } else select(id);
   }));
 }
@@ -399,13 +406,15 @@ function renderAll() {
     <h2>${esc(r.filename)}</h2>
     <span class="sub">${r.n_sheets} sheets analyzed</span>
     <span class="grow"></span>
+    <button class="btn" id="dl-corrections">⤓&nbsp; Corrections CSV</button>
     <button class="btn" id="dl-findings">⤓&nbsp; Findings CSV</button>
   </div>`;
   $("#dl-findings").addEventListener("click", downloadFindings);
+  $("#dl-corrections").addEventListener("click", downloadCorrections);
 
   $("#content").innerHTML =
     renderFilters() +
-    `<section id="sec-overview">${renderOverview()}</section>` +
+    `<section id="sec-overview">${renderOverview()}${renderInsights()}</section>` +
     `<section id="sec-charts"><span class="kicker">Charts</span>${renderChartGrid()}</section>` +
     `<section id="sec-audit"><span class="kicker">Audit</span>${renderHighlights()}${renderLeaderboards()}${renderFindingsTable()}</section>` +
     `<section id="sec-sheets"><span class="kicker">Sheets (${r.n_sheets})</span>${renderSheets()}</section>`;
@@ -520,6 +529,74 @@ function renderOverview() {
   const right = primary ? chartCard(primary, true)
     : `<div class="card"><div class="muted" style="padding:40px 0;text-align:center">No time series to plot${CHARTS.length ? "" : " — press rerun on this workbook to compute charts"}.</div></div>`;
   return `<div class="overview"><div class="kpis">${tiles}</div><div>${right}</div></div>`;
+}
+
+/* ---------- insights: decision-support bullets from the data ---------- */
+function pct(a, b) { return b ? ((a - b) / Math.abs(b) * 100) : null; }
+
+function renderInsights() {
+  const out = [];   // {html, sheet}
+
+  // 1. corrections story: what fixing the high-confidence cells is worth
+  const fixable = AUDIT.findings
+    .map(f => ({ ...f, safe: f.fix_confidence === "high"
+      ? f.mismatches.filter(m => m.suggest !== false) : [] }))
+    .filter(f => f.safe.length);
+  if (fixable.length) {
+    const cells = fixable.reduce((t, f) => t + f.safe.length, 0);
+    const worth = fixable.reduce((t, f) =>
+      t + f.safe.reduce((u, m) => u + Math.abs(m.delta), 0), 0);
+    out.push({ html: `<b>${cells} cell${cells === 1 ? "" : "s"}</b> can be corrected with high
+      confidence, closing <b>${compact(worth)}</b> of the ${compact(AUDIT.total_abs_delta)}
+      total discrepancy — download the Corrections CSV to work through them.` });
+    const worst = fixable[0], m = worst.safe[0];
+    if (m) out.push({ sheet: worst.sheet, html: `Largest single correction:
+      <b>${esc(worst.sheet)}</b>${m.cell ? ` cell <b>${esc(m.cell)}</b>` : ` row ${m.row}`}
+      (${esc(m.label)}) — ${num(m.actual)} should be <b>${num(m.expected)}</b>,
+      per a rule verified on ${worst.n_matched} other rows.` });
+  } else if (AUDIT.findings.length === 0) {
+    out.push({ html: `Every discovered relation holds — this workbook's internal
+      math is <b>consistent</b>. Safe to circulate on that front.` });
+  }
+
+  // 2. trend: latest movement of the biggest time series
+  const ts = visCharts().filter(c => c.chart.kind === "timeseries")
+    .sort((a, b) => b.chart.periods.length - a.chart.periods.length)[0];
+  if (ts && ts.lines.length) {
+    const s = ts.lines[0];
+    const pts = s.values.map((v, i) => [v, i]).filter(([v]) => v != null);
+    if (pts.length >= 2) {
+      const [vLast, iLast] = pts[pts.length - 1], [vPrev] = pts[pts.length - 2];
+      const p = pct(vLast, vPrev);
+      out.push({ sheet: ts.sheet, html: `<b>${esc(ts.sheet)}</b> — latest
+        ${esc(String(ts.chart.periods[iLast]))}: “${esc(s.label)}” at <b>${num(vLast)}</b>
+        ${p != null ? `(<b style="color:${p >= 0 ? "var(--good)" : "var(--critical)"}">${p >= 0 ? "+" : ""}${p.toFixed(1)}%</b> vs previous period)` : ""}.` });
+    }
+  }
+
+  // 3. seasonality: where the biggest profile peaks
+  const pf = visCharts().filter(c => c.chart.kind === "profile")
+    .sort((a, b) => Math.max(...b.chart.y) - Math.max(...a.chart.y))[0];
+  if (pf) {
+    const iMax = pf.chart.y.indexOf(Math.max(...pf.chart.y));
+    out.push({ sheet: pf.sheet, html: `<b>${esc(pf.sheet)}</b> peaks at
+      “${esc(String(pf.chart.x[iMax]))}” (<b>${compact(pf.chart.y[iMax])}</b>) —
+      plan cash and capacity around that period.` });
+  }
+
+  // 4. what still needs a human
+  if (AUDIT.n_unverified_relations) {
+    out.push({ html: `${AUDIT.n_unverified_relations} totals row${AUDIT.n_unverified_relations === 1 ? "" : "s"}
+      could not be verified automatically (hierarchical sections) — worth a manual glance.` });
+  }
+
+  if (!out.length) return "";
+  return `<div class="card" style="margin-top:16px"><div class="card-head">
+      <span class="ct">Insights</span><span class="cs">computed from this workbook</span></div>
+    ${out.slice(0, 5).map(i => `<div class="bar-row ${i.sheet ? "clicky" : ""}"
+      ${i.sheet ? `data-sheet="${esc(i.sheet)}"` : ""}>
+      <span style="font-size:13px;line-height:1.55">${i.html}</span></div>`).join("")}
+  </div>`;
 }
 
 /* ---------- charts ---------- */
@@ -844,6 +921,18 @@ const stBadge = s => {
   return `<span class="st ${t.cls}">${t.ico} ${t.word}</span>`;
 };
 
+function fixCell(f) {
+  if (f.status !== "mismatch") return "";
+  const safe = f.fix_confidence === "high"
+    ? f.mismatches.filter(m => m.suggest !== false) : [];
+  if (!safe.length)
+    return `<span class="muted">review inputs by hand</span>`;
+  return safe.slice(0, 2).map(m =>
+    m.cell ? `<div><b>${esc(m.cell)}</b>: ${num(m.actual)} → <b style="color:var(--good)">${num(m.expected)}</b></div>`
+           : `<div>row ${m.row}: → <b style="color:var(--good)">${num(m.expected)}</b></div>`
+  ).join("") + (safe.length > 2 ? `<div class="muted">+${safe.length - 2} more in CSV</div>` : "");
+}
+
 function renderFindingsTable() {
   const rows = auditRows();
   if (!rows.length) return `<div class="card muted">No relations for this filter.</div>`;
@@ -856,11 +945,12 @@ function renderFindingsTable() {
       <td class="num">${f.n_mismatched}/${f.n_checked}</td>
       <td class="num">${num(f.total_abs_delta)}</td>
       <td>${worst ? `row ${worst.row} (${esc(worst.label)}): expected ${num(worst.expected)}, got ${num(worst.actual)}` : ""}</td>
+      <td>${fixCell(f)}</td>
     </tr>`;
   };
   return `<div class="card"><div class="preview-wrap"><table>
     <tr><th>Status</th><th>Sheet</th><th>Relation</th><th class="num">Rows off</th>
-        <th class="num">|Δ|</th><th>Worst row</th></tr>
+        <th class="num">|Δ|</th><th>Worst row</th><th>Suggested fix</th></tr>
     ${rows.map(row).join("")}</table></div></div>`;
 }
 
@@ -945,6 +1035,21 @@ function downloadChartCSV(c) {
       [["column", "sum"], ...c.chart.x.map((x, i) => [x, c.chart.y[i]])]);
   }
 }
+function downloadCorrections() {
+  const rows = [["sheet", "panel", "cell", "row", "label", "current", "suggested",
+    "rule", "confidence"]];
+  for (const f of AUDIT.findings) {
+    for (const m of f.mismatches) {
+      const safe = f.fix_confidence === "high" && m.suggest !== false;
+      rows.push([f.sheet, f.panel ?? "", m.cell ?? "", m.row, m.label ?? "",
+        m.actual, m.expected, f.formula,
+        safe ? "high — rule verified on " + f.n_matched + " rows"
+             : "review — other rules contest this cell; verify inputs by hand"]);
+    }
+  }
+  downloadCSV(`${AUDIT.filename.replace(/\.[^.]+$/, "")}-corrections.csv`, rows);
+}
+
 function downloadFindings() {
   const rows = [["status", "sheet", "panel", "kind", "formula", "rows_mismatched",
     "rows_checked", "total_abs_delta", "worst_row", "worst_label", "expected", "actual"]];

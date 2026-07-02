@@ -499,8 +499,9 @@ def _extract_tidy_table(df, kinds, meta, max_rows) -> dict:
                   if label_idx is not None else [None] * total)
     totals = detect_total_rows(names, numeric_cols, row_labels) \
         if numeric_cols else []
+    col_map = {name: j for name, j in zip(names, cols)}
     checks = run_checks(names, numeric_cols, row_numbers, row_labels,
-                        totals=totals) if numeric_cols else None
+                        totals=totals, col_map=col_map) if numeric_cols else None
 
     summary = table_summary(accs, total)
     chart = profile_chart(names, numeric_cols, {t["i"] for t in totals}) \
@@ -638,19 +639,32 @@ def _split_bands(kinds, box) -> List[Tuple[int, int]]:
     return bands
 
 
-def _offset_band_rows(res: dict, lo: int) -> None:
-    """A band was classified on a row slice; shift its row references back to
-    the real sheet so header_rows and check findings still point at Excel."""
+def _xl_col(j: int) -> str:
+    """0-based column index -> Excel letters (0 -> A, 26 -> AA)."""
+    out = ""
+    j += 1
+    while j > 0:
+        j, r = divmod(j - 1, 26)
+        out = chr(65 + r) + out
+    return out
+
+
+def _finalize_cells(res: dict, row_off: int = 0, col_off: int = 0) -> None:
+    """Turn each mismatch's (row, col) into a real Excel cell address, shifting
+    by the panel/band offsets when the table was classified on a slice."""
     t = res.get("tidy")
     if not t:
         return
-    if t.get("header_rows"):
-        t["header_rows"] = [h + lo for h in t["header_rows"]]
-    if t.get("total_rows"):
-        t["total_rows"] = [r + lo for r in t["total_rows"]]
+    if row_off:
+        if t.get("header_rows"):
+            t["header_rows"] = [h + row_off for h in t["header_rows"]]
+        if t.get("total_rows"):
+            t["total_rows"] = [r + row_off for r in t["total_rows"]]
     for f in t.get("checks") or []:
         for m in f.get("mismatches", []):
-            m["row"] += lo
+            m["row"] += row_off
+            col = m.pop("col", None)
+            m["cell"] = f"{_xl_col(col + col_off)}{m['row']}" if col is not None else None
 
 
 def _orient_single(df: pd.DataFrame, max_rows: int,
@@ -683,6 +697,7 @@ def orient_sheet(df: pd.DataFrame, max_rows: int = 8,
             for lo, hi in panels:
                 pk = [row[lo:hi + 1] for row in kinds]
                 res = _orient_single(df.iloc[:, lo:hi + 1], max_rows, pk)
+                _finalize_cells(res, 0, lo)
                 res["col_start"], res["col_end"] = lo, hi
                 sub.append(res)
             recognized = sum(s["orientation"] != "unknown" for s in sub)
@@ -700,6 +715,7 @@ def orient_sheet(df: pd.DataFrame, max_rows: int = 8,
                 }
 
     out = _orient_single(df, max_rows, kinds)
+    _finalize_cells(out)
     out["panels"] = None
 
     # Fallback for vertically stacked sheets (title / table / table / notes):
@@ -712,7 +728,7 @@ def orient_sheet(df: pd.DataFrame, max_rows: int = 8,
             for lo, hi in bands:
                 res = _orient_single(df.iloc[lo:hi + 1], max_rows,
                                      kinds[lo:hi + 1])
-                _offset_band_rows(res, lo)
+                _finalize_cells(res, lo, 0)
                 res["row_start"], res["row_end"] = lo, hi
                 sub.append(res)
             recognized = sum(s["orientation"] != "unknown" for s in sub)
