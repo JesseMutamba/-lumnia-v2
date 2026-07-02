@@ -35,9 +35,26 @@ class SheetReport(BaseModel):
 
 
 class AnalyzeResponse(BaseModel):
+    # Step 5 — persisted analyses carry their storage id
+    id: Optional[str] = None
     filename: str
     n_sheets: int
     sheets: List[SheetReport]
+
+
+class AnalysisMeta(BaseModel):
+    """One row in the stored-analyses listing (no report payload)."""
+    id: str
+    filename: str
+    uploaded_at: str
+    reran_at: Optional[str] = None
+    size_bytes: int
+    n_sheets: int
+
+
+class DeleteResponse(BaseModel):
+    id: str
+    deleted: bool
 
 
 class HealthResponse(BaseModel):
