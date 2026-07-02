@@ -17,8 +17,13 @@ def _check_sources(sheet: Dict[str, Any]) -> List[Tuple[str, Dict[str, Any]]]:
     if sheet.get("tidy"):
         out.append((None, sheet["tidy"]))
     for p in sheet.get("panels") or []:
-        if p.get("tidy"):
-            out.append((f"cols {p['col_start']}-{p['col_end']}", p["tidy"]))
+        if not p.get("tidy"):
+            continue
+        if "col_start" in p:                 # side-by-side panel
+            label = f"cols {p['col_start']}-{p['col_end']}"
+        else:                                # vertically stacked band
+            label = f"rows {p['row_start']}-{p['row_end']}"
+        out.append((label, p["tidy"]))
     return out
 
 

@@ -28,6 +28,7 @@ from .models import (
     HealthResponse,
     SheetReport,
 )
+from .pipeline.celltypes import grid_kinds
 from .pipeline.ingest import read_upload
 from .pipeline.orient import orient_sheet
 from .pipeline.profile import profile_sheet
@@ -47,8 +48,9 @@ def run_pipeline(content: bytes, filename: str) -> AnalyzeResponse:
 
     reports = []
     for name, df in sheets.items():
-        prof = profile_sheet(name, df)
-        orient = orient_sheet(df)
+        kinds = grid_kinds(df)               # one classification pass per sheet
+        prof = profile_sheet(name, df, kinds=kinds)
+        orient = orient_sheet(df, kinds=kinds)
         reports.append(
             SheetReport(
                 **prof,

@@ -5,15 +5,11 @@ from typing import List, Optional
 
 import pandas as pd
 
-from .celltypes import cell_kind, BLANK, TEXT
+from .celltypes import grid_kinds, BLANK, TEXT
 
 
-def _row_fill(df: pd.DataFrame, i: int) -> int:
-    """Count non-blank cells in row ``i``."""
-    return sum(cell_kind(df.iat[i, j]) != BLANK for j in range(df.shape[1]))
-
-
-def guess_header_row(df: pd.DataFrame, max_scan: int = 25) -> Optional[int]:
+def guess_header_row(df: pd.DataFrame, max_scan: int = 25,
+                     kinds: Optional[List[List[str]]] = None) -> Optional[int]:
     """The v0 general header heuristic.
 
     Scanning top-down, the header is the first row that is
@@ -27,9 +23,11 @@ def guess_header_row(df: pd.DataFrame, max_scan: int = 25) -> Optional[int]:
     n_rows, n_cols = df.shape
     if n_rows == 0 or n_cols == 0:
         return None
+    if kinds is None:
+        kinds = grid_kinds(df)
 
     limit = min(n_rows, max_scan)
-    fills = [_row_fill(df, i) for i in range(limit)]
+    fills = [sum(k != BLANK for k in kinds[i]) for i in range(limit)]
     widest = max(fills) if fills else 0
     if widest == 0:
         return None
@@ -38,43 +36,36 @@ def guess_header_row(df: pd.DataFrame, max_scan: int = 25) -> Optional[int]:
         filled = fills[i]
         if filled == 0 or filled < 0.5 * widest:
             continue
-        text = sum(cell_kind(df.iat[i, j]) == TEXT for j in range(n_cols))
+        text = sum(k == TEXT for k in kinds[i])
         if text >= 0.5 * filled:
             return i
     return None
 
 
-def _nonempty_rows(df: pd.DataFrame) -> int:
-    return sum(_row_fill(df, i) > 0 for i in range(df.shape[0]))
-
-
-def _nonempty_cols(df: pd.DataFrame) -> int:
-    count = 0
-    for j in range(df.shape[1]):
-        if any(cell_kind(df.iat[i, j]) != BLANK for i in range(df.shape[0])):
-            count += 1
-    return count
-
-
 def profile_sheet(name: str, df: pd.DataFrame, preview_rows: int = 6,
-                  preview_cols: int = 12) -> dict:
+                  preview_cols: int = 12,
+                  kinds: Optional[List[List[str]]] = None) -> dict:
     """Return a Step-1 inventory dict for one raw sheet."""
     n_rows, n_cols = df.shape
+    if kinds is None:
+        kinds = grid_kinds(df)
     total = n_rows * n_cols
-    non_blank = sum(
-        cell_kind(df.iat[i, j]) != BLANK
-        for i in range(n_rows)
+
+    row_fills = [sum(k != BLANK for k in kinds[i]) for i in range(n_rows)]
+    non_blank = sum(row_fills)
+    nonempty_cols = sum(
+        any(kinds[i][j] != BLANK for i in range(n_rows))
         for j in range(n_cols)
-    ) if total else 0
+    ) if n_rows else 0
 
     return {
         "name": name,
         "n_rows": int(n_rows),
         "n_cols": int(n_cols),
-        "n_nonempty_rows": _nonempty_rows(df),
-        "n_nonempty_cols": _nonempty_cols(df),
+        "n_nonempty_rows": sum(f > 0 for f in row_fills),
+        "n_nonempty_cols": nonempty_cols,
         "fill_ratio": round(non_blank / total, 4) if total else 0.0,
-        "header_row": guess_header_row(df),
+        "header_row": guess_header_row(df, kinds=kinds),
         "preview": preview_grid(df, preview_rows, preview_cols),
     }
 

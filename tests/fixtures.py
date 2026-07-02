@@ -127,6 +127,26 @@ def side_by_side_sheet() -> pd.DataFrame:
     ])
 
 
+def stacked_tables_sheet() -> pd.DataFrame:
+    """Vertically stacked report: a small tidy table up top, then (far below,
+    past the scan window) a much wider date matrix. No whole-sheet orientation
+    fits — the bands must be classified separately."""
+    n = 18
+    rows = [
+        ["ESTIMATION DE PRODUCTION"] + [None] * (n - 1),
+        ["ANNEE", "HA", "JUIL", "AOUT", "TOTAL"] + [None] * (n - 5),
+        [2019, 112, 52, 69, 121] + [None] * (n - 5),
+        [2020, 225, 78, 104, 182] + [None] * (n - 5),
+        [2021, 140, 26, 35, 61] + [None] * (n - 5),
+    ]
+    rows += [[None] * n for _ in range(12)]          # push matrix past SCAN_ROWS
+    dates = [dt.date(2025, 7, d) for d in range(1, n)]
+    rows.append(["BUDGET"] + dates)
+    rows.append(["FFB RECU"] + list(range(1, n)))
+    rows.append(["CPO PRODUIT"] + [v * 2 for v in range(1, n)])
+    return pd.DataFrame(rows)
+
+
 def unknown_sheet() -> pd.DataFrame:
     """A raw numeric block: no header, no dates, not sparse -> decline."""
     return pd.DataFrame([

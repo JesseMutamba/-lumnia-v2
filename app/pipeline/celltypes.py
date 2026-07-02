@@ -102,6 +102,25 @@ def cell_kind(v: Any) -> str:
     return TEXT
 
 
+def grid_kinds(df: pd.DataFrame) -> list:
+    """Per-cell kinds for a whole sheet, as a list of row lists.
+
+    Vectorises the blank check (``pd.isna`` over the whole array) so the
+    per-cell classifier only runs on cells that actually hold something —
+    on wide, sparse real-world sheets most cells are blank and this is the
+    difference between milliseconds and tens of seconds.
+    """
+    vals = df.to_numpy(dtype=object)
+    if vals.size == 0:
+        return [[] for _ in range(vals.shape[0])]
+    na = pd.isna(vals)
+    return [
+        [BLANK if na[i, j] else cell_kind(vals[i, j])
+         for j in range(vals.shape[1])]
+        for i in range(vals.shape[0])
+    ]
+
+
 def is_text(v: Any) -> bool:
     return cell_kind(v) == TEXT
 

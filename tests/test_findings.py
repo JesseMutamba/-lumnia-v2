@@ -94,3 +94,21 @@ def test_findings_include_verified_relations():
 
 def test_findings_missing_analysis_is_404():
     assert client.get("/analyses/nothere/findings").status_code == 404
+
+
+def test_findings_survive_vertically_banded_sheets():
+    """Stacked-band panels label their location by rows, not columns."""
+    from tests.fixtures import stacked_tables_sheet
+
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as xw:
+        stacked_tables_sheet().to_excel(xw, sheet_name="STACKED",
+                                        header=False, index=False)
+    files = {"file": ("book.xlsx", buf.getvalue(), "application/octet-stream")}
+    body = client.post("/analyze", files=files).json()
+    resp = client.get(f"/analyses/{body['id']}/findings")
+    assert resp.status_code == 200
+    audit = resp.json()
+    for entry in audit["findings"] + audit["verified"]:
+        if entry["sheet"] == "STACKED" and entry["panel"]:
+            assert entry["panel"].startswith("rows ")

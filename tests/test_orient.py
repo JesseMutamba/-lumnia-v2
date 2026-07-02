@@ -3,8 +3,36 @@ from tests.fixtures import (
     tidy_sheet, matrix_sheet, form_sheet, unknown_sheet, empty_sheet,
     multi_header_sheet, french_numbers_sheet,
     complementary_header_sheet, blank_header_cells_sheet, year_matrix_sheet,
-    multiband_header_sheet, side_by_side_sheet,
+    multiband_header_sheet, side_by_side_sheet, stacked_tables_sheet,
 )
+
+
+def test_stacked_tables_split_into_bands():
+    """A sheet that declines as a whole splits on blank-row runs; each band
+    classifies on its own with row references still valid for the real sheet."""
+    out = orient_sheet(stacked_tables_sheet())
+    assert out["orientation"] == "multi"
+    assert "stacked" in out["reason"]
+    bands = out["panels"]
+    assert len(bands) == 2
+    top, bottom = bands
+    assert (top["row_start"], top["row_end"]) == (0, 4)
+    assert top["orientation"] == "tidy"
+    assert top["tidy"]["columns"][:2] == ["ANNEE", "HA"]
+    # header_rows point at the REAL sheet rows, not the band slice
+    assert top["tidy"]["header_rows"] == [1]
+    assert bottom["row_start"] == 17
+    assert bottom["orientation"] == "matrix"
+    assert bottom["tidy"]["summary"]["n_series"] == 2
+
+
+def test_recognizable_sheets_are_never_banded():
+    """The band fallback must not shred sheets that already classify —
+    including ones with internal blank spacer rows (multiband headers)."""
+    for fixture in (tidy_sheet, matrix_sheet, multiband_header_sheet,
+                    form_sheet, year_matrix_sheet):
+        out = orient_sheet(fixture())
+        assert out["orientation"] != "multi", fixture.__name__
 
 
 def test_multiband_composite_header():
