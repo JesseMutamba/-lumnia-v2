@@ -3,7 +3,49 @@ from tests.fixtures import (
     tidy_sheet, matrix_sheet, form_sheet, unknown_sheet, empty_sheet,
     multi_header_sheet, french_numbers_sheet,
     complementary_header_sheet, blank_header_cells_sheet, year_matrix_sheet,
+    multiband_header_sheet, side_by_side_sheet,
 )
+
+
+def test_multiband_composite_header():
+    """Banner + field names + year band, none valid alone, merge into one
+    header; the one-cell section banner is not part of it."""
+    out = orient_sheet(multiband_header_sheet())
+    assert out["orientation"] == "tidy"
+    tidy = out["tidy"]
+    assert tidy["header_rows"] == [0, 1, 3]
+    cols = tidy["columns"]
+    assert "ITEM" in cols[0]
+    assert any("Description" in c for c in cols)
+    assert any("2027" in c for c in cols)
+    # data rows follow, including the sparse SECTION A row
+    recs = tidy["records"]
+    machette = next(r for r in recs if any(v == "Machette" for v in r.values()))
+    year_cols = [c for c in cols if "2027" in c]
+    assert len(year_cols) == 2                       # qty + amount pair
+    assert [machette[c] for c in year_cols] == [50, 400]
+
+
+def test_side_by_side_tables_split_into_panels():
+    out = orient_sheet(side_by_side_sheet())
+    assert out["orientation"] == "multi"
+    assert len(out["panels"]) == 2
+    left, right = out["panels"]
+    assert (left["col_start"], left["col_end"]) == (0, 2)
+    assert (right["col_start"], right["col_end"]) == (4, 6)
+    assert left["orientation"] == "tidy"
+    assert right["orientation"] == "tidy"
+    assert left["tidy"]["columns"] == ["PARCELLE", "HA", "REGIMES"]
+    assert right["tidy"]["columns"] == ["POSTE", "BUDGET", "REEL"]
+    assert right["tidy"]["records"][0]["POSTE"] == "Salaires"
+    assert out["tidy"] is None
+
+
+def test_single_table_sheets_do_not_split():
+    for fixture in (tidy_sheet, matrix_sheet, year_matrix_sheet):
+        out = orient_sheet(fixture())
+        assert out["orientation"] != "multi", fixture.__name__
+        assert out["panels"] is None
 
 
 def test_classify_tidy():

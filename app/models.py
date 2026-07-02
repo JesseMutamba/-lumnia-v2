@@ -32,6 +32,8 @@ class SheetReport(BaseModel):
     orientation_confidence: float
     orientation_reason: str
     tidy: Optional[TidyTable] = None
+    # side-by-side tables: orientation == "multi", one entry per panel
+    panels: Optional[List[Dict[str, Any]]] = None
 
 
 class AnalyzeResponse(BaseModel):

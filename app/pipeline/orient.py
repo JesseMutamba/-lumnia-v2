@@ -172,6 +172,33 @@ def _label_cols(kinds, r0, r1, c0, first_period_col) -> List[int]:
     return out
 
 
+def _composite_header_rows(df, kinds, r0, r1, c0, c1) -> Optional[List[int]]:
+    """Multi-band headers: several sparse rows that only make sense together
+    (banner / field names / year bands), none passing the single-row heuristic.
+
+    Scanning from the top: a row joins the stack when all its filled cells are
+    labels (text, dates, or year numbers) and there are at least two of them.
+    Single-cell text rows (section banners) are skipped, not stacked. The first
+    row containing a plain non-year number is data — stop there. Needs >= 2
+    stacked layers and data below to count.
+    """
+    layers: List[int] = []
+    limit = min(r1, r0 + SCAN_ROWS)
+    for i in range(r0, limit + 1):
+        cells = [(j, kinds[i][j]) for j in range(c0, c1 + 1)
+                 if kinds[i][j] != BLANK]
+        if not cells:
+            continue
+        if any(k == NUMBER and _year_value(df.iat[i, j]) is None
+               for j, k in cells):
+            break                        # plain numbers -> the data has begun
+        if len(cells) >= 2:
+            layers.append(i)
+    if len(layers) >= 2 and layers[-1] < r1:
+        return layers
+    return None
+
+
 def _form_score(kinds, r0, r1, c0, c1) -> float:
     """Fraction of non-blank rows that carry only 1-2 filled cells (key/value)."""
     sparse = total = 0
@@ -256,7 +283,25 @@ def classify(df: pd.DataFrame) -> dict:
                 "reason": f"text header at row {header} with {data_rows} record row(s)",
             }
 
-    # 4) Decline honestly.
+    # 4) Composite multi-band header: no single row qualified, but a stack of
+    #    sparse label rows above the data does.
+    layers = _composite_header_rows(df, kinds, r0, r1, c0, c1)
+    if layers is not None:
+        data_rows = sum(
+            any(kinds[i][j] != BLANK for j in range(c0, c1 + 1))
+            for i in range(layers[-1] + 1, r1 + 1)
+        )
+        if data_rows >= 1:
+            return {
+                "orientation": "tidy",
+                "confidence": round(min(1.0, 0.3 + 0.1 * len(layers)
+                                        + 0.1 * min(data_rows, 3)), 3),
+                "meta": {"header_rows": layers, "box": box},
+                "reason": (f"composite multi-band header rows {layers} "
+                           f"with {data_rows} record row(s)"),
+            }
+
+    # 5) Decline honestly.
     return {"orientation": "unknown", "confidence": 0.0, "meta": {"box": box},
             "reason": "no orientation matched"}
 
@@ -377,6 +422,17 @@ def _merge_header_names(df, kinds, header_rows, cols) -> List[str]:
         vals = [df.iat[hr, j] for j in cols]
         if ridx < len(header_rows) - 1:      # group rows get horizontal ffill
             vals = _hffill(vals, kinds[hr], cols)
+            # a value spanning >80% of the columns after ffill is a title
+            # banner, not a group label — it adds no column information
+            counts: Dict[str, int] = {}
+            for v in vals:
+                if not is_blank(v):
+                    s = str(v).strip()
+                    counts[s] = counts.get(s, 0) + 1
+            banners = {s for s, n in counts.items() if n > 0.8 * len(cols)}
+            if banners:
+                vals = [None if (not is_blank(v) and str(v).strip() in banners)
+                        else v for v in vals]
         layers.append(vals)
     merged = []
     for k in range(len(cols)):
@@ -391,7 +447,10 @@ def _extract_tidy_table(df, kinds, meta, max_rows) -> dict:
     widest = max((sum(k != BLANK for k in kinds[i][c0:c1 + 1])
                   for i in range(r0, r1 + 1)), default=0)
 
-    header_rows = _detect_header_block(kinds, meta["header_row"], r1, c0, c1, widest)
+    if "header_rows" in meta:            # composite header already resolved
+        header_rows = meta["header_rows"]
+    else:
+        header_rows = _detect_header_block(kinds, meta["header_row"], r1, c0, c1, widest)
     names = _merge_header_names(df, kinds, header_rows, cols)
     data_start = header_rows[-1] + 1
 
@@ -513,13 +572,65 @@ def _extract_matrix(df, kinds, meta, max_rows) -> dict:
             "summary": table_summary(accs, total, extra)}
 
 
-def orient_sheet(df: pd.DataFrame, max_rows: int = 8) -> dict:
-    """Convenience: classify + attach a tidy preview when extractable."""
+# --------------------------------------------------------------------------- #
+# Side-by-side tables (panels)
+# --------------------------------------------------------------------------- #
+def _split_panels(kinds, box) -> List[Tuple[int, int]]:
+    """Column ranges of side-by-side tables, split on fully-blank columns.
+
+    Only ranges at least 2 columns wide count as panels; single stray columns
+    are ignored rather than reported as tables.
+    """
+    r0, r1, c0, c1 = box
+    panels, start = [], None
+    for j in range(c0, c1 + 2):
+        blank = j > c1 or all(kinds[i][j] == BLANK for i in range(r0, r1 + 1))
+        if blank:
+            if start is not None and j - start >= 2:
+                panels.append((start, j - 1))
+            start = None
+        elif start is None:
+            start = j
+    return panels
+
+
+def _orient_single(df: pd.DataFrame, max_rows: int) -> dict:
     result = classify(df)
-    tidy = extract_tidy(df, result, max_rows)
     return {
         "orientation": result["orientation"],
         "confidence": result["confidence"],
         "reason": result["reason"],
-        "tidy": tidy,
+        "tidy": extract_tidy(df, result, max_rows),
     }
+
+
+def orient_sheet(df: pd.DataFrame, max_rows: int = 8) -> dict:
+    """Classify + extract. Sheets holding several side-by-side tables
+    (separated by blank columns) are split and each panel handled on its own;
+    the sheet then reports orientation ``multi`` with per-panel results."""
+    kinds = _kinds(df)
+    box = bounding_box(kinds)
+    if box is not None:
+        panels = _split_panels(kinds, box)
+        if len(panels) >= 2:
+            sub = []
+            for lo, hi in panels:
+                res = _orient_single(df.iloc[:, lo:hi + 1], max_rows)
+                res["col_start"], res["col_end"] = lo, hi
+                sub.append(res)
+            recognized = sum(s["orientation"] != "unknown" for s in sub)
+            # Only worth splitting when >= 2 panels are real tables; otherwise
+            # the blank columns were just layout spacing.
+            if recognized >= 2:
+                return {
+                    "orientation": "multi",
+                    "confidence": round(min(s["confidence"] for s in sub
+                                            if s["orientation"] != "unknown"), 3),
+                    "reason": (f"{len(panels)} side-by-side tables separated "
+                               f"by blank columns"),
+                    "tidy": None,
+                    "panels": sub,
+                }
+    out = _orient_single(df, max_rows)
+    out["panels"] = None
+    return out

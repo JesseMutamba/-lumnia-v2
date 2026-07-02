@@ -52,6 +52,7 @@ def run_pipeline(content: bytes, filename: str) -> AnalyzeResponse:
                 orientation_confidence=orient["confidence"],
                 orientation_reason=orient["reason"],
                 tidy=orient["tidy"],
+                panels=orient.get("panels"),
             )
         )
 

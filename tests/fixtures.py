@@ -99,6 +99,34 @@ def french_numbers_sheet() -> pd.DataFrame:
     ])
 
 
+def multiband_header_sheet() -> pd.DataFrame:
+    """Sparse multi-band header: banner, field names, year band and a MONTANT
+    sub-label spread over several rows (with blanks and a one-cell section
+    banner in between) — no single row is a valid header on its own.
+    Years label column *pairs* (qty, amount) as in real budget sheets — so
+    this is banded, not a year-axis matrix."""
+    return pd.DataFrame([
+        ["ITEM", "DEPENSES", None, None, None, None, None, None],
+        [None, "Description", "Unité", "Qté", None, None, None, None],
+        [None, None, None, None, None, None, None, None],
+        [None, None, None, None, 2026, 2026, 2027, 2027],
+        [None, "SECTION A", None, None, None, None, None, None],
+        [1, "Machette", "Pièce", 8, 50, 400, 50, 400],
+        [2, "Pelle", "Pièce", 4, 10, 80, 10, 80],
+        [3, "Lime", "Pièce", 10, 2, 20, 2, 20],
+    ])
+
+
+def side_by_side_sheet() -> pd.DataFrame:
+    """Two independent tidy tables on one sheet, separated by a blank column."""
+    return pd.DataFrame([
+        ["PARCELLE", "HA", "REGIMES", None, "POSTE", "BUDGET", "REEL"],
+        ["BLOC 1", 10, 100, None, "Salaires", 60, 58],
+        ["BLOC 2", 12, 120, None, "Carburant", 15, 19],
+        ["BLOC 3", 8, 80, None, "Entretien", 9, 9],
+    ])
+
+
 def unknown_sheet() -> pd.DataFrame:
     """A raw numeric block: no header, no dates, not sparse -> decline."""
     return pd.DataFrame([
