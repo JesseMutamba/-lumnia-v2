@@ -7,6 +7,8 @@ Endpoints
   full analysis (Steps 1-4), persisted; the response carries its ``id``.
 * ``GET    /analyses``             — list stored analyses (metadata only).
 * ``GET    /analyses/{id}``        — full stored report.
+* ``GET    /analyses/{id}/findings`` — workbook-level audit: every discovered
+  relation across all sheets/panels, mismatches ranked by money impact.
 * ``POST   /analyses/{id}/rerun``  — re-run the *current* pipeline on the
   stored original bytes (the pipeline improves step by step; old uploads
   benefit without re-uploading).
@@ -17,13 +19,16 @@ from __future__ import annotations
 from fastapi import FastAPI, File, HTTPException, UploadFile
 
 from . import storage
+from .findings import aggregate_findings
 from .models import (
     AnalysisMeta,
     AnalyzeResponse,
     DeleteResponse,
+    FindingsResponse,
     HealthResponse,
     SheetReport,
 )
+from .pipeline.celltypes import grid_kinds
 from .pipeline.ingest import read_upload
 from .pipeline.orient import orient_sheet
 from .pipeline.profile import profile_sheet
@@ -43,8 +48,9 @@ def run_pipeline(content: bytes, filename: str) -> AnalyzeResponse:
 
     reports = []
     for name, df in sheets.items():
-        prof = profile_sheet(name, df)
-        orient = orient_sheet(df)
+        kinds = grid_kinds(df)               # one classification pass per sheet
+        prof = profile_sheet(name, df, kinds=kinds)
+        orient = orient_sheet(df, kinds=kinds)
         reports.append(
             SheetReport(
                 **prof,
@@ -92,6 +98,18 @@ def get_analysis(analysis_id: str) -> AnalyzeResponse:
         raise HTTPException(status_code=404,
                             detail=f"No analysis '{analysis_id}'.")
     return AnalyzeResponse(**report)
+
+
+@app.get("/analyses/{analysis_id}/findings", response_model=FindingsResponse)
+def get_findings(analysis_id: str) -> FindingsResponse:
+    """The workbook-level audit: every discovered relation across all sheets
+    and panels, with mismatches ranked by total money impact."""
+    report = storage.get_report(analysis_id)
+    if report is None:
+        raise HTTPException(status_code=404,
+                            detail=f"No analysis '{analysis_id}'.")
+    agg = aggregate_findings(report)
+    return FindingsResponse(id=analysis_id, filename=report["filename"], **agg)
 
 
 @app.post("/analyses/{analysis_id}/rerun", response_model=AnalyzeResponse)

@@ -19,7 +19,7 @@ from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 
-from .celltypes import cell_kind, is_blank, BLANK, DATE, NUMBER, TEXT
+from .celltypes import cell_kind, grid_kinds, is_blank, BLANK, DATE, NUMBER, TEXT
 from .checks import run_checks
 from .coerce import coerce_value
 from .jsonsafe import jsonify
@@ -48,8 +48,7 @@ YEAR_AXIS_COVERAGE = 0.7
 # Geometry helpers
 # --------------------------------------------------------------------------- #
 def _kinds(df: pd.DataFrame) -> List[List[str]]:
-    return [[cell_kind(df.iat[i, j]) for j in range(df.shape[1])]
-            for i in range(df.shape[0])]
+    return grid_kinds(df)
 
 
 def bounding_box(kinds: List[List[str]]) -> Optional[Tuple[int, int, int, int]]:
@@ -213,9 +212,10 @@ def _form_score(kinds, r0, r1, c0, c1) -> float:
     return sparse / total if total else 0.0
 
 
-def classify(df: pd.DataFrame) -> dict:
+def classify(df: pd.DataFrame, kinds: Optional[List[List[str]]] = None) -> dict:
     """Return orientation + confidence + extraction metadata for one sheet."""
-    kinds = _kinds(df)
+    if kinds is None:
+        kinds = _kinds(df)
     box = bounding_box(kinds)
     if box is None:
         return {"orientation": "unknown", "confidence": 0.0, "meta": {},
@@ -264,7 +264,7 @@ def classify(df: pd.DataFrame) -> dict:
                 "reason": f"{form:.0%} of rows are sparse key/value pairs"}
 
     # 3) Tidy: a text header row with genuine records beneath it.
-    header = guess_header_row(df)
+    header = guess_header_row(df, kinds=kinds)
     if header is not None and header < r1:
         data_rows = sum(
             any(kinds[i][j] != BLANK for j in range(c0, c1 + 1))
@@ -333,7 +333,8 @@ def _ffill_label_cols(df: pd.DataFrame, kinds, cols, r_start, r_end) -> Dict[Tup
     return filled
 
 
-def extract_tidy(df: pd.DataFrame, result: dict, max_rows: int = 8) -> Optional[dict]:
+def extract_tidy(df: pd.DataFrame, result: dict, max_rows: int = 8,
+                 kinds: Optional[List[List[str]]] = None) -> Optional[dict]:
     """Build a normalized table for a tidy or matrix sheet.
 
     Returns ``{columns, records, n_records, n_columns}`` or ``None`` when the
@@ -341,7 +342,8 @@ def extract_tidy(df: pd.DataFrame, result: dict, max_rows: int = 8) -> Optional[
     """
     orient = result["orientation"]
     meta = result["meta"]
-    kinds = _kinds(df)
+    if kinds is None:
+        kinds = _kinds(df)
 
     if orient == "tidy":
         return _extract_tidy_table(df, kinds, meta, max_rows)
@@ -594,28 +596,65 @@ def _split_panels(kinds, box) -> List[Tuple[int, int]]:
     return panels
 
 
-def _orient_single(df: pd.DataFrame, max_rows: int) -> dict:
-    result = classify(df)
+def _split_bands(kinds, box) -> List[Tuple[int, int]]:
+    """Row ranges of vertically stacked tables, split on fully-blank rows.
+    Only bands at least 2 rows tall count."""
+    r0, r1, c0, c1 = box
+    bands, start = [], None
+    for i in range(r0, r1 + 2):
+        blank = i > r1 or all(kinds[i][j] == BLANK for j in range(c0, c1 + 1))
+        if blank:
+            if start is not None and i - start >= 2:
+                bands.append((start, i - 1))
+            start = None
+        elif start is None:
+            start = i
+    return bands
+
+
+def _offset_band_rows(res: dict, lo: int) -> None:
+    """A band was classified on a row slice; shift its row references back to
+    the real sheet so header_rows and check findings still point at Excel."""
+    t = res.get("tidy")
+    if not t:
+        return
+    if t.get("header_rows"):
+        t["header_rows"] = [h + lo for h in t["header_rows"]]
+    for f in t.get("checks") or []:
+        for m in f.get("mismatches", []):
+            m["row"] += lo
+
+
+def _orient_single(df: pd.DataFrame, max_rows: int,
+                   kinds: Optional[List[List[str]]] = None) -> dict:
+    if kinds is None:
+        kinds = _kinds(df)
+    result = classify(df, kinds)
     return {
         "orientation": result["orientation"],
         "confidence": result["confidence"],
         "reason": result["reason"],
-        "tidy": extract_tidy(df, result, max_rows),
+        "tidy": extract_tidy(df, result, max_rows, kinds),
     }
 
 
-def orient_sheet(df: pd.DataFrame, max_rows: int = 8) -> dict:
+def orient_sheet(df: pd.DataFrame, max_rows: int = 8,
+                 kinds: Optional[List[List[str]]] = None) -> dict:
     """Classify + extract. Sheets holding several side-by-side tables
     (separated by blank columns) are split and each panel handled on its own;
-    the sheet then reports orientation ``multi`` with per-panel results."""
-    kinds = _kinds(df)
+    the sheet then reports orientation ``multi`` with per-panel results.
+    Vertically stacked tables (separated by blank rows) are tried as a
+    fallback when the sheet as a whole cannot be classified."""
+    if kinds is None:
+        kinds = _kinds(df)
     box = bounding_box(kinds)
     if box is not None:
         panels = _split_panels(kinds, box)
         if len(panels) >= 2:
             sub = []
             for lo, hi in panels:
-                res = _orient_single(df.iloc[:, lo:hi + 1], max_rows)
+                pk = [row[lo:hi + 1] for row in kinds]
+                res = _orient_single(df.iloc[:, lo:hi + 1], max_rows, pk)
                 res["col_start"], res["col_end"] = lo, hi
                 sub.append(res)
             recognized = sum(s["orientation"] != "unknown" for s in sub)
@@ -631,6 +670,32 @@ def orient_sheet(df: pd.DataFrame, max_rows: int = 8) -> dict:
                     "tidy": None,
                     "panels": sub,
                 }
-    out = _orient_single(df, max_rows)
+
+    out = _orient_single(df, max_rows, kinds)
     out["panels"] = None
+
+    # Fallback for vertically stacked sheets (title / table / table / notes):
+    # only when the sheet as a whole declined — sheets that already classify
+    # (e.g. with internal spacer rows) are never shredded into bands.
+    if out["orientation"] == "unknown" and box is not None:
+        bands = _split_bands(kinds, box)
+        if len(bands) >= 2:
+            sub = []
+            for lo, hi in bands:
+                res = _orient_single(df.iloc[lo:hi + 1], max_rows,
+                                     kinds[lo:hi + 1])
+                _offset_band_rows(res, lo)
+                res["row_start"], res["row_end"] = lo, hi
+                sub.append(res)
+            recognized = sum(s["orientation"] != "unknown" for s in sub)
+            if recognized >= 2:
+                return {
+                    "orientation": "multi",
+                    "confidence": round(min(s["confidence"] for s in sub
+                                            if s["orientation"] != "unknown"), 3),
+                    "reason": (f"{len(bands)} stacked tables separated "
+                               f"by blank rows"),
+                    "tidy": None,
+                    "panels": sub,
+                }
     return out

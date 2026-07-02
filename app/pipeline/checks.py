@@ -96,6 +96,12 @@ def check_products(names: List[str], cols: Dict[str, List[Optional[float]]],
             hits = [i for i in idx if _close(a[i] * b[i], c[i])]
             if len(hits) < max(PRODUCT_MIN_MATCHED, MIN_SUPPORT_FRAC * len(idx)):
                 continue
+            # 0 x anything = 0 rows prove nothing; a real relation needs
+            # enough matches with actual values in them (zero-heavy sheets
+            # otherwise "support" any product involving their zeros).
+            informative = sum(1 for i in hits if c[i] != 0)
+            if informative < PRODUCT_MIN_MATCHED:
+                continue
             if best is None or len(hits) > best[0]:
                 best = (len(hits), idx, a_name, b_name)
         if best is None:
@@ -164,6 +170,8 @@ def check_row_sums(names: List[str], cols: Dict[str, List[Optional[float]]],
             hits = [i for i in idx if _close(rowsum(i), c[i])]
             if len(hits) < max(MIN_SUPPORT_ROWS, MIN_SUPPORT_FRAC * len(idx)):
                 continue
+            if sum(1 for i in hits if c[i] != 0) < MIN_SUPPORT_ROWS:
+                continue                     # all-zero agreement proves nothing
             mism = [_mismatch(rows[i], labels[i], rowsum(i), c[i])
                     for i in idx if not _close(rowsum(i), c[i])]
             findings.append(_finding(
