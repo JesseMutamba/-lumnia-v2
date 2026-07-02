@@ -19,6 +19,7 @@ from typing import Dict, List, Optional, Tuple
 import pandas as pd
 
 from .celltypes import cell_kind, is_blank, BLANK, DATE, NUMBER, TEXT
+from .checks import run_checks
 from .coerce import coerce_value
 from .jsonsafe import jsonify
 from .metrics import ColumnAcc, table_summary
@@ -326,26 +327,48 @@ def _extract_tidy_table(df, kinds, meta, max_rows) -> dict:
 
     accs = [ColumnAcc(name) for name in names]
     records = []
+    col_values = [[] for _ in cols]          # full coerced columns for Step 4
+    row_numbers = []                          # 1-based sheet rows, as Excel shows
     total = 0
     for i in range(data_start, r1 + 1):
         if not any(kinds[i][j] != BLANK for j in cols):
             continue
         total += 1
+        row_numbers.append(i + 1)
         rec = {}
-        for acc, name, j in zip(accs, names, cols):
+        for idx, (acc, name, j) in enumerate(zip(accs, names, cols)):
             v = ff[(i, j)] if (i, j) in ff else df.iat[i, j]
             k = cell_kind(v)                 # profile the effective (ffilled) value
             cv = coerce_value(v)
             acc.add(k, cv)                   # Step 3: streaming column stats
+            col_values[idx].append(cv)
             if len(records) < max_rows:
                 rec[name] = cv
         if len(records) < max_rows:
             records.append(rec)
+
+    # Step 4: reconciliation checks over the numeric columns. Rows are labelled
+    # by the first text column so findings point at "Semences, row 10", not
+    # just an index.
+    numeric_cols = {
+        name: [v if isinstance(v, (int, float)) and not isinstance(v, bool)
+               else None for v in vals]
+        for acc, name, vals in zip(accs, names, col_values)
+        if acc.dtype() == "number"
+    }
+    label_idx = next((k for k, a in enumerate(accs) if a.dtype() == "text"), None)
+    row_labels = ([str(v) if v is not None else None
+                   for v in col_values[label_idx]]
+                  if label_idx is not None else [None] * total)
+    checks = run_checks(names, numeric_cols, row_numbers, row_labels) \
+        if numeric_cols else None
+
     return {"columns": names, "records": records, "n_records": total,
             "n_columns": len(names),
             "column_types": [a.profile() for a in accs],
             "header_rows": header_rows,
-            "summary": table_summary(accs, total)}
+            "summary": table_summary(accs, total),
+            "checks": checks}
 
 
 def _extract_matrix(df, kinds, meta, max_rows) -> dict:
