@@ -2,6 +2,7 @@ from app.pipeline.orient import classify, orient_sheet
 from tests.fixtures import (
     tidy_sheet, matrix_sheet, form_sheet, unknown_sheet, empty_sheet,
     multi_header_sheet, french_numbers_sheet,
+    complementary_header_sheet, blank_header_cells_sheet,
 )
 
 
@@ -64,6 +65,26 @@ def test_multi_row_header_merges_group_and_sub_labels():
     assert tidy["columns"] == ["Bloc / ID", "Bloc / Name",
                                "Production / Jan", "Production / Feb"]
     assert tidy["n_records"] == 2
+
+
+def test_complementary_header_rows_merge():
+    """Row 0 carries the period labels, row 1 the field names — together they
+    are one header, even though row 1 is sparse relative to the data rows."""
+    tidy = orient_sheet(complementary_header_sheet())["tidy"]
+    assert tidy["header_rows"] == [0, 1]
+    assert tidy["n_records"] == 2
+    cols = tidy["columns"]
+    # Field names from the second layer are present, months from the first.
+    assert any("Unité" in c for c in cols)
+    assert any("Qté" in c for c in cols)
+    assert "Jan" in cols and "Mar" in cols
+    assert tidy["records"][0]["Jan"] == 10
+
+
+def test_blank_header_cells_get_positional_names():
+    tidy = orient_sheet(blank_header_cells_sheet())["tidy"]
+    assert "nan" not in tidy["columns"]
+    assert tidy["columns"] == ["PARCELLE", "col_1", "HA"]
 
 
 def test_tidy_coerces_french_numbers_and_profiles_columns():

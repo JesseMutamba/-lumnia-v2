@@ -191,7 +191,7 @@ def classify(df: pd.DataFrame) -> dict:
 def _unique_names(raw: List[Optional[object]]) -> List[str]:
     names, seen = [], {}
     for j, v in enumerate(raw):
-        base = str(v).strip() if v not in (None, "") else f"col_{j}"
+        base = str(v).strip() if not is_blank(v) else f"col_{j}"
         if base == "":
             base = f"col_{j}"
         n = seen.get(base, 0)
@@ -237,6 +237,25 @@ def _row_is_header_like(row, c0, c1, widest) -> bool:
     return cnt[TEXT] >= 0.5 * filled
 
 
+def _fills_gaps(kinds, block_rows, cand, c0, c1) -> bool:
+    """True when row ``cand`` is a *complementary* header layer: mostly text,
+    and most of its filled cells sit under columns the block so far left blank.
+
+    Real-world pattern: row A carries the period labels on the right, row B
+    carries the field names on the left — together they form one header. Data
+    rows never look like this: their cells sit *under* the filled header
+    columns, so the gap fraction stays low and they are rejected.
+    """
+    cand_cols = [j for j in range(c0, c1 + 1) if kinds[cand][j] != BLANK]
+    if len(cand_cols) < 2:
+        return False
+    text = sum(kinds[cand][j] == TEXT for j in cand_cols)
+    if text < 0.5 * len(cand_cols):
+        return False
+    gaps = sum(all(kinds[r][j] == BLANK for r in block_rows) for j in cand_cols)
+    return gaps >= 0.6 * len(cand_cols)
+
+
 def _detect_header_block(kinds, start, r1, c0, c1, widest, max_span=3) -> List[int]:
     """Consecutive header-like rows starting at ``start`` (multi-row headers).
 
@@ -252,7 +271,11 @@ def _detect_header_block(kinds, start, r1, c0, c1, widest, max_span=3) -> List[i
     i = start + 1
     while (i <= r1 and len(rows) < max_span
            and any(kinds[rows[-1]][j] == BLANK for j in range(c0, c1 + 1))
-           and _row_is_header_like(kinds[i], c0, c1, widest)):
+           and ((_row_is_header_like(kinds[i], c0, c1, widest)
+                 # extension layers must be pure text: a numeric cell means it
+                 # is a data row, not a sub-header (years live in layer one)
+                 and not any(kinds[i][j] == NUMBER for j in range(c0, c1 + 1)))
+                or _fills_gaps(kinds, rows, i, c0, c1))):
         rows.append(i)
         i += 1
     if rows[-1] >= r1:
