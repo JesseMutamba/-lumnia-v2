@@ -19,6 +19,7 @@ exhaustively, and we return nothing rather than noise.
 """
 from __future__ import annotations
 
+import re
 from itertools import combinations
 from typing import Any, Dict, List, Optional
 
@@ -76,11 +77,137 @@ def _is_degenerate(vals: List[Optional[float]]) -> bool:
     return present <= {0.0, 1.0}
 
 
+# A totals row must match on this share of its filled numeric cells...
+TOTAL_ROW_COVERAGE = 0.6
+# ...with at least this many non-zero matching cells, over a base of >= 2 rows.
+TOTAL_ROW_MIN_MATCH = 2
+
+# Generic summary-row labels (not file-specific): a row labelled like this is
+# a totals *claim*, detected even when its numbers DON'T add up — those are
+# precisely the rows the audit must verify rather than trust.
+_TOTAL_LABEL_RE = re.compile(r"\b(total|totaux|totales?|somme|cumul|sum)\b",
+                             re.IGNORECASE)
+
+
+def detect_total_rows(names: List[str],
+                      cols: Dict[str, List[Optional[float]]],
+                      labels: Optional[List[Optional[str]]] = None) -> List[dict]:
+    """Find summary rows by two independent signals:
+
+    * **values** — the row's numeric cells equal the column sums of the data
+      rows above it (section sums catch subtotals, the grand sum catches a
+      bottom line spanning subtotalled sections). Guards: at least
+      TOTAL_ROW_MIN_MATCH non-zero matching cells, TOTAL_ROW_COVERAGE of the
+      row's filled cells matching, and a base of >= 2 accumulated rows (so
+      constant-value columns can't make every row look like a total of the
+      one above it).
+    * **label** — the row label reads like a total ("TOTAL", "SOUS-TOTAL",
+      "somme", ...). These are totals *claims*: they are detected even when
+      broken and verified against whichever base (section or grand) fits
+      best, so a total that doesn't add up becomes a finding instead of
+      silently passing as data.
+
+    Returns ``[{"i": record_index, "base": {col: expected_sum}}]``.
+    """
+    if not cols:
+        return []
+    n = len(next(iter(cols.values())))
+    section = {name: 0.0 for name in cols}
+    grand = {name: 0.0 for name in cols}
+    section_rows = grand_rows = 0
+    out = []
+    for i in range(n):
+        row = {name: cols[name][i] for name in cols if cols[name][i] is not None}
+        if not row:
+            continue
+
+        is_total, base_used = False, None
+        candidates = [(section, section_rows), (grand, grand_rows)]
+        for base, base_rows in candidates:
+            if base_rows < 2:
+                continue
+            matched = [name for name, v in row.items() if _close(base[name], v)]
+            nonzero = sum(1 for name in matched if row[name] != 0)
+            if (nonzero >= TOTAL_ROW_MIN_MATCH
+                    and len(matched) >= TOTAL_ROW_COVERAGE * len(row)):
+                is_total, base_used = True, dict(base)
+                break
+
+        label = (labels[i] if labels else None) or ""
+        if not is_total and _TOTAL_LABEL_RE.search(label):
+            # A claimed total: verify against whichever base explains it best.
+            scored = [
+                (sum(_close(base[name], v) for name, v in row.items()), dict(base))
+                for base, base_rows in candidates if base_rows >= 1
+            ]
+            if scored:
+                is_total, base_used = True, max(scored, key=lambda s: s[0])[1]
+
+        if is_total:
+            out.append({"i": i, "base": base_used})
+            section = {name: 0.0 for name in cols}
+            section_rows = 0
+        else:
+            for name, v in row.items():
+                section[name] += v
+                grand[name] += v
+            section_rows += 1
+            grand_rows += 1
+    return out
+
+
+def check_column_sums(names: List[str], cols: Dict[str, List[Optional[float]]],
+                      rows: List[int], labels: List[Optional[str]],
+                      totals: List[dict]) -> List[dict]:
+    """One finding per detected totals row: does every declared total match
+    the column sum it summarises? Mismatch entries reuse the standard shape
+    with ``label`` naming the offending *column*.
+
+    Fail honest: when the row disagrees with the base on most columns, or
+    agrees only on zeros, it is OUR model of what it sums that is wrong
+    (hierarchical sections with parent+child rows both present, summaries of
+    a different block, ...) — the finding is reported ``unverified`` with no
+    fabricated expected/actual claims, rather than as a false mismatch.
+    """
+    findings = []
+    for t in totals:
+        i, base = t["i"], t["base"]
+        declared = {name: cols[name][i] for name in cols
+                    if cols[name][i] is not None}
+        matched = {name: v for name, v in declared.items()
+                   if _close(base[name], v)}
+        nonzero_matched = sum(1 for v in matched.values() if v != 0)
+        who = labels[i] or f"row {rows[i]}"
+
+        if len(matched) < len(declared) and (
+                len(matched) < 0.5 * len(declared) or nonzero_matched < 1):
+            findings.append({
+                "kind": "column_sum",
+                "formula": (f"totals row {rows[i]} ({who}) could not be "
+                            f"verified against the rows above it"),
+                "target": who, "inputs": [],
+                "n_checked": len(declared), "n_matched": len(matched),
+                "n_mismatched": 0, "total_abs_delta": 0.0,
+                "mismatches": [], "status": "unverified",
+            })
+            continue
+
+        mism = [_mismatch(rows[i], name, base[name], v)
+                for name, v in declared.items() if name not in matched]
+        findings.append(_finding(
+            "column_sum",
+            f"totals row {rows[i]} ({who}) = column sums of the rows above",
+            who, [], len(declared), len(declared) - len(mism), mism))
+    return findings
+
+
 def check_products(names: List[str], cols: Dict[str, List[Optional[float]]],
-                   rows: List[int], labels: List[Optional[str]]) -> List[dict]:
+                   rows: List[int], labels: List[Optional[str]],
+                   exclude: Optional[set] = None) -> List[dict]:
     numeric = [n for n in names if n in cols]
     if len(numeric) > MAX_PRODUCT_COLS:
         return []
+    exclude = exclude or set()
     findings = []
     for target in numeric:
         c = cols[target]
@@ -89,8 +216,8 @@ def check_products(names: List[str], cols: Dict[str, List[Optional[float]]],
             a, b = cols[a_name], cols[b_name]
             if _is_degenerate(a) or _is_degenerate(b):
                 continue
-            idx = [i for i in range(len(c))
-                   if a[i] is not None and b[i] is not None and c[i] is not None]
+            idx = [i for i in range(len(c)) if i not in exclude
+                   and a[i] is not None and b[i] is not None and c[i] is not None]
             if len(idx) < MIN_SUPPORT_ROWS:
                 continue
             hits = [i for i in idx if _close(a[i] * b[i], c[i])]
@@ -140,8 +267,10 @@ def _numeric_runs(names: List[str], numeric: set, min_len: int = 3) -> List[List
 
 
 def check_row_sums(names: List[str], cols: Dict[str, List[Optional[float]]],
-                   rows: List[int], labels: List[Optional[str]]) -> List[dict]:
+                   rows: List[int], labels: List[Optional[str]],
+                   exclude: Optional[set] = None) -> List[dict]:
     numeric = set(cols)
+    exclude = exclude or set()
     findings = []
     for run in _numeric_runs(names, numeric):
         run_set = set(run)
@@ -157,7 +286,7 @@ def check_row_sums(names: List[str], cols: Dict[str, List[Optional[float]]],
             c = cols[target]
             idx = []
             for i in range(len(c)):
-                if c[i] is None:
+                if c[i] is None or i in exclude:
                     continue
                 vals = [cols[n][i] for n in parts]
                 if all(p is None for p in vals):
@@ -184,11 +313,21 @@ def check_row_sums(names: List[str], cols: Dict[str, List[Optional[float]]],
 def run_checks(names: List[str],
                numeric_cols: Dict[str, List[Optional[float]]],
                row_numbers: List[int],
-               row_labels: List[Optional[str]]) -> Optional[List[dict]]:
-    """Discover + verify relations. Returns findings sorted with mismatches
-    (largest money impact) first, or ``None`` when nothing was checkable."""
-    findings = (check_products(names, numeric_cols, row_numbers, row_labels)
-                + check_row_sums(names, numeric_cols, row_numbers, row_labels))
+               row_labels: List[Optional[str]],
+               totals: Optional[List[dict]] = None) -> Optional[List[dict]]:
+    """Discover + verify relations. Detected totals rows are verified against
+    their column sums and excluded from the row-level relation checks (they
+    are derived rows, not observations). Returns findings sorted with
+    mismatches (largest money impact) first, or ``None`` when nothing was
+    checkable."""
+    if totals is None:
+        totals = detect_total_rows(names, numeric_cols, row_labels)
+    exclude = {t["i"] for t in totals}
+    findings = (
+        check_column_sums(names, numeric_cols, row_numbers, row_labels, totals)
+        + check_products(names, numeric_cols, row_numbers, row_labels, exclude)
+        + check_row_sums(names, numeric_cols, row_numbers, row_labels, exclude)
+    )
     if not findings:
         return None
     findings.sort(key=lambda f: (f["status"] == "ok", -f["total_abs_delta"]))

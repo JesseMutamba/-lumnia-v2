@@ -15,6 +15,8 @@ class TidyTable(BaseModel):
     header_rows: Optional[List[int]] = None
     summary: Optional[Dict[str, Any]] = None
     checks: Optional[List[Dict[str, Any]]] = None
+    # 1-based sheet rows detected as summary/totals rows (derived, not data)
+    total_rows: Optional[List[int]] = None
 
 
 class SheetReport(BaseModel):
@@ -61,9 +63,12 @@ class FindingsResponse(BaseModel):
     filename: str
     n_mismatched_relations: int
     n_verified_relations: int
+    n_unverified_relations: int
     total_abs_delta: float
     findings: List[Dict[str, Any]]
     verified: List[Dict[str, Any]]
+    # totals rows whose structure we could not model — reported, not guessed
+    unverified: List[Dict[str, Any]]
 
 
 class DeleteResponse(BaseModel):

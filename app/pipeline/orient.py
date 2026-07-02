@@ -20,7 +20,7 @@ from typing import Dict, List, Optional, Tuple
 import pandas as pd
 
 from .celltypes import cell_kind, grid_kinds, is_blank, BLANK, DATE, NUMBER, TEXT
-from .checks import run_checks
+from .checks import detect_total_rows, run_checks
 from .coerce import coerce_value
 from .jsonsafe import jsonify
 from .metrics import ColumnAcc, table_summary
@@ -496,15 +496,19 @@ def _extract_tidy_table(df, kinds, meta, max_rows) -> dict:
     row_labels = ([str(v) if v is not None else None
                    for v in col_values[label_idx]]
                   if label_idx is not None else [None] * total)
-    checks = run_checks(names, numeric_cols, row_numbers, row_labels) \
-        if numeric_cols else None
+    totals = detect_total_rows(names, numeric_cols, row_labels) \
+        if numeric_cols else []
+    checks = run_checks(names, numeric_cols, row_numbers, row_labels,
+                        totals=totals) if numeric_cols else None
 
     return {"columns": names, "records": records, "n_records": total,
             "n_columns": len(names),
             "column_types": [a.profile() for a in accs],
             "header_rows": header_rows,
             "summary": table_summary(accs, total),
-            "checks": checks}
+            "checks": checks,
+            # 1-based sheet rows detected as summary/totals rows
+            "total_rows": [row_numbers[t["i"]] for t in totals] or None}
 
 
 def _extract_matrix(df, kinds, meta, max_rows) -> dict:
@@ -620,6 +624,8 @@ def _offset_band_rows(res: dict, lo: int) -> None:
         return
     if t.get("header_rows"):
         t["header_rows"] = [h + lo for h in t["header_rows"]]
+    if t.get("total_rows"):
+        t["total_rows"] = [r + lo for r in t["total_rows"]]
     for f in t.get("checks") or []:
         for m in f.get("mismatches", []):
             m["row"] += lo

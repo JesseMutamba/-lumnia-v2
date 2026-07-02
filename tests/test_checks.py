@@ -105,6 +105,104 @@ def test_too_few_rows_declines():
     assert _findings(df) is None
 
 
+def _sheet_with_totals(broken_total: bool = False) -> pd.DataFrame:
+    """Data rows, a section subtotal, more data, and a grand total row."""
+    grand_ha = 30 + 21 if not broken_total else 60
+    return pd.DataFrame([
+        ["PARCELLE", "HA", "REGIMES"],
+        ["BLOC 1", 10, 100],
+        ["BLOC 2", 12, 120],
+        ["BLOC 3", 8, 80],
+        ["SOUS-TOTAL A", 30, 300],
+        ["BLOC 4", 15, 150],
+        ["BLOC 5", 6, 60],
+        ["SOUS-TOTAL B", 21, 210],
+        ["TOTAL GENERAL", grand_ha, 510],
+    ])
+
+
+def test_total_rows_detected_and_reported():
+    tidy = orient_sheet(_sheet_with_totals())["tidy"]
+    # 1-based sheet rows: subtotals at rows 5 and 8, grand total at row 9.
+    assert tidy["total_rows"] == [5, 8, 9]
+
+
+def test_column_sum_check_verifies_clean_totals():
+    findings = orient_sheet(_sheet_with_totals())["tidy"]["checks"]
+    sums = [f for f in findings if f["kind"] == "column_sum"]
+    assert len(sums) == 3
+    assert all(f["status"] == "ok" for f in sums)
+
+
+def test_column_sum_check_flags_broken_total():
+    findings = orient_sheet(_sheet_with_totals(broken_total=True))["tidy"]["checks"]
+    bad = [f for f in findings if f["kind"] == "column_sum"
+           and f["status"] == "mismatch"]
+    assert len(bad) == 1
+    m = bad[0]["mismatches"][0]
+    assert m["label"] == "HA"                # the offending COLUMN
+    assert m["expected"] == 51
+    assert m["actual"] == 60
+    assert m["row"] == 9
+
+
+def test_totals_rows_excluded_from_relation_checks():
+    """A totals row must not be counted (or flagged) by product/row-sum
+    relations: it is a derived row, not an observation."""
+    df = pd.DataFrame([
+        ["Description", "Qté", "Cout unit", "Montant"],
+        ["A", 100, 2.4, 240],
+        ["B", 5, 8, 40],
+        ["C", 4, 8, 32],
+        ["D", 10, 1.5, 15],
+        ["E", 3, 45, 135],
+        ["F", 200, 0.25, 50],
+        # totals row: Qté and Montant are column sums; Qté x Cout unit does
+        # NOT hold here and must not be reported as a violation.
+        ["TOTAL", 322, None, 512],
+    ])
+    findings = orient_sheet(df)["tidy"]["checks"]
+    prod = next(f for f in findings if f["kind"] == "product")
+    assert prod["status"] == "ok"
+    assert prod["n_checked"] == 6            # totals row not among them
+
+
+def test_hierarchical_section_totals_are_unverified_not_false_mismatches():
+    """Sections where parent rows and their children BOTH appear make the
+    naive rows-above sum double-count; the claimed total must come back
+    'unverified', never as a fabricated mismatch."""
+    df = pd.DataFrame([
+        ["POSTE", "MONTANT", "PART"],
+        ["PLANTATIONS", 100, 10],       # parent = sum of next 2 rows
+        ["PRODUCTION", 60, 6],
+        ["MAINTENANCE", 40, 4],
+        ["TECHNIQUES", 50, 5],          # parent = sum of next 2 rows
+        ["USINE", 30, 3],
+        ["GARAGE", 20, 2],
+        ["SOUS-TOTAL", 150, 15],        # correct at group level; naive sum = 300
+    ])
+    findings = orient_sheet(df)["tidy"]["checks"]
+    colsum = [f for f in findings if f["kind"] == "column_sum"]
+    assert len(colsum) == 1
+    assert colsum[0]["status"] == "unverified"
+    assert colsum[0]["mismatches"] == []
+    assert colsum[0]["total_abs_delta"] == 0
+
+
+def test_constant_columns_do_not_fake_totals():
+    """Repeated identical values (rates, densities) must not make ordinary
+    rows look like totals of the row above."""
+    df = pd.DataFrame([
+        ["BLOC", "DENSITE", "TAUX", "HA"],
+        ["A", 143, 0.15, 800],
+        ["B", 143, 0.15, 1200],
+        ["C", 143, 0.15, 1100],
+        ["D", 143, 0.15, 1021],
+    ])
+    tidy = orient_sheet(df)["tidy"]
+    assert tidy["total_rows"] is None
+
+
 def test_blank_months_count_as_zero_in_row_sums():
     df = pd.DataFrame([
         ["Poste", "Total", "Jan", "Fev", "Mar"],

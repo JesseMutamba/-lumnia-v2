@@ -69,8 +69,12 @@ summaries, computed in the same pass as extraction. Mixed columns report
 per-kind sub-stats; distinct counts cap honestly instead of miscounting.
 
 **Step 4 — reconciliation checks.** Arithmetic relations **discovered from
-values, never column names**: products (`Montant = Qté × Cout unit`) and row
-sums (`Total = Janvier + … + Décembre`). Every violating row is reported with
+values, never column names**: products (`Montant = Qté × Cout unit`), row
+sums (`Total = Janvier + … + Décembre`), and **column sums** (totals rows —
+detected by value or by label — verified against the rows they summarise).
+Totals rows are excluded from row-level relations; totals whose structure
+can't be modelled (hierarchical sections) come back `unverified`, never as
+fabricated mismatches. Every violating row is reported with
 expected/actual/delta and its 1-based Excel row. Coincidence guards: minimum
 matching rows, 70% support, dedup of algebraic rearrangements, and zero-heavy
 matches don't count as evidence.
@@ -99,5 +103,5 @@ pytest -q
 4. ✅ Deterministic checks — self-auditing reconciliation, fail honest
 5. ✅ Persistence + stored-analyses API (findings audit endpoint)
 
-Next candidates: totals-row detection (exclude summary rows from row-level
-checks), a frontend over the stored-analyses API, `.ods` support.
+Next candidates: a frontend over the stored-analyses API, ingest speed
+(openpyxl read dominates), `.ods` support.
