@@ -103,5 +103,10 @@ pytest -q
 4. ✅ Deterministic checks — self-auditing reconciliation, fail honest
 5. ✅ Persistence + stored-analyses API (findings audit endpoint)
 
-Next candidates: a frontend over the stored-analyses API, ingest speed
-(openpyxl read dominates), `.ods` support.
+Ingest prefers the calamine engine (~9x faster than openpyxl, reads
+`.ods`/`.xls` too) with an openpyxl fallback; identical uploads dedupe to the
+stored analysis; uploads cap at 25 MB; one unreadable sheet reports as an
+`error` orientation instead of sinking the workbook.
+
+Next candidates: executive mode (plain-language summary + printable report),
+deployment.
