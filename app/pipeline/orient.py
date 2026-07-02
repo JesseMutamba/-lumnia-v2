@@ -20,6 +20,7 @@ from typing import Dict, List, Optional, Tuple
 import pandas as pd
 
 from .celltypes import cell_kind, grid_kinds, is_blank, BLANK, DATE, NUMBER, TEXT
+from .charts import profile_chart, timeseries_chart
 from .checks import detect_total_rows, run_checks
 from .coerce import coerce_value
 from .jsonsafe import jsonify
@@ -501,11 +502,17 @@ def _extract_tidy_table(df, kinds, meta, max_rows) -> dict:
     checks = run_checks(names, numeric_cols, row_numbers, row_labels,
                         totals=totals) if numeric_cols else None
 
+    summary = table_summary(accs, total)
+    chart = profile_chart(names, numeric_cols, {t["i"] for t in totals}) \
+        if numeric_cols else None
+    if chart:
+        summary["chart"] = chart
+
     return {"columns": names, "records": records, "n_records": total,
             "n_columns": len(names),
             "column_types": [a.profile() for a in accs],
             "header_rows": header_rows,
-            "summary": table_summary(accs, total),
+            "summary": summary,
             "checks": checks,
             # 1-based sheet rows detected as summary/totals rows
             "total_rows": [row_numbers[t["i"]] for t in totals] or None}
@@ -532,6 +539,9 @@ def _extract_matrix(df, kinds, meta, max_rows) -> dict:
     # Coerce each period header once; every long row under it reuses this.
     periods = {p: coerce_value(df.iat[dr, p]) for p in period_cols}
 
+    p_index = {p: k for k, p in enumerate(period_cols)}
+    series_values: Dict[str, Dict[int, float]] = {}   # for the dashboard chart
+
     records = []
     total = n_series = 0
     for i in range(dr + 1, r1 + 1):
@@ -545,18 +555,25 @@ def _extract_matrix(df, kinds, meta, max_rows) -> dict:
             v = ff.get((i, j), df.iat[i, j])
             label_vals.append((cell_kind(v), coerce_value(v)))
         labels = {name: cv for name, (_, cv) in zip(label_names, label_vals)}
+        series_key = " / ".join(str(cv) for _, cv in label_vals
+                                if cv is not None) or f"series {n_series}"
+        bucket = series_values.setdefault(series_key, {})
         for p in period_cols:
             if kinds[i][p] == BLANK:
                 continue
             total += 1
-            for acc, (k, cv) in zip(label_accs, label_vals):
-                acc.add(k, cv)
+            cv = coerce_value(df.iat[i, p])
+            for acc, (k, lv) in zip(label_accs, label_vals):
+                acc.add(k, lv)
             period_acc.add(kinds[dr][p], periods[p])
-            value_acc.add(kinds[i][p], coerce_value(df.iat[i, p]))
+            value_acc.add(kinds[i][p], cv)
+            if isinstance(cv, (int, float)) and not isinstance(cv, bool):
+                k = p_index[p]
+                bucket[k] = bucket.get(k, 0.0) + cv
             if len(records) < max_rows:
                 rec = dict(labels)
                 rec["period"] = periods[p]
-                rec["value"] = coerce_value(df.iat[i, p])
+                rec["value"] = cv
                 records.append(rec)
 
     if meta.get("axis") == "year":
@@ -571,11 +588,16 @@ def _extract_matrix(df, kinds, meta, max_rows) -> dict:
         "period_min": span[0] if span else None,
         "period_max": span[-1] if span else None,
     }
+    summary = table_summary(accs, total, extra)
+    chart = timeseries_chart([periods[p] for p in period_cols], series_values)
+    if chart:
+        summary["chart"] = chart
+
     return {"columns": columns, "records": records, "n_records": total,
             "n_columns": len(columns),
             "column_types": [a.profile() for a in accs],
             "header_rows": [dr],
-            "summary": table_summary(accs, total, extra)}
+            "summary": summary}
 
 
 # --------------------------------------------------------------------------- #
