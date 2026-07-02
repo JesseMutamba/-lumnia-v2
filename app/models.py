@@ -54,6 +54,18 @@ class AnalysisMeta(BaseModel):
     n_sheets: int
 
 
+class FindingsResponse(BaseModel):
+    """Workbook-level audit: every reconciliation check across all sheets
+    and panels, mismatches ranked by money impact."""
+    id: str
+    filename: str
+    n_mismatched_relations: int
+    n_verified_relations: int
+    total_abs_delta: float
+    findings: List[Dict[str, Any]]
+    verified: List[Dict[str, Any]]
+
+
 class DeleteResponse(BaseModel):
     id: str
     deleted: bool
