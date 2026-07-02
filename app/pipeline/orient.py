@@ -21,10 +21,8 @@ import pandas as pd
 from .celltypes import cell_kind, is_blank, BLANK, DATE, NUMBER, TEXT
 from .coerce import coerce_value
 from .jsonsafe import jsonify
+from .metrics import ColumnAcc, table_summary
 from .profile import guess_header_row
-
-# A detected column type needs this share of one kind, else it is "mixed".
-DOMINANT_FRAC = 0.6
 
 # Tunables for the heuristics (documented at point of use).
 MIN_DATE_RUN = 3          # a period axis needs at least this many date cells
@@ -244,10 +242,16 @@ def _detect_header_block(kinds, start, r1, c0, c1, widest, max_span=3) -> List[i
 
     Stops at the first non-header row so at least one data row remains; if the
     block would swallow everything, fall back to a single header row.
+
+    A row only joins the block if the layer above it has blank cells: stacked
+    headers exist because of horizontally-merged group labels, which always
+    leave gaps. A fully-filled header row is complete on its own — without this
+    guard, text-heavy *data* rows (name lists etc.) get eaten into the header.
     """
     rows = [start]
     i = start + 1
     while (i <= r1 and len(rows) < max_span
+           and any(kinds[rows[-1]][j] == BLANK for j in range(c0, c1 + 1))
            and _row_is_header_like(kinds[i], c0, c1, widest)):
         rows.append(i)
         i += 1
@@ -282,19 +286,6 @@ def _merge_header_names(df, kinds, header_rows, cols) -> List[str]:
     return _unique_names(merged)
 
 
-def _column_profile(name, tally, total) -> dict:
-    counts = {NUMBER: tally[NUMBER], DATE: tally[DATE], TEXT: tally[TEXT]}
-    filled = sum(counts.values())
-    dtype = "empty"
-    if filled:
-        dtype = max(counts, key=counts.get)
-        if counts[dtype] / filled < DOMINANT_FRAC:
-            dtype = "mixed"
-    return {"name": name, "dtype": dtype,
-            "fill": round(filled / total, 3) if total else 0.0,
-            "number": counts[NUMBER], "date": counts[DATE], "text": counts[TEXT]}
-
-
 def _extract_tidy_table(df, kinds, meta, max_rows) -> dict:
     r0, r1, c0, c1 = meta["box"]
     cols = list(range(c0, c1 + 1))
@@ -310,7 +301,7 @@ def _extract_tidy_table(df, kinds, meta, max_rows) -> dict:
     label_cols = _label_cols(kinds, data_start, r1, c0, c1 + 1)
     ff = _ffill_label_cols(df, kinds, label_cols, data_start, r1)
 
-    tally = {j: {NUMBER: 0, DATE: 0, TEXT: 0} for j in cols}
+    accs = [ColumnAcc(name) for name in names]
     records = []
     total = 0
     for i in range(data_start, r1 + 1):
@@ -318,20 +309,20 @@ def _extract_tidy_table(df, kinds, meta, max_rows) -> dict:
             continue
         total += 1
         rec = {}
-        for name, j in zip(names, cols):
+        for acc, name, j in zip(accs, names, cols):
             v = ff[(i, j)] if (i, j) in ff else df.iat[i, j]
             k = cell_kind(v)                 # profile the effective (ffilled) value
-            if k != BLANK:
-                tally[j][k] += 1
+            cv = coerce_value(v)
+            acc.add(k, cv)                   # Step 3: streaming column stats
             if len(records) < max_rows:
-                rec[name] = coerce_value(v)
+                rec[name] = cv
         if len(records) < max_rows:
             records.append(rec)
-    col_types = [_column_profile(names[k], tally[cols[k]], total)
-                 for k in range(len(cols))]
     return {"columns": names, "records": records, "n_records": total,
-            "n_columns": len(names), "column_types": col_types,
-            "header_rows": header_rows}
+            "n_columns": len(names),
+            "column_types": [a.profile() for a in accs],
+            "header_rows": header_rows,
+            "summary": table_summary(accs, total)}
 
 
 def _extract_matrix(df, kinds, meta, max_rows) -> dict:
@@ -349,35 +340,52 @@ def _extract_matrix(df, kinds, meta, max_rows) -> dict:
     ff = _ffill_label_cols(df, kinds, label_cols, dr + 1, r1)
 
     columns = label_names + ["period", "value"]
+    accs = [ColumnAcc(n) for n in columns]
+    label_accs, period_acc, value_acc = accs[:-2], accs[-2], accs[-1]
+
+    # Coerce each period header once; every long row under it reuses this.
+    periods = {p: coerce_value(df.iat[dr, p]) for p in period_cols}
+
     records = []
-    total = value_numeric = 0
+    total = n_series = 0
     for i in range(dr + 1, r1 + 1):
         # skip fully blank interior rows
         if not any(kinds[i][p] != BLANK for p in period_cols):
             continue
-        labels = {name: coerce_value(ff.get((i, j), df.iat[i, j]))
-                  for name, j in zip(label_names, label_cols)}
+        n_series += 1
+        # effective (merged-cell ffilled) label values for this series row
+        label_vals = []
+        for j in label_cols:
+            v = ff.get((i, j), df.iat[i, j])
+            label_vals.append((cell_kind(v), coerce_value(v)))
+        labels = {name: cv for name, (_, cv) in zip(label_names, label_vals)}
         for p in period_cols:
             if kinds[i][p] == BLANK:
                 continue
             total += 1
-            if kinds[i][p] == NUMBER:
-                value_numeric += 1
+            for acc, (k, cv) in zip(label_accs, label_vals):
+                acc.add(k, cv)
+            period_acc.add(kinds[dr][p], periods[p])
+            value_acc.add(kinds[i][p], coerce_value(df.iat[i, p]))
             if len(records) < max_rows:
                 rec = dict(labels)
-                rec["period"] = coerce_value(df.iat[dr, p])
+                rec["period"] = periods[p]
                 rec["value"] = coerce_value(df.iat[i, p])
                 records.append(rec)
-    col_types = (
-        [{"name": n, "dtype": "text"} for n in label_names]
-        + [{"name": "period", "dtype": "date"},
-           {"name": "value", "dtype": "number" if total and
-            value_numeric / total >= DOMINANT_FRAC else "mixed",
-            "fill": 1.0, "number": value_numeric}]
-    )
+
+    period_dates = sorted(str(v) for p, v in periods.items()
+                          if kinds[dr][p] == DATE and v is not None)
+    extra = {
+        "n_series": n_series,
+        "n_periods": len(period_cols),
+        "period_min": period_dates[0] if period_dates else None,
+        "period_max": period_dates[-1] if period_dates else None,
+    }
     return {"columns": columns, "records": records, "n_records": total,
-            "n_columns": len(columns), "column_types": col_types,
-            "header_rows": [dr]}
+            "n_columns": len(columns),
+            "column_types": [a.profile() for a in accs],
+            "header_rows": [dr],
+            "summary": table_summary(accs, total, extra)}
 
 
 def orient_sheet(df: pd.DataFrame, max_rows: int = 8) -> dict:

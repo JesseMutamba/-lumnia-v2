@@ -13,6 +13,7 @@ class TidyTable(BaseModel):
     n_columns: int
     column_types: Optional[List[Dict[str, Any]]] = None
     header_rows: Optional[List[int]] = None
+    summary: Optional[Dict[str, Any]] = None
 
 
 class SheetReport(BaseModel):
