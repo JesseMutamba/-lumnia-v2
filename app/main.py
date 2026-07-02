@@ -38,6 +38,10 @@ from .pipeline.profile import profile_sheet
 
 app = FastAPI(title="Lumnia v2", version="0.5.0")
 
+# Reject uploads beyond this size with 413 — bigger files need a real queue,
+# not a synchronous request.
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+
 
 def run_pipeline(content: bytes, filename: str) -> AnalyzeResponse:
     """Steps 1-4 over one uploaded file. Raises HTTPException on unreadable input."""
@@ -51,19 +55,31 @@ def run_pipeline(content: bytes, filename: str) -> AnalyzeResponse:
 
     reports = []
     for name, df in sheets.items():
-        kinds = grid_kinds(df)               # one classification pass per sheet
-        prof = profile_sheet(name, df, kinds=kinds)
-        orient = orient_sheet(df, kinds=kinds)
-        reports.append(
-            SheetReport(
-                **prof,
-                orientation=orient["orientation"],
-                orientation_confidence=orient["confidence"],
-                orientation_reason=orient["reason"],
-                tidy=orient["tidy"],
-                panels=orient.get("panels"),
+        try:
+            kinds = grid_kinds(df)           # one classification pass per sheet
+            prof = profile_sheet(name, df, kinds=kinds)
+            orient = orient_sheet(df, kinds=kinds)
+            reports.append(
+                SheetReport(
+                    **prof,
+                    orientation=orient["orientation"],
+                    orientation_confidence=orient["confidence"],
+                    orientation_reason=orient["reason"],
+                    tidy=orient["tidy"],
+                    panels=orient.get("panels"),
+                )
             )
-        )
+        except Exception as exc:
+            # One pathological sheet must not sink the whole workbook: report
+            # it as an error honestly and keep going.
+            reports.append(SheetReport(
+                name=name, n_rows=int(df.shape[0]), n_cols=int(df.shape[1]),
+                n_nonempty_rows=0, n_nonempty_cols=0, fill_ratio=0.0,
+                header_row=None, preview=[],
+                orientation="error", orientation_confidence=0.0,
+                orientation_reason=f"analysis failed: {type(exc).__name__}: {exc}",
+                tidy=None, panels=None,
+            ))
 
     return AnalyzeResponse(
         filename=filename or "upload",
@@ -96,6 +112,19 @@ async def analyze(file: UploadFile = File(...)) -> AnalyzeResponse:
     content = await file.read()
     if not content:
         raise HTTPException(status_code=400, detail="Empty upload.")
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File is {len(content) / 1e6:.1f} MB; the limit is "
+                   f"{MAX_UPLOAD_BYTES / 1e6:.0f} MB.")
+
+    # Identical bytes already analyzed -> return the stored analysis instead
+    # of silently growing the library with duplicates.
+    existing = storage.find_by_content(content)
+    if existing is not None:
+        report = storage.get_report(existing)
+        if report is not None:
+            return AnalyzeResponse(**report)
 
     result = run_pipeline(content, file.filename or "")
     result.id = storage.save_analysis(

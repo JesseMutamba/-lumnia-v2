@@ -11,8 +11,14 @@ from typing import Dict
 
 import pandas as pd
 
-_EXCEL_EXT = (".xlsx", ".xlsm", ".xls", ".xlsb")
+_EXCEL_EXT = (".xlsx", ".xlsm", ".xls", ".xlsb", ".ods")
 _CSV_EXT = (".csv", ".tsv", ".txt")
+
+try:                                  # calamine reads xlsx/xls/xlsb/ods ~9x
+    import python_calamine  # noqa: F401  faster than openpyxl; verified to
+    _ENGINES = ("calamine", "openpyxl")  # produce identical pipeline output
+except ImportError:                      # on the reference workbooks
+    _ENGINES = ("openpyxl",)
 
 
 def read_upload(content: bytes, filename: str) -> Dict[str, pd.DataFrame]:
@@ -38,14 +44,20 @@ def read_upload(content: bytes, filename: str) -> Dict[str, pd.DataFrame]:
 
 
 def _read_excel(content: bytes) -> Dict[str, pd.DataFrame]:
-    sheets = pd.read_excel(
-        io.BytesIO(content),
-        sheet_name=None,      # all sheets
-        header=None,          # no header interpretation
-        dtype=object,         # keep values as-is
-        engine="openpyxl",
-    )
-    return {str(k): v for k, v in sheets.items()}
+    last_exc = None
+    for engine in _ENGINES:
+        try:
+            sheets = pd.read_excel(
+                io.BytesIO(content),
+                sheet_name=None,      # all sheets
+                header=None,          # no header interpretation
+                dtype=object,         # keep values as-is
+                engine=engine,
+            )
+            return {str(k): v for k, v in sheets.items()}
+        except Exception as exc:      # fall back to the next engine
+            last_exc = exc
+    raise last_exc
 
 
 def _read_csv(content: bytes, name: str) -> Dict[str, pd.DataFrame]:

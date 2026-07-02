@@ -15,6 +15,7 @@ Design decisions, deliberately minimal:
 from __future__ import annotations
 
 import datetime as _dt
+import hashlib
 import json
 import os
 import sqlite3
@@ -29,6 +30,7 @@ CREATE TABLE IF NOT EXISTS analyses (
     uploaded_at TEXT NOT NULL,
     reran_at    TEXT,
     size_bytes  INTEGER NOT NULL,
+    sha256      TEXT,
     content     BLOB NOT NULL,
     report      TEXT NOT NULL
 )
@@ -45,11 +47,24 @@ def _connect() -> sqlite3.Connection:
     con = sqlite3.connect(path)
     con.row_factory = sqlite3.Row
     con.execute(_SCHEMA)
+    try:                              # migrate DBs created before the column
+        con.execute("ALTER TABLE analyses ADD COLUMN sha256 TEXT")
+    except sqlite3.OperationalError:
+        pass
     return con
 
 
 def _now() -> str:
     return _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")
+
+
+def find_by_content(content: bytes) -> Optional[str]:
+    """Id of an existing analysis of these exact bytes, if any."""
+    digest = hashlib.sha256(content).hexdigest()
+    with _connect() as con:
+        row = con.execute("SELECT id FROM analyses WHERE sha256 = ?",
+                          (digest,)).fetchone()
+    return row["id"] if row else None
 
 
 def save_analysis(filename: str, content: bytes, report: Dict[str, Any]) -> str:
@@ -58,9 +73,10 @@ def save_analysis(filename: str, content: bytes, report: Dict[str, Any]) -> str:
     report = {**report, "id": analysis_id}
     with _connect() as con:
         con.execute(
-            "INSERT INTO analyses (id, filename, uploaded_at, size_bytes, content, report) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (analysis_id, filename, _now(), len(content), content,
+            "INSERT INTO analyses (id, filename, uploaded_at, size_bytes, sha256, content, report) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (analysis_id, filename, _now(), len(content),
+             hashlib.sha256(content).hexdigest(), content,
              json.dumps(report, ensure_ascii=False)),
         )
     return analysis_id
