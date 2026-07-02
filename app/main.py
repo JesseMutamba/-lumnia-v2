@@ -16,7 +16,10 @@ Endpoints
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 
 from . import storage
 from .findings import aggregate_findings
@@ -67,6 +70,15 @@ def run_pipeline(content: bytes, filename: str) -> AnalyzeResponse:
         n_sheets=len(reports),
         sheets=reports,
     )
+
+
+_INDEX = Path(__file__).parent / "static" / "index.html"
+
+
+@app.get("/", include_in_schema=False)
+def index() -> FileResponse:
+    """The single-page UI: upload, history, per-sheet report, audit."""
+    return FileResponse(_INDEX, media_type="text/html")
 
 
 @app.get("/health", response_model=HealthResponse)
