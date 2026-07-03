@@ -13,7 +13,8 @@ COPY app ./app
 ENV LUMNIA_DB=/data/lumnia.db
 EXPOSE 8080
 
-# --proxy-headers so the app sees the real https scheme behind Fly's edge
-# (needed for Secure session cookies).
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", \
-     "--proxy-headers", "--forwarded-allow-ips=*"]
+# --proxy-headers so the app sees the real https scheme behind the platform
+# edge (needed for Secure session cookies). Shell form so $PORT expands:
+# Render injects PORT; Fly doesn't, so the 8080 fallback matches fly.toml.
+CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080} \
+    --proxy-headers --forwarded-allow-ips="*"

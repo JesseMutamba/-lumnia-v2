@@ -1,0 +1,30 @@
+# Render blueprint for Lumnia — https://render.com/docs/blueprint-spec
+#
+# Deploy: Render dashboard -> New -> Blueprint -> connect this repo.
+# Render reads this file, builds the Dockerfile, and prompts for the two
+# secrets marked `sync: false`.
+#
+# NOTE on the plan: the SQLite database and stored uploads live on a
+# persistent disk at /data. Persistent disks require a PAID instance
+# (starter, ~$7/mo + ~$0.25/GB). On the free plan there is no disk —
+# every deploy or restart wipes all analyses. Don't run this on free
+# except for a throwaway demo.
+services:
+  - type: web
+    name: lumnia
+    runtime: docker
+    plan: starter
+    region: frankfurt          # closest Render region to francophone Africa/Europe
+    healthCheckPath: /health
+    autoDeploy: true           # every merge to main redeploys automatically
+    envVars:
+      - key: LUMNIA_DB
+        value: /data/lumnia.db
+      - key: LUMNIA_PASSWORD   # gates the site; set in the dashboard
+        sync: false
+      - key: ANTHROPIC_API_KEY # optional: enables the AI narrative
+        sync: false
+    disk:
+      name: lumnia-data
+      mountPath: /data
+      sizeGB: 1
