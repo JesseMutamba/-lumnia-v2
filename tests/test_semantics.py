@@ -149,3 +149,13 @@ def test_workbook_story_picked_and_absent_honestly():
     r = client.post("/analyze", files={
         "file": ("txt.xlsx", buf.getvalue(), "application/octet-stream")}).json()
     assert r["story"] is None
+
+
+def test_iso_dates_never_day_month_swapped():
+    """Regression: dayfirst parsing must not corrupt ISO dates
+    ("2025-01-05" is January 5th, not May 1st) while dd/mm/yyyy strings
+    keep their French day-first reading."""
+    from app.pipeline.coerce import coerce_date
+    assert coerce_date("2025-01-05") == "2025-01-05"
+    assert coerce_date("2025-11-05") == "2025-11-05"
+    assert coerce_date("05/01/2025") == "2025-01-05"   # 5 janvier, day-first
