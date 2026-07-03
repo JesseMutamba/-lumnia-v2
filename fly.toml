@@ -1,0 +1,37 @@
+# Fly.io config for Lumnia. Rename `app` to your own unique name before deploy.
+# See DEPLOY.md for the full runbook.
+app = "lumnia"
+primary_region = "iad"          # pick one near you: `fly platform regions`
+
+[build]
+
+[env]
+  LUMNIA_DB = "/data/lumnia.db"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Scale to zero when idle (cheap); first request cold-starts in a few seconds.
+  # Set min_machines_running = 1 for always-on.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.http_options.response.headers]
+    # Belt-and-braces: never let a proxy cache an authed page.
+    Cache-Control = "no-store"
+
+[[http_service.checks]]
+  path = "/health"
+  interval = "30s"
+  timeout = "5s"
+  grace_period = "10s"
+
+# Persistent disk for the SQLite database + stored uploads.
+[[mounts]]
+  source = "lumnia_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"             # bump to 1024mb if large workbooks OOM
