@@ -639,6 +639,29 @@ const STR = {
     st_edit: "✎ edit brief", st_replan: "↺ change plan",
     st_top: "Top", st_bottom: "Bottom",
     st_brief_line: (role, cad) => `Briefing for ${role || "you"} · reviewed ${cad || "regularly"}`,
+    sn_headline: m => `This is our total ${m}…`,
+    sn_trend: "…and how it has moved month by month",
+    sn_by: (m, g) => `This is ${m} split by ${g}`,
+    sn_avg: (m, g) => `How ${m} varies by ${g}`,
+    sn_pair: (m, g) => `${m} by ${g} — how big, and which way it's moving`,
+    sn_movers: g => `Where the gains and the losses came from — ${g}`,
+    sn_stock: m => `A point of exposure — lowest ${m}`,
+    tk_title: "Key takeaways", tk_sub: "computed from the figures on this page",
+    tk_trend: (m, up, p, a, b) => `${m} ${up ? "rose" : "fell"} ${p} between ${a} and ${b}.`,
+    tk_conc: (mem, sh, m, g) => `${mem} accounts for ${sh} of total ${m} across ${g}.`,
+    tk_movers: (t, tv, b, bv) => `${t} gained the most (${tv}); ${b} lost the most (${bv}).`,
+    tk_stock: (e, m, v) => `${e} has the lowest ${m} (${v}).`,
+    rc_title: "Recommended next steps", rc_because: "because",
+    rc_top: (e, v) => `Understand what drove ${e} (${v}) — and whether it can be repeated.`,
+    rc_top_b: (e, v, m) => `${e} shows the largest ${m} gain on this page (${v})`,
+    rc_bottom: e => `Review ${e} first.`,
+    rc_bottom_b: (e, v, m) => `${e} shows the largest ${m} drop on this page (${v})`,
+    rc_stock: e => `Replenish or review ${e}.`,
+    rc_stock_b: (e, m, v) => `its ${m} is the lowest recorded (${v})`,
+    rc_mom: p => `Find out what changed last month before it repeats.`,
+    rc_mom_b: p => `the latest month is ${p} below the one before`,
+    rc_audit: n => `Correct the ${n} data discrepancies before circulating these figures.`,
+    rc_audit_b: d => `the audit found internal contradictions worth ${d} — see the Actions tab`,
     greet: "Hello!", tasks_t: "Tasks", exceptions_t: "Exceptions",
     see_all: "See all →", ex_none: "Nothing needs your attention.",
     ex_unv: n => `${n} total${n === 1 ? "" : "s"} to double-check by eye`,
@@ -799,6 +822,29 @@ const STR = {
     st_edit: "✎ modifier le brief", st_replan: "↺ changer le plan",
     st_top: "Meilleurs", st_bottom: "Pires",
     st_brief_line: (role, cad) => `Briefing pour ${role || "vous"} · consulté ${cad || "régulièrement"}`,
+    sn_headline: m => `Voici notre ${m} total…`,
+    sn_trend: "…et son évolution mois par mois",
+    sn_by: (m, g) => `Voici la répartition de ${m} par ${g}`,
+    sn_avg: (m, g) => `Comment ${m} varie selon ${g}`,
+    sn_pair: (m, g) => `${m} par ${g} — le poids, et la direction`,
+    sn_movers: g => `D'où viennent les gains et les pertes — ${g}`,
+    sn_stock: m => `Un point de vigilance — ${m} le plus bas`,
+    tk_title: "À retenir", tk_sub: "calculé à partir des chiffres de cette page",
+    tk_trend: (m, up, p, a, b) => `${m} a ${up ? "progressé de" : "reculé de"} ${p} entre ${a} et ${b}.`,
+    tk_conc: (mem, sh, m, g) => `${mem} représente ${sh} du total de ${m} (par ${g}).`,
+    tk_movers: (t, tv, b, bv) => `${t} a le plus progressé (${tv}) ; ${b} a le plus reculé (${bv}).`,
+    tk_stock: (e, m, v) => `${e} a le ${m} le plus bas (${v}).`,
+    rc_title: "Prochaines étapes recommandées", rc_because: "parce que",
+    rc_top: (e, v) => `Comprendre ce qui a porté ${e} (${v}) — et si c'est reproductible.`,
+    rc_top_b: (e, v, m) => `${e} affiche la plus forte hausse de ${m} sur cette page (${v})`,
+    rc_bottom: e => `Examiner ${e} en priorité.`,
+    rc_bottom_b: (e, v, m) => `${e} affiche la plus forte baisse de ${m} sur cette page (${v})`,
+    rc_stock: e => `Réapprovisionner ou vérifier ${e}.`,
+    rc_stock_b: (e, m, v) => `son ${m} est le plus bas relevé (${v})`,
+    rc_mom: p => `Identifier ce qui a changé le mois dernier avant que cela se répète.`,
+    rc_mom_b: p => `le dernier mois est ${p} en dessous du précédent`,
+    rc_audit: n => `Corriger les ${n} incohérences de données avant de diffuser ces chiffres.`,
+    rc_audit_b: d => `l'audit a trouvé des contradictions internes pour ${d} — voir l'onglet À faire`,
     greet: "Bonjour !", tasks_t: "À faire", exceptions_t: "Points d'attention",
     see_all: "Tout voir →", ex_none: "Rien ne demande votre attention.",
     ex_unv: n => `${n} total${n === 1 ? "" : "aux"} à revérifier d'un coup d'œil`,
@@ -1609,6 +1655,84 @@ function renderStory() {
   return renderStoryDash();
 }
 
+/* Step 6: titles become the story — each card's title is a sentence that
+   walks the reader through the page. */
+function storySentence(m) {
+  const id = m.id;
+  if (id === "headline") return T.sn_headline(m.measure);
+  if (id === "trend") return T.sn_trend;
+  if (id === "movers") return T.sn_movers(m.grain);
+  if (id === "low_stock") return T.sn_stock(m.measure);
+  if (id.startsWith("by_")) return T.sn_by(m.measure, m.grain);
+  if (id.startsWith("avg_")) return T.sn_avg(m.measure, m.grain);
+  return mlabel(m);
+}
+
+/* Step 6: key takeaways — one-liners computed from the page's own figures. */
+function storyTakeaways(metricById, approved) {
+  const out = [];
+  const t = approved.includes("trend") && metricById.trend;
+  if (t && t.rows.length >= 2) {
+    const a = t.rows.find(r => r.value != null), b = [...t.rows].reverse().find(r => r.value != null);
+    if (a && b && a !== b && a.value) {
+      const p = (b.value / a.value - 1) * 100;
+      out.push(T.tk_trend(t.measure, p >= 0, pctFmt(Math.abs(p)), a.period, b.period));
+    }
+  }
+  const by = approved.map(id => metricById[id])
+    .find(m => m && m.id && m.id.startsWith("by_") && m.rows && m.rows.length >= 2);
+  if (by) {
+    const total = by.rows.reduce((s, r) => s + Math.abs(r.value ?? 0), 0);
+    if (total > 0) {
+      const top = by.rows[0];
+      out.push(T.tk_conc(top.member, pctFmt(Math.abs(top.value ?? 0) / total * 100),
+        by.measure, by.grain));
+    }
+  }
+  const mv = approved.includes("movers") && metricById.movers;
+  if (mv && mv.top.length && mv.bottom.length && mv.bottom[0].value < 0) {
+    out.push(T.tk_movers(mv.top[0].entity, "+" + num(mv.top[0].value),
+      mv.bottom[0].entity, num(mv.bottom[0].value)));
+  }
+  const ls = approved.includes("low_stock") && metricById.low_stock;
+  if (ls && ls.rows.length) {
+    out.push(T.tk_stock(ls.rows[0].entity, ls.measure, num(ls.rows[0].value)));
+  }
+  return out;
+}
+
+/* Step 6: recommendations — every one carries its because-clause, tracing
+   back to a figure that is on this page. Rules, not imagination. */
+function storyRecs(metricById, approved) {
+  const recs = [];
+  const mv = approved.includes("movers") && metricById.movers;
+  if (mv && mv.top.length && mv.top[0].value > 0) {
+    const r = mv.top[0];
+    recs.push({ text: T.rc_top(r.entity, "+" + num(r.value)),
+                because: T.rc_top_b(r.entity, "+" + num(r.value), mv.measure) });
+  }
+  if (mv && mv.bottom.length && mv.bottom[0].value < 0) {
+    const r = mv.bottom[0];
+    recs.push({ text: T.rc_bottom(r.entity),
+                because: T.rc_bottom_b(r.entity, num(r.value), mv.measure) });
+  }
+  const ls = approved.includes("low_stock") && metricById.low_stock;
+  if (ls && ls.rows.length) {
+    const r = ls.rows[0];
+    recs.push({ text: T.rc_stock(r.entity),
+                because: T.rc_stock_b(r.entity, ls.measure, num(r.value)) });
+  }
+  const mom = approved.includes("mom") && metricById.mom;
+  if (mom && mom.pct != null && mom.pct <= -10) {
+    recs.push({ text: T.rc_mom(), because: T.rc_mom_b(pctFmt(Math.abs(mom.pct), 1)) });
+  }
+  if (AUDIT && AUDIT.n_mismatched_relations > 0) {
+    recs.push({ text: T.rc_audit(AUDIT.n_mismatched_relations),
+                because: T.rc_audit_b(compact(AUDIT.total_abs_delta)) });
+  }
+  return recs.slice(0, 4);
+}
+
 function renderBriefWizard() {
   const b = REPORT.brief || {};
   return `<section id="sec-story"><span class="kicker">${T.tab_story}</span>
@@ -1677,7 +1801,7 @@ const fillFor = (v, mx) => v == null || mx === 0 ? "transparent"
   : `color-mix(in srgb, ${v >= 0 ? "#1baf7a" : "#d24a35"} ${Math.min(85, Math.abs(v) / mx * 55 + 8).toFixed(0)}%, transparent)`;
 
 function storyChartCard(m, opts = {}) {
-  const c = { pseudo: true, sheet: mlabel(m), loc: opts.loc || null,
+  const c = { pseudo: true, sheet: storySentence(m), loc: opts.loc || null,
     chart: opts.kindTime
       ? { kind: "timeseries", periods: m.rows.map(r => r.period),
           series: [], other: null, truncated: !!m.truncated }
@@ -1701,7 +1825,7 @@ function storyVisual(m) {
       `<tr><td>${esc(r.entity.slice(0, 30))}</td>
        <td class="num" style="background:${fillFor(r.value, mx)}">${r.value >= 0 ? "+" : ""}${num(r.value)}</td>
        <td class="num muted">${r.headline != null ? compact(r.headline) : ""}</td></tr>`).join("")}</table>`;
-    return `<div class="card"><div class="card-head"><span class="ct">${esc(mlabel(m))}</span>
+    return `<div class="card"><div class="card-head"><span class="ct">${esc(storySentence(m))}</span>
         <span class="cs">${esc(m.measure)}</span></div>
       <div class="grid2" style="gap:16px;margin-top:8px">
         <div><div class="psub">${T.st_top}</div>${tbl(m.top)}</div>
@@ -1709,7 +1833,7 @@ function storyVisual(m) {
       </div></div>`;
   }
   if (id === "low_stock")
-    return `<div class="card"><div class="card-head"><span class="ct">${esc(mlabel(m))}</span>
+    return `<div class="card"><div class="card-head"><span class="ct">${esc(storySentence(m))}</span>
         <span class="cs">${esc(m.measure)}</span></div>
       <table class="mtable" style="margin-top:8px">${m.rows.map(r =>
         `<tr><td>${esc(String(r.entity).slice(0, 34))}</td>
@@ -1720,7 +1844,7 @@ function storyVisual(m) {
     if (m.rows.length > 12 || (signed && m.rows.length > 8)) {
       // many members read better as a ranked table with conditional fill
       const mx = Math.max(...vals.map(v => Math.abs(v ?? 0)), 1e-9);
-      return `<div class="card"><div class="card-head"><span class="ct">${esc(mlabel(m))}</span></div>
+      return `<div class="card"><div class="card-head"><span class="ct">${esc(storySentence(m))}</span></div>
         <table class="mtable" style="margin-top:8px">${m.rows.map(r =>
           `<tr><td>${esc(String(r.member).slice(0, 34))}</td>
            <td class="num" style="background:${signed ? fillFor(r.value, mx) : "transparent"}">${num(r.value)}</td></tr>`).join("")}</table></div>`;
@@ -1748,8 +1872,8 @@ function pairCard(mAmt, mChg) {
     </div>`;
   }).join("");
   return `<div class="card"><div class="card-head">
-      <span class="ct">${esc(mlabel(mAmt))} &amp; ${esc(mChg.measure)}</span>
-      <span class="cs">${esc(mAmt.grain)}</span></div>
+      <span class="ct">${esc(T.sn_pair(mAmt.measure, mAmt.grain))}</span>
+      <span class="cs">${esc(mChg.measure)}</span></div>
     <div style="margin-top:10px">${rows}</div></div>`;
 }
 
@@ -1770,7 +1894,7 @@ function renderStoryDash() {
         ${p == null ? "—" : (p >= 0 ? "+" : "") + pctFmt(p, 1)} <span>${esc(mlabel(m))}</span></div>`;
     }).join("");
     done.add("headline");
-    hero = `<div class="hero"><div class="hero-tile"><div class="hl">${esc(mlabel(h))}</div>
+    hero = `<div class="hero"><div class="hero-tile"><div class="hl">${esc(storySentence(h))}</div>
       <div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap">
         <div class="hv">${compact(h.value)}</div>
         ${kds ? `<div class="kds">${kds}</div>` : ""}</div></div></div>`;
@@ -1813,9 +1937,27 @@ function renderStoryDash() {
     <div class="zq">${esc(z.title)}</div>
     <div class="grid2">${z.cards.join("")}</div>`).join("");
 
+  // Step 6: takeaways lead, recommendations close — both computed from the
+  // page's own figures, every recommendation with its because-clause
+  const takes = storyTakeaways(metricById, approved);
+  const takesCard = takes.length ? `<div class="card" style="margin-bottom:16px">
+      <div class="card-head"><span class="ct">${T.tk_title}</span>
+        <span class="cs">${T.tk_sub}</span></div>
+      ${takes.map(t => `<div class="bar-row"><span style="font-size:13.5px;line-height:1.55">${esc(t)}</span></div>`).join("")}
+    </div>` : "";
+
+  const recs = storyRecs(metricById, approved);
+  const recsCard = recs.length ? `<div class="card" style="margin-top:18px">
+      <div class="card-head"><span class="ct">${T.rc_title}</span></div>
+      ${recs.map((r, i) => `<div class="trow">
+        <span class="tico" style="background:var(--card-2);color:var(--gold-strong)">${i + 1}</span>
+        <span class="tbody"><b>${esc(r.text)}</b>
+          <span class="tsub">— ${T.rc_because} ${esc(r.because)}</span></span>
+      </div>`).join("")}</div>` : "";
+
   const misses = plan.questions.filter(q => q.status === "unanswerable" || q.status === "unmatched"
     || (q.status === "partial" && q.missing.length));
-  const gapsCard = misses.length ? `<div class="card" style="margin-top:18px">
+  const gapsCard = misses.length ? `<div class="card" style="margin-top:14px">
       <div class="card-head"><span class="ct">${T.st_gaps_t}</span></div>
       ${misses.map(q => `<div class="qrow"><b>${esc(q.question)}</b>
         <span class="qstat" style="color:var(--ink-3)">${T.st_status[q.status]}</span>
@@ -1829,7 +1971,9 @@ function renderStoryDash() {
         <button class="iconbtn" id="bf-edit">${T.st_edit}</button>
         <button class="iconbtn" id="plan-reopen">${T.st_replan}</button></span>`}</div>
     ${hero}
+    ${takesCard}
     ${zoneHtml}
+    ${recsCard}
     ${gapsCard}
   </section>`;
 }

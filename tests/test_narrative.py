@@ -82,3 +82,30 @@ def test_narrative_bad_model_output_is_502(monkeypatch):
     resp = client.post(f"/analyses/{_analyzed_id()}/narrative")
     assert resp.status_code == 502
     assert "not valid JSON" in resp.json()["detail"]
+
+
+def test_facts_include_brief_and_story():
+    """Phase 4: the AI narrative's fact sheet carries the reader's brief and
+    the computed story, so the prose can speak to the actual questions."""
+    report = {
+        "filename": "x.xlsx", "n_sheets": 1, "sheets": [],
+        "brief": {"role": "Manager", "cadence": "monthly",
+                  "goals": ["Increase revenue"],
+                  "questions": ["How is revenue trending?"]},
+        "story": {"metrics": [
+            {"id": "headline", "metric": "sum", "measure": "Montant",
+             "value": 141600.0, "n": 90},
+            {"id": "mom", "pct": -2.8, "period": "2026-03"},
+            {"id": "movers", "measure": "Growth", "grain": "E",
+             "top": [{"entity": "A", "value": 30.0}],
+             "bottom": [{"entity": "B", "value": -25.0}]},
+        ], "gaps": [{"metric": "stock_on_hand", "reason": "no stock column",
+                     "requires": "a stock column"}]},
+    }
+    facts = narrative.build_facts(report)
+    assert "READER: Manager" in facts
+    assert "How is revenue trending?" in facts
+    assert "STORY total Montant = 141,600" in facts
+    assert "STORY mom change: -2.8%" in facts
+    assert "best A 30" in facts and "worst B -25" in facts
+    assert "STORY gap: stock_on_hand" in facts
