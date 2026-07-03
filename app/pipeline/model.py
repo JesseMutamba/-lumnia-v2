@@ -14,17 +14,33 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional
 
-# Role patterns, checked in order — first match wins per series.
+# Role patterns, checked in order — first match wins per series. Order is
+# deliberate: "price" sits before "revenue" so "Prix de vente" isn't claimed
+# as revenue, and "capex"/"opex" sit before "volume" so "Coûts de production"
+# isn't claimed as volume.
 ROLE_PATTERNS: List[tuple] = [
-    ("revenue", re.compile(r"revenu|chiffre.?d.affaires|\bsales\b|\bventes\b",
-                           re.IGNORECASE)),
-    ("capex", re.compile(r"capex|investissement", re.IGNORECASE)),
+    ("price", re.compile(r"\bprix\b|\bprice\b|tarif", re.IGNORECASE)),
+    ("revenue", re.compile(
+        r"revenu|chiffre.?d.affaires|recettes?\b|produits?\s+d.exploitation"
+        r"|\bsales\b|\bventes?\b|\bincome\b|turnover", re.IGNORECASE)),
+    ("capex", re.compile(r"capex|investissement|immobilisations?",
+                         re.IGNORECASE)),
     # plain "dépenses X" is usually a PARTIAL cost line; claiming it as OPEX
-    # overstates margin — require an explicit opex/charges label
-    ("opex", re.compile(r"opex|charges?\b", re.IGNORECASE)),
-    ("volume", re.compile(r"\bcpo\b|\bffb\b|production|tonnage|\bvolume\b",
-                          re.IGNORECASE)),
-    ("area", re.compile(r"hectare|\bha\b|surface", re.IGNORECASE)),
+    # overstates margin — require an explicit opex/charges/coûts-style label
+    ("opex", re.compile(
+        r"opex|charges?\b"
+        r"|co[uû]ts?\s+(d.)?(op[ée]rat\w*|exploitation|production|fonctionnement)"
+        r"|operating\s+(costs?|expenses?)"
+        r"|frais\s+(g[ée]n[ée]raux|de\s+fonctionnement)", re.IGNORECASE)),
+    ("volume", re.compile(
+        r"\bcpo\b|\bffb\b|production|tonnage|\bvolume\b|quantit[ée]s?"
+        r"|r[ée]coltes?\b|\boutput\b|unit[ée]s?\s+(vendues|produites)"
+        r"|units\s+sold", re.IGNORECASE)),
+    ("area", re.compile(r"hectare|\bha\b|surface|superficie|acres?\b|m²",
+                        re.IGNORECASE)),
+    ("headcount", re.compile(
+        r"effectifs?\b|employ[ée]s?\b|salari[ée]s?\b|personnel\b|headcount"
+        r"|\bstaff\b", re.IGNORECASE)),
 ]
 
 MAX_BREAKDOWNS = 6
@@ -57,17 +73,27 @@ def _year_charts(report_sheets) -> List[tuple]:
 
 
 def _tag_roles(chart: dict) -> Dict[str, dict]:
-    """role -> best matching series (largest |total|) within one chart."""
-    roles: Dict[str, dict] = {}
+    """role -> best matching series (largest |total|) within one chart.
+
+    When TWO distinct series role-tag as volume (e.g. FFB harvested and CPO
+    produced), the runner-up is kept as ``volume_secondary`` so the model can
+    derive a conversion ratio between them.
+    """
+    matches: Dict[str, List[dict]] = {}
     for s in chart["series_all"]:
         label = s["label"]
         for role, rx in ROLE_PATTERNS:
             if rx.search(label):
                 total = sum(abs(v) for v in s["values"] if v is not None)
-                if role not in roles or total > roles[role]["_total"]:
-                    roles[role] = {"label": label, "values": s["values"],
-                                   "_total": total}
+                matches.setdefault(role, []).append(
+                    {"label": label, "values": s["values"], "_total": total})
                 break
+    roles: Dict[str, dict] = {}
+    for role, cands in matches.items():
+        cands.sort(key=lambda c: -c["_total"])
+        roles[role] = cands[0]
+        if role == "volume" and len(cands) > 1 and cands[1]["_total"] > 0:
+            roles["volume_secondary"] = cands[1]
     return roles
 
 
@@ -123,6 +149,14 @@ def build_model(report_sheets) -> Optional[Dict[str, Any]]:
         derived["opex_per_volume"] = _pair(opx, vol, lambda o, v: o / v)
     if rev and vol:
         derived["revenue_per_volume"] = _pair(rev, vol, lambda r, v: r / v)
+    area = metrics.get("area", {}).get("values")
+    if rev and area:
+        derived["revenue_per_area"] = _pair(rev, area, lambda r, a: r / a)
+    # two volume series -> conversion ratio (secondary/primary, e.g. an
+    # extraction rate: tonnes of product out per tonne of raw input)
+    vol2 = metrics.get("volume_secondary", {}).get("values")
+    if vol and vol2:
+        derived["volume_ratio"] = _pair(vol2, vol, lambda b, a: b / a)
 
     # breakdowns: the top line items already computed at extraction
     breakdowns = []

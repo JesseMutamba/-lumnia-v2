@@ -18,6 +18,7 @@ import datetime as _dt
 import hashlib
 import json
 import os
+import secrets
 import sqlite3
 import uuid
 from pathlib import Path
@@ -36,6 +37,17 @@ CREATE TABLE IF NOT EXISTS analyses (
 )
 """
 
+# Read-only share links: an unguessable token maps to one analysis. One token
+# per analysis (creating again returns the same one); deleting the analysis
+# deletes its token, revoking the link.
+_SCHEMA_SHARES = """
+CREATE TABLE IF NOT EXISTS shares (
+    token       TEXT PRIMARY KEY,
+    analysis_id TEXT NOT NULL,
+    created_at  TEXT NOT NULL
+)
+"""
+
 
 def _db_path() -> Path:
     return Path(os.environ.get("LUMNIA_DB", "data/lumnia.db"))
@@ -47,6 +59,7 @@ def _connect() -> sqlite3.Connection:
     con = sqlite3.connect(path)
     con.row_factory = sqlite3.Row
     con.execute(_SCHEMA)
+    con.execute(_SCHEMA_SHARES)
     try:                              # migrate DBs created before the column
         con.execute("ALTER TABLE analyses ADD COLUMN sha256 TEXT")
     except sqlite3.OperationalError:
@@ -129,5 +142,37 @@ def update_report(analysis_id: str, report: Dict[str, Any]) -> bool:
 
 def delete_analysis(analysis_id: str) -> bool:
     with _connect() as con:
+        con.execute("DELETE FROM shares WHERE analysis_id = ?", (analysis_id,))
         cur = con.execute("DELETE FROM analyses WHERE id = ?", (analysis_id,))
+    return cur.rowcount > 0
+
+
+def create_share(analysis_id: str) -> Optional[str]:
+    """Token for a read-only share link; idempotent per analysis."""
+    with _connect() as con:
+        if con.execute("SELECT 1 FROM analyses WHERE id = ?",
+                       (analysis_id,)).fetchone() is None:
+            return None
+        row = con.execute("SELECT token FROM shares WHERE analysis_id = ?",
+                          (analysis_id,)).fetchone()
+        if row:
+            return row["token"]
+        token = secrets.token_urlsafe(16)
+        con.execute("INSERT INTO shares (token, analysis_id, created_at) "
+                    "VALUES (?, ?, ?)", (token, analysis_id, _now()))
+    return token
+
+
+def resolve_share(token: str) -> Optional[str]:
+    """Analysis id behind a share token, or None if unknown/revoked."""
+    with _connect() as con:
+        row = con.execute("SELECT analysis_id FROM shares WHERE token = ?",
+                          (token,)).fetchone()
+    return row["analysis_id"] if row else None
+
+
+def revoke_share(analysis_id: str) -> bool:
+    with _connect() as con:
+        cur = con.execute("DELETE FROM shares WHERE analysis_id = ?",
+                          (analysis_id,))
     return cur.rowcount > 0

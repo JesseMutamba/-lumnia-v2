@@ -141,6 +141,47 @@
     font-family: var(--mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
     padding: 2px 4px; }
   .iconbtn:hover { color: var(--gold); }
+  .iconbtn.on { color: #fff; background: var(--gold); border-radius: 6px;
+    padding: 2px 8px; }
+  .iconbtn.on:hover { color: #fff; background: var(--gold-strong); }
+  .narr { margin-top: 14px; }
+  .narr p { margin: 10px 0 0; font-size: 14px; line-height: 1.65; max-width: 80ch; }
+  .nwatch { margin: 10px 0 0; padding-left: 18px; font-size: 13.5px;
+    line-height: 1.6; color: var(--ink-2); }
+  .nfoot { margin-top: 12px; font-family: var(--mono); font-size: 10.5px;
+    letter-spacing: .05em; color: var(--ink-3); }
+  .nerr { color: var(--critical); font-size: 12.5px; margin-top: 8px; }
+  /* tab bar: one story per tab, PVAK-style */
+  .tabs { display: flex; gap: 4px; margin-bottom: 18px; border-bottom: 1px solid var(--line);
+    overflow-x: auto; }
+  .tabbtn { border: none; background: none; cursor: pointer; font: inherit;
+    font-size: 13.5px; font-weight: 600; color: var(--ink-3); padding: 9px 14px;
+    border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+  .tabbtn:hover { color: var(--ink); }
+  .tabbtn.on { color: var(--ink); border-bottom-color: var(--gold); }
+  .tabbtn .tcnt { margin-left: 6px; font-family: var(--mono); font-size: 10.5px;
+    background: var(--card-2); border-radius: 8px; padding: 1px 7px; color: var(--ink-3); }
+  /* overview hero: the big confident numbers */
+  .hero { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px; margin: 14px 0 16px; }
+  .hero-tile { background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; padding: 18px 20px; }
+  .hero-tile .hl { font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--ink-3); }
+  .hero-tile .hv { font-family: var(--serif); font-size: 34px; font-weight: 650;
+    margin-top: 6px; letter-spacing: -.01em; }
+  .hero-tile .hs { font-size: 12px; color: var(--ink-3); margin-top: 4px; }
+  /* data profile */
+  .pbadge { display: inline-block; font-family: var(--mono); font-size: 10.5px;
+    background: var(--card-2); border-radius: 8px; padding: 3px 9px;
+    margin: 0 6px 6px 0; color: var(--ink-2); }
+  .psub { font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--ink-3); margin: 12px 0 6px; }
+  .pstats { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--ink-2); }
+  .pstats b { font-family: var(--mono); font-size: 12px; }
+  /* read-only share view: no library, no upload */
+  body.share aside.side { display: none; }
+  body.share .app { grid-template-columns: 1fr; }
 
   section > .kicker { display: block; margin: 30px 0 12px; }
   .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; }
@@ -367,6 +408,13 @@ let SHEET_IDX = {};
 const FILTER = { sheets: null, status: null, periods: "all" };  // sheets: Set|null
 // Executive mode: decisions in sentences. Analyst mode: the full machinery.
 let MODE = localStorage.getItem("lumnia_mode") || "exec";
+// The active tab. The tab set adapts to what the pipeline actually found —
+// a workbook with no business model simply has no Financials tab.
+let TAB = "overview";
+// Read-only share mode: the page was opened through a /share/{token} link.
+const SHARE = location.pathname.startsWith("/share/")
+  ? location.pathname.split("/")[2] : null;
+const API = SHARE ? `/share/${SHARE}` : "";
 
 /* ---------- brand sun ---------- */
 (function drawSun() {
@@ -384,14 +432,18 @@ let MODE = localStorage.getItem("lumnia_mode") || "exec";
 
 /* ---------- upload ---------- */
 const fileInput = $("#file"), statusEl = $("#status");
-$("#newupload").addEventListener("click", () => fileInput.click());
-fileInput.addEventListener("change", () => { if (fileInput.files[0]) upload(fileInput.files[0]); });
-window.addEventListener("dragover", e => { e.preventDefault(); document.body.classList.add("dropring"); });
-window.addEventListener("dragleave", e => { if (!e.relatedTarget) document.body.classList.remove("dropring"); });
-window.addEventListener("drop", e => {
-  e.preventDefault(); document.body.classList.remove("dropring");
-  if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]);
-});
+if (!SHARE) {
+  $("#newupload").addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", () => { if (fileInput.files[0]) upload(fileInput.files[0]); });
+  window.addEventListener("dragover", e => { e.preventDefault(); document.body.classList.add("dropring"); });
+  window.addEventListener("dragleave", e => { if (!e.relatedTarget) document.body.classList.remove("dropring"); });
+  window.addEventListener("drop", e => {
+    e.preventDefault(); document.body.classList.remove("dropring");
+    if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]);
+  });
+} else {
+  document.body.classList.add("share");
+}
 
 async function upload(file) {
   setStatus(`Analyzing ${file.name}…`);
@@ -438,39 +490,67 @@ async function loadWorkbooks() {
   }));
 }
 
-const NAV = [
-  ["overview", "Overview", `<svg width="14" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.4" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="7" cy="7" r="1.8" fill="currentColor"/></svg>`],
-  ["charts", "Charts", `<svg width="14" height="14" viewBox="0 0 14 14"><path d="M1.5 11l3.4-4 2.7 2.3 4.9-6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`],
-  ["audit", "Audit", `<svg width="14" height="14" viewBox="0 0 14 14"><path d="M2.5 7.4l3 3L11.5 4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`],
-  ["sheets", "Sheets", `<svg width="14" height="14" viewBox="0 0 14 14"><rect x="1.6" y="1.6" width="10.8" height="10.8" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M1.6 5.2h10.8M5.4 5.2V12.4" stroke="currentColor" stroke-width="1.2"/></svg>`],
-];
-function renderNav(counts, exec) {
-  const items = NAV.filter(([id]) => !(exec && id === "sheets"))
-    .map(([id, label, icon]) =>
-      [id, exec && id === "audit" ? "Actions" : id === "charts" && exec ? "Trends" : label, icon]);
+/* The dashboard is composed per upload: one tab per story the pipeline can
+   actually tell. No model -> no Financials tab; nothing to simulate -> no
+   What-if tab. The page never shows an empty shell. */
+const TAB_ICONS = {
+  overview: `<svg width="14" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.4" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="7" cy="7" r="1.8" fill="currentColor"/></svg>`,
+  financials: `<svg width="14" height="14" viewBox="0 0 14 14"><path d="M2 12V7.5M5.4 12V4.5M8.8 12V6M12.2 12V2.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`,
+  whatif: `<svg width="14" height="14" viewBox="0 0 14 14"><path d="M2 10.5c2.4 0 3.4-6.5 6-6.5M2 4c2.4 0 3.4 6.5 6 6.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M9.5 4H12v2.5M9.5 10.5H12V8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  data: `<svg width="14" height="14" viewBox="0 0 14 14"><path d="M1.5 11l3.4-4 2.7 2.3 4.9-6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  audit: `<svg width="14" height="14" viewBox="0 0 14 14"><path d="M2.5 7.4l3 3L11.5 4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+};
+
+function availableTabs() {
+  const exec = MODE === "exec";
+  const t = [["overview", "Overview"]];
+  if (REPORT.model) t.push(["financials", "Financials"]);
+  if (REPORT.model && REPORT.model.scenario_ready) t.push(["whatif", "What-if"]);
+  t.push(["data", exec ? "Trends" : "Data"]);
+  t.push(["audit", exec ? "Actions" : "Audit"]);
+  return t;
+}
+function tabCounts() {
+  return { audit: AUDIT.n_mismatched_relations,
+           data: CHARTS.filter(c => !c.pseudo).length || null };
+}
+
+function setTab(id) { TAB = id; renderAll(); window.scrollTo(0, 0); }
+
+function renderNav() {
+  const counts = tabCounts();
   $("#nav-analysis").innerHTML = `<span class="kicker">Analysis</span>` +
-    items.map(([id, label, icon], k) => `
-      <div class="nav-item ${k === 0 ? "active" : ""}" data-target="sec-${id}">
-        ${icon}${label}${counts[id] != null ? `<span class="cnt">${counts[id]}</span>` : ""}
+    availableTabs().map(([id, label]) => `
+      <div class="nav-item ${TAB === id ? "active" : ""}" data-tab="${id}">
+        ${TAB_ICONS[id]}${label}${counts[id] != null ? `<span class="cnt">${counts[id]}</span>` : ""}
       </div>`).join("");
-  $$("#nav-analysis .nav-item").forEach(el => el.addEventListener("click", () => {
-    $$("#nav-analysis .nav-item").forEach(x => x.classList.remove("active"));
-    el.classList.add("active");
-    const t = document.getElementById(el.dataset.target);
-    if (t) t.scrollIntoView({ behavior: "smooth", block: "start" });
-  }));
+  $$("#nav-analysis .nav-item").forEach(el =>
+    el.addEventListener("click", () => setTab(el.dataset.tab)));
+}
+
+function renderTabBar() {
+  const counts = tabCounts();
+  return `<div class="tabs">${availableTabs().map(([id, label]) => `
+    <button class="tabbtn ${TAB === id ? "on" : ""}" data-tab="${id}">${label}${
+      counts[id] != null ? `<span class="tcnt">${counts[id]}</span>` : ""}</button>`).join("")}</div>`;
+}
+function attachTabBar() {
+  $$(".tabs .tabbtn").forEach(b =>
+    b.addEventListener("click", () => setTab(b.dataset.tab)));
 }
 
 /* ---------- select + render ---------- */
 async function select(id) {
   current = id;
-  loadWorkbooks();
-  [REPORT, AUDIT] = await Promise.all([
-    fetch(`/analyses/${id}`).then(r => r.json()),
-    fetch(`/analyses/${id}/findings`).then(r => r.json()),
-  ]);
+  if (!SHARE) loadWorkbooks();
+  [REPORT, AUDIT] = await Promise.all(SHARE
+    ? [fetch(`${API}/report`).then(r => r.json()),
+       fetch(`${API}/findings`).then(r => r.json())]
+    : [fetch(`/analyses/${id}`).then(r => r.json()),
+       fetch(`/analyses/${id}/findings`).then(r => r.json())]);
   FILTER.sheets = null; FILTER.status = null; FILTER.periods = "all";
   MC_RESULTS = null; SCEN = { price: 1.0, vol: 1.0, cost: 1.0 };
+  TAB = "overview";
   renderAll();
 }
 
@@ -489,51 +569,55 @@ function renderAll() {
   SHEET_IDX = {}; r.sheets.forEach((s, i) => { SHEET_IDX[s.name] = i; });
   CHARTS = collectCharts(r);
   const exec = MODE === "exec";
+  if (!availableTabs().some(([id]) => id === TAB)) TAB = "overview";
 
-  renderNav({
-    overview: null,
-    charts: visCharts().length,
-    audit: a.n_mismatched_relations,
-    sheets: exec ? undefined : r.n_sheets,
-  }, exec);
+  renderNav();
   $("#topbar").innerHTML = `<div class="topbar">
     <h2>${esc(r.filename)}</h2>
-    <span class="sub">${r.n_sheets} sheets analyzed</span>
+    <span class="sub">${r.n_sheets} sheets analyzed${SHARE ? " · shared view" : ""}</span>
     <span class="grow"></span>
     <span class="modes">
       <button data-mode="exec" class="${exec ? "on" : ""}">Executive</button>
       <button data-mode="analyst" class="${exec ? "" : "on"}">Analyst</button>
     </span>
     <button class="btn" id="print-report">⎙&nbsp; Report</button>
+    ${SHARE ? "" : `<button class="btn" id="share-link">↗&nbsp; Share</button>
     <button class="btn" id="dl-corrections">⤓&nbsp; Corrections CSV</button>
-    ${exec ? "" : `<button class="btn" id="dl-findings">⤓&nbsp; Findings CSV</button>`}
+    ${exec ? "" : `<button class="btn" id="dl-findings">⤓&nbsp; Findings CSV</button>`}`}
   </div>`;
   $$(".modes button").forEach(b => b.addEventListener("click", () => {
     MODE = b.dataset.mode; localStorage.setItem("lumnia_mode", MODE); renderAll();
   }));
   $("#print-report").addEventListener("click", printReport);
-  $("#dl-corrections").addEventListener("click", downloadCorrections);
+  const dlc = $("#dl-corrections");
+  if (dlc) dlc.addEventListener("click", downloadCorrections);
   const dlf = $("#dl-findings");
   if (dlf) dlf.addEventListener("click", downloadFindings);
+  const shr = $("#share-link");
+  if (shr) shr.addEventListener("click", shareLink);
 
-  if (exec) {
-    $("#content").innerHTML =
-      `<section id="sec-overview">${renderVerdict()}${renderOverview()}${renderInsights()}</section>` +
-      renderFinancials() + renderScenario() + renderMC() +
-      `<section id="sec-charts"><span class="kicker">Trends</span>${renderChartGrid()}</section>` +
-      `<section id="sec-audit"><span class="kicker">What to do</span>${renderActionList()}</section>`;
-  } else {
-    $("#content").innerHTML =
-      renderFilters() +
-      `<section id="sec-overview">${renderVerdict()}${renderOverview()}${renderInsights()}</section>` +
-      renderFinancials() + renderScenario() + renderMC() +
-      `<section id="sec-charts"><span class="kicker">Charts</span>${renderChartGrid()}</section>` +
-      `<section id="sec-audit"><span class="kicker">Audit</span>${renderHighlights()}${renderLeaderboards()}${renderFindingsTable()}</section>` +
-      `<section id="sec-sheets"><span class="kicker">Sheets (${r.n_sheets})</span>${renderSheets()}</section>`;
+  let body = "";
+  if (TAB === "overview") {
+    body = `<section id="sec-overview">${renderVerdict()}${renderNarrative()}${renderHero()}${renderOverview()}${renderInsights()}</section>`;
+  } else if (TAB === "financials") {
+    body = renderFinancials();
+  } else if (TAB === "whatif") {
+    body = renderScenario() + renderMC();
+  } else if (TAB === "data") {
+    body = (exec ? "" : renderFilters()) +
+      `<section id="sec-charts"><span class="kicker">${exec ? "Trends" : "Charts"}</span>${renderChartGrid()}</section>` +
+      ((!exec || !r.model) ? `<section id="sec-profile"><span class="kicker">Data profile</span>${renderProfile()}</section>` : "") +
+      (exec ? "" : `<section id="sec-sheets"><span class="kicker">Sheets (${r.n_sheets})</span>${renderSheets()}</section>`);
+  } else if (TAB === "audit") {
+    body = exec
+      ? `<section id="sec-audit"><span class="kicker">What to do</span>${renderActionList()}</section>`
+      : (renderFilters() +
+         `<section id="sec-audit"><span class="kicker">Audit</span>${renderHighlights()}${renderLeaderboards()}${renderFindingsTable()}</section>`);
   }
+  $("#content").innerHTML = renderTabBar() + body;
 
-  attachFilters(); attachCharts(); attachFindingRows(); attachBarRows();
-  attachScenario(); attachMC();
+  attachTabBar(); attachFilters(); attachCharts(); attachFindingRows();
+  attachBarRows(); attachScenario(); attachMC(); attachNarrative();
 }
 
 /* ---------- filters ---------- */
@@ -612,6 +696,117 @@ function attachFilters() {
 function openPill(id) {
   const p = document.getElementById(id);
   if (p) { p.classList.add("open"); const s = $("#sheet-search"); if (s) s.focus(); }
+}
+
+/* ---------- overview hero: the 3-4 numbers that lead this workbook -------- */
+function renderHero() {
+  const m = REPORT.model, tiles = [];
+  const sum = a => a.reduce((t, v) => t + (v ?? 0), 0);
+  const last = a => { for (let i = a.length - 1; i >= 0; i--) if (a[i] != null) return a[i]; return null; };
+  if (m) {
+    const rev = m.metrics.revenue;
+    if (rev) {
+      const v = rev.values, fi = v.findIndex(x => x != null);
+      let li = -1; for (let i = v.length - 1; i >= 0; i--) if (v[i] != null) { li = i; break; }
+      const growth = fi >= 0 && li > fi && v[fi] ? ((v[li] / v[fi] - 1) * 100) : null;
+      tiles.push(`<div class="hero-tile"><div class="hl">Revenue · ${esc(m.periods[fi])}–${esc(m.periods[li])}</div>
+        <div class="hv">${compact(sum(v))}</div>
+        ${growth != null ? `<div class="hs" style="color:var(--good)">${growth >= 0 ? "▲" : "▼"} ${Math.abs(growth).toFixed(0)}% over the horizon</div>` : ""}</div>`);
+    }
+    const mp = m.derived.margin_pct && last(m.derived.margin_pct);
+    if (mp != null) tiles.push(`<div class="hero-tile"><div class="hl">Operating margin</div>
+      <div class="hv">${mp.toFixed(0)}%</div><div class="hs">latest period</div></div>`);
+    const vr = m.derived.volume_ratio && last(m.derived.volume_ratio);
+    if (vr != null) tiles.push(`<div class="hero-tile"><div class="hl">Conversion rate</div>
+      <div class="hv">${(vr * 100).toFixed(1)}%</div>
+      <div class="hs">${esc(m.metrics.volume_secondary.label.slice(0, 16))} / ${esc(m.metrics.volume.label.slice(0, 16))}</div></div>`);
+    if (m.metrics.capex) tiles.push(`<div class="hero-tile"><div class="hl">Total CAPEX</div>
+      <div class="hv">${compact(sum(m.metrics.capex.values))}</div></div>`);
+  } else {
+    // no business model role-tagged -> lead with the data-profile numbers
+    const es = collectEda();
+    const rows = es.reduce((t, e) => t + (e.eda.row_count || 0), 0);
+    if (!rows) return "";
+    let cells = 0, nulls = 0, dupes = 0;
+    for (const e of es) {
+      cells += (e.eda.row_count || 0) * (e.eda.column_count || 0);
+      dupes += e.eda.duplicates || 0;
+      for (const info of Object.values(e.eda.missingness || {})) nulls += info.count || 0;
+    }
+    tiles.push(`<div class="hero-tile"><div class="hl">Rows profiled</div>
+      <div class="hv">${compact(rows)}</div><div class="hs">across ${es.length} table${es.length === 1 ? "" : "s"}</div></div>`);
+    if (cells) tiles.push(`<div class="hero-tile"><div class="hl">Completeness</div>
+      <div class="hv">${(100 - nulls / cells * 100).toFixed(0)}%</div><div class="hs">of all cells filled</div></div>`);
+    tiles.push(`<div class="hero-tile"><div class="hl">Duplicate rows</div>
+      <div class="hv">${dupes}</div></div>`);
+  }
+  return tiles.length ? `<div class="hero">${tiles.slice(0, 4).join("")}</div>` : "";
+}
+
+/* ---------- data profile: EDA facts as a dashboard (any file type) ------- */
+function collectEda() {
+  const out = [];
+  for (const s of REPORT.sheets) {
+    if (s.tidy && s.tidy.eda && s.tidy.eda.row_count) out.push({ sheet: s.name, eda: s.tidy.eda });
+    for (const p of s.panels || [])
+      if (p.tidy && p.tidy.eda && p.tidy.eda.row_count) out.push({ sheet: s.name, eda: p.tidy.eda });
+  }
+  return out;
+}
+
+function renderProfile() {
+  const es = collectEda().filter(e => sheetVisible(e.sheet));
+  if (!es.length) return `<div class="card muted">No profiling facts — nothing tabular enough to profile.</div>`;
+  const cards = es.slice(0, 6).map(({ sheet, eda }) => {
+    const cells = eda.row_count * eda.column_count;
+    let nulls = 0;
+    for (const info of Object.values(eda.missingness || {})) nulls += info.count || 0;
+    const badges = [
+      `${compact(eda.row_count)} rows × ${eda.column_count} cols`,
+      cells ? `${(100 - nulls / cells * 100).toFixed(0)}% complete` : null,
+      eda.duplicates ? `${eda.duplicates} duplicate row${eda.duplicates === 1 ? "" : "s"}` : null,
+      (eda.constant_columns || []).length ? `${eda.constant_columns.length} constant col${eda.constant_columns.length === 1 ? "" : "s"}` : null,
+    ].filter(Boolean).map(b => `<span class="pbadge">${esc(b)}</span>`).join("");
+
+    // top categories by average of the detected target column
+    let breakdown = "";
+    const bd = (eda.categorical_breakdowns || [])[0];
+    if (bd && eda.target_column) {
+      const mx = Math.max(1, ...bd.categories.map(c => Math.abs(c.mean)));
+      breakdown = `<div class="psub">avg ${esc(String(eda.target_column).slice(0, 24))} by ${esc(bd.column.slice(0, 24))}</div>` +
+        bd.categories.slice(0, 5).map(c => `<div class="bar-row">
+          <span class="bl">${esc(c.category.slice(0, 40))} <span class="muted">(${c.count})</span></span>
+          <span class="bv">${compact(c.mean)}</span>
+          <div class="track"><div class="fill" style="width:${Math.max(3, Math.abs(c.mean) / mx * 100)}%;background:var(--gold)"></div></div>
+        </div>`).join("");
+    }
+
+    // the detected target column's shape
+    let stats = "";
+    const t = eda.target_column && (eda.numeric_columns || {})[eda.target_column];
+    if (t) {
+      stats = `<div class="psub">${esc(String(eda.target_column).slice(0, 28))}</div>
+        <div class="pstats">
+          <span>min <b>${compact(t.min)}</b></span><span>median <b>${compact(t.median)}</b></span>
+          <span>max <b>${compact(t.max)}</b></span>
+          ${t.outlier_count ? `<span style="color:var(--warning)">outliers <b>${t.outlier_count}</b></span>` : ""}
+        </div>`;
+    }
+    return `<div class="card"><div class="card-head"><span class="ct">${esc(sheet)}</span></div>
+      <div style="margin-top:8px">${badges}</div>${stats}${breakdown}</div>`;
+  });
+  return `<div class="grid2">${cards.join("")}</div>`;
+}
+
+/* ---------- share: read-only link for clients ---------- */
+async function shareLink() {
+  const r = await fetch(`/analyses/${current}/share`, { method: "POST" });
+  if (!r.ok) { setStatus("Could not create the share link.", true); return; }
+  const full = location.origin + (await r.json()).url;
+  try {
+    await navigator.clipboard.writeText(full);
+    setStatus(`Share link copied to clipboard — anyone with it can view (not edit): ${full}`);
+  } catch { setStatus(`Share link (copy it): ${full}`); }
 }
 
 /* ---------- overview: KPIs + primary chart ---------- */
@@ -717,6 +912,48 @@ function renderVerdict() {
   </div>`;
 }
 
+/* ---------- Layer 3: the AI narrative (phrases verified numbers only) ---- */
+let NARR_READY = false;
+
+function renderNarrative() {
+  const n = REPORT.narrative;
+  if (n) {
+    const paras = n.narrative.split(/\n+/).filter(p => p.trim())
+      .map(p => `<p>${esc(p)}</p>`).join("");
+    return `<div class="card narr"><div class="card-head">
+        <span class="ct">✦ ${esc(n.headline)}</span>
+        <span class="grow"></span>${SHARE ? "" : `<button class="iconbtn" id="gen-narr">↻ rewrite</button>`}</div>
+      ${paras}
+      ${(n.watchouts || []).length ? `<ul class="nwatch">${n.watchouts.map(w => `<li>${esc(w)}</li>`).join("")}</ul>` : ""}
+      <div class="nfoot">AI-written from the pipeline's verified figures — it phrases, never computes.</div></div>`;
+  }
+  if (!NARR_READY || !REPORT.id || SHARE) return "";
+  return `<div class="card narr">
+    <div class="card-head"><span class="ct">Executive narrative</span>
+      <span class="grow"></span><button class="iconbtn on" id="gen-narr">✦ write it</button></div>
+    <p class="muted" style="margin:8px 0 0">One click and Claude writes the story of this workbook —
+      from the verified numbers only.</p>
+    <div class="nerr" id="narr-err"></div></div>`;
+}
+
+function attachNarrative() {
+  const b = $("#gen-narr");
+  if (!b) return;
+  b.addEventListener("click", async () => {
+    b.disabled = true; b.textContent = "writing…";
+    const resp = await fetch(`/analyses/${current}/narrative`, { method: "POST" });
+    if (resp.ok) {
+      REPORT.narrative = await resp.json();
+      renderAll();
+    } else {
+      const detail = (await resp.json().catch(() => ({}))).detail || "The narrative call failed.";
+      b.disabled = false; b.textContent = "✦ write it";
+      const e = $("#narr-err");
+      if (e) e.textContent = detail;
+    }
+  });
+}
+
 function plainFormula(f) {
   if (f.kind === "product")
     return `'${esc(f.target)}' should equal '${esc(f.inputs[0])}' × '${esc(f.inputs[1])}'`;
@@ -772,11 +1009,41 @@ function renderActionList() {
 function printReport() {
   const v = verdictInfo();
   const { extracted, recs } = kpiData();
-  const seen = new Set();
-  const charts = $$(".chart-card").map(c => ({
-    title: c.querySelector(".ct") ? c.querySelector(".ct").textContent : "",
-    svg: c.querySelector(".plot svg") ? c.querySelector(".plot svg").outerHTML : "",
-  })).filter(c => c.svg && !seen.has(c.title) && seen.add(c.title)).slice(0, 2);
+  // charts are built from data, not the DOM — only the active tab is mounted
+  const charts = [];
+  const m = REPORT.model;
+  if (m) {
+    const lines = Object.entries(m.metrics).map(([role, s], k) => ({
+      label: `${ROLE_LABELS[role] || role} — ${s.label.slice(0, 26)}`,
+      values: s.values, color: SERIES_COLORS[k % SERIES_COLORS.length], on: true,
+    }));
+    charts.push({ title: `Financial trajectory (${m.source_sheet.trim()})`,
+      svg: svgTimeseries({ chart: { kind: "timeseries", periods: m.periods }, lines, range: null }) });
+  }
+  const real = CHARTS.filter(c => !c.pseudo);
+  const ranked = real.filter(c => c.chart.kind === "timeseries")
+    .sort((a, b) => b.chart.periods.length - a.chart.periods.length)
+    .concat(real.filter(c => c.chart.kind === "profile"));
+  for (const c of ranked) {
+    if (charts.length >= 2) break;
+    if (charts.some(x => x.title === c.sheet)) continue;
+    charts.push({ title: c.sheet,
+      svg: c.chart.kind === "timeseries" ? svgTimeseries(c) : svgProfile(c) });
+  }
+
+  let finKpis = "";
+  if (m) {
+    const sum = a => a.reduce((t, x) => t + (x ?? 0), 0);
+    const last = a => { for (let i = a.length - 1; i >= 0; i--) if (a[i] != null) return a[i]; return null; };
+    const bits = [];
+    if (m.metrics.revenue) bits.push(`<div class="pkpi"><div class="l">Revenue (horizon)</div><div class="v">${compact(sum(m.metrics.revenue.values))}</div></div>`);
+    const mp = m.derived.margin_pct && last(m.derived.margin_pct);
+    if (mp != null) bits.push(`<div class="pkpi"><div class="l">Margin (latest)</div><div class="v">${mp.toFixed(0)}%</div></div>`);
+    if (m.metrics.capex) bits.push(`<div class="pkpi"><div class="l">Total CAPEX</div><div class="v">${compact(sum(m.metrics.capex.values))}</div></div>`);
+    const vr = m.derived.volume_ratio && last(m.derived.volume_ratio);
+    if (vr != null) bits.push(`<div class="pkpi"><div class="l">Conversion</div><div class="v">${(vr * 100).toFixed(1)}%</div></div>`);
+    if (bits.length) finKpis = `<h2>Financials</h2><div class="pkpis">${bits.join("")}</div>`;
+  }
   const date = new Date().toISOString().slice(0, 10);
 
   $("#printdoc").innerHTML = `
@@ -786,6 +1053,8 @@ function printReport() {
     </div>
     <div class="pverdict" style="color:${v.color}">${v.icon} ${v.label}</div>
     <p style="max-width:80ch">${execSummary()}</p>
+    ${REPORT.narrative ? `<h2>${esc(REPORT.narrative.headline)}</h2>
+      <p style="max-width:80ch">${REPORT.narrative.narrative.split(/\n+/).filter(p => p.trim()).map(esc).join("<br><br>")}</p>` : ""}
     <h2>Key figures</h2>
     <div class="pkpis">
       <div class="pkpi"><div class="l">Total discrepancy</div><div class="v">${compact(AUDIT.total_abs_delta)}</div></div>
@@ -794,6 +1063,7 @@ function printReport() {
       <div class="pkpi"><div class="l">Sheets read</div><div class="v">${extracted}/${REPORT.n_sheets}</div></div>
       <div class="pkpi"><div class="l">Records</div><div class="v">${compact(recs)}</div></div>
     </div>
+    ${finKpis}
     ${charts.length ? `<h2>Trends</h2><div class="pcharts">${charts.map(c =>
       `<div><div style="font-weight:650;font-size:12px;margin-bottom:4px">${esc(c.title)}</div>${c.svg}</div>`).join("")}</div>` : ""}
     <h2>What to do</h2>
@@ -812,7 +1082,8 @@ function printReport() {
 
 /* ---------- financials: generated from the semantic business model ------- */
 const ROLE_LABELS = { revenue: "Revenue", opex: "OPEX", capex: "CAPEX",
-  volume: "Volume", area: "Area" };
+  volume: "Volume", volume_secondary: "Volume (out)", area: "Area",
+  headcount: "Headcount", price: "Price" };
 
 function renderFinancials() {
   const m = REPORT.model;
@@ -851,6 +1122,16 @@ function renderFinancials() {
     if (li >= 0) tiles.push(`<div class="tile"><div class="label">Margin · ${esc(m.periods[li])}</div>
       <div class="value">${mp[li].toFixed(0)}%</div></div>`);
   }
+  const upv = m.derived.opex_per_volume;
+  if (upv) {
+    const li = lastIdx(upv), fi = upv.findIndex(x => x != null);
+    if (li >= 0) {
+      const chg = fi >= 0 && li > fi && upv[fi] ? ((upv[li] / upv[fi] - 1) * 100) : null;
+      tiles.push(`<div class="tile"><div class="label">Cost per unit · ${esc(m.periods[li])}</div>
+        <div class="value">${compact(upv[li])}</div>
+        ${chg != null ? `<div class="label" style="margin-top:4px;color:${chg <= 0 ? "var(--good)" : "var(--critical)"}">${chg <= 0 ? "▼" : "▲"} ${Math.abs(chg).toFixed(0)}% since ${esc(m.periods[fi])}</div>` : ""}</div>`);
+    }
+  }
 
   // trajectory chart: the role series as a pseudo-timeseries (reuses hover/legend)
   const lines = Object.entries(met).map(([role, s], k) => ({
@@ -871,6 +1152,32 @@ function renderFinancials() {
     marginCard = chartCard(bars, false);
   }
 
+  // unit economics: the efficiency curve — cost & revenue per unit of volume
+  let unitCard = "", convCard = "";
+  const d = m.derived;
+  if (met.volume && (d.opex_per_volume || d.revenue_per_volume)) {
+    const ulines = [];
+    if (d.revenue_per_volume) ulines.push({ label: "Revenue per unit",
+      values: d.revenue_per_volume, color: SERIES_COLORS[0], on: true });
+    if (d.opex_per_volume) ulines.push({ label: "Cost per unit (OPEX)",
+      values: d.opex_per_volume, color: SERIES_COLORS[2], on: true });
+    const uc = { pseudo: true, sheet: "Unit economics — efficiency curve",
+      loc: `per ${met.volume.label.slice(0, 24)}`,
+      chart: { kind: "timeseries", periods: m.periods, series: [], other: null,
+               truncated: false }, lines: ulines, i: CHARTS.length, range: null };
+    CHARTS.push(uc);
+    unitCard = chartCard(uc, false);
+  }
+  if (d.volume_ratio && met.volume_secondary) {
+    const conv = { pseudo: true,
+      sheet: `Conversion rate — ${met.volume_secondary.label.slice(0, 20)} / ${met.volume.label.slice(0, 20)}`,
+      loc: null, chart: { kind: "profile", x: m.periods,
+        y: d.volume_ratio.map(v => v != null ? +(v * 100).toFixed(2) : 0) },
+      i: CHARTS.length, range: null };
+    CHARTS.push(conv);
+    convCard = chartCard(conv, false);
+  }
+
   // breakdown panels: top line items per sheet (tracks, like the audit bars)
   const bds = (m.breakdowns || []).slice(0, 4).map(b => {
     const mx = Math.max(1, ...b.items.map(i => Math.abs(i.value)));
@@ -887,6 +1194,7 @@ function renderFinancials() {
   return `<section id="sec-financials"><span class="kicker">Financials — detected from this workbook</span>
     ${tiles.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px">${tiles.join("")}</div>` : ""}
     <div class="grid2">${chartCard(traj, false)}${marginCard}</div>
+    ${unitCard || convCard ? `<div class="grid2" style="margin-top:14px">${unitCard}${convCard}</div>` : ""}
     ${bds ? `<div class="grid2" style="margin-top:14px">${bds}</div>` : ""}
   </section>`;
 }
@@ -1185,7 +1493,7 @@ function chartRange(c) {
 
 function renderChartGrid() {
   const vis = visCharts().filter(c => !c.pseudo);
-  if (!vis.length) return `<div class="card muted">No chartable series${CHARTS.length ? " for this filter" : " in this analysis — press rerun to recompute with the current pipeline"}.</div>`;
+  if (!vis.length) return `<div class="card muted">No chartable series${CHARTS.length ? " for this filter" : " in this analysis (older analyses may need a rerun to compute charts)"}.</div>`;
   return `<div class="grid2">${vis.map(c => chartCard(c, false)).join("")}</div>`;
 }
 
@@ -1205,9 +1513,11 @@ function chartCard(c, isPrimary) {
           <span class="sw" style="background:${s.color}"></span>${esc(s.label)}</span>`).join("")}</div>` : "";
   const hint = c.chart.kind === "timeseries"
     ? `<div class="hint">drag to zoom · double-click to reset</div>` : "";
+  const cumBtn = c.chart.kind === "profile" && !c.pseudo
+    ? `<button class="iconbtn ${c.cum ? "on" : ""}" data-cum="${c.i}">Σ cumulative</button>` : "";
   return `<div class="card chart-card" data-chart="${c.i}" data-sheet="${esc(c.sheet)}">
     <div class="card-head"><span class="ct">${esc(c.sheet)}</span><span class="cs">${esc(sub)}</span>
-      <span class="grow"></span><button class="iconbtn" data-csv="${c.i}">⤓ csv</button></div>
+      <span class="grow"></span>${cumBtn}<button class="iconbtn" data-csv="${c.i}">⤓ csv</button></div>
     <div class="plot">${c.chart.kind === "timeseries" ? svgTimeseries(c) : svgProfile(c)}</div>
     ${legend}${hint}<div class="tooltip"></div></div>`;
 }
@@ -1272,16 +1582,23 @@ function svgTimeseries(c) {
   return `<svg viewBox="0 0 ${W} ${H}" data-kind="timeseries">${out}</svg>`;
 }
 
-/* Figma-style capsule bars on light tracks, in brand gold */
+/* Figma-style capsule bars on light tracks, in brand gold.
+   c.cum adds the running-total line (shared axis, honestly extended) plus a
+   dashed per-column average as the reference line. */
+function cumOf(y) { let t = 0; return y.map(v => +(t += v).toFixed(4)); }
+
 function svgProfile(c) {
-  const sy = yScale(c.chart.y);
+  const ys = c.chart.y;
+  const cum = c.cum ? cumOf(ys) : null;
+  const domain = cum ? ys.concat(cum) : ys;
+  const sy = yScale(domain);
   const y0 = sy(0), yTop = MT, yBot = H - MB;
   const n = c.chart.x.length;
   const band = (W - ML - MR) / n;
   const bw = Math.min(20, Math.max(7, band * .38));
-  let out = gridAndTicks(c.chart.y);
+  let out = gridAndTicks(domain);
   const step = Math.max(1, Math.ceil(n / 8));
-  c.chart.y.forEach((v, i) => {
+  ys.forEach((v, i) => {
     const x = ML + band * i + (band - bw) / 2;
     out += `<rect x="${x}" y="${yTop}" width="${bw}" height="${yBot - yTop}" rx="${bw/2}" fill="#eee3c4"/>`;
     const yv = sy(v);
@@ -1291,6 +1608,18 @@ function svgProfile(c) {
     if (i % step === 0) out += `<text x="${x + bw/2}" y="${H - 8}" text-anchor="middle" font-size="10"
       fill="#99917e" font-family="ui-monospace,Menlo,monospace">${esc(String(c.chart.x[i]).slice(0, 12))}</text>`;
   });
+  if (cum) {
+    const mean = ys.reduce((a, b) => a + b, 0) / n, my = sy(mean);
+    out += `<line x1="${ML}" x2="${W - MR}" y1="${my}" y2="${my}" stroke="#99917e" stroke-dasharray="4 3"/>
+      <text x="${ML + 4}" y="${my - 5}" font-size="10" fill="#99917e"
+        font-family="ui-monospace,Menlo,monospace">avg ${compact(mean)}</text>`;
+    let dp = "";
+    cum.forEach((v, i) => { dp += `${i ? "L" : "M"}${(ML + band * i + band / 2).toFixed(1)},${sy(v).toFixed(1)}`; });
+    out += `<path d="${dp}" fill="none" stroke="#2a78d6" stroke-width="2"
+        stroke-linejoin="round" stroke-linecap="round"/>
+      <text x="${W - MR - 4}" y="${sy(cum[n - 1]) - 7}" text-anchor="end" font-size="10.5"
+        fill="#2a78d6">Σ ${compact(cum[n - 1])}</text>`;
+  }
   return `<svg viewBox="0 0 ${W} ${H}" data-kind="profile">${out}</svg>`;
 }
 
@@ -1306,6 +1635,16 @@ function attachCharts() {
   }));
   $$(".iconbtn[data-csv]").forEach(b => b.addEventListener("click",
     () => downloadChartCSV(CHARTS[+b.dataset.csv])));
+  $$(".iconbtn[data-cum]").forEach(b => b.addEventListener("click", () => {
+    const c = CHARTS[+b.dataset.cum];
+    c.cum = !c.cum;
+    $$(`.chart-card[data-chart="${c.i}"]`).forEach(card => {
+      card.querySelector(".plot").innerHTML = svgProfile(c);
+      const btn = card.querySelector(`[data-cum="${c.i}"]`);
+      if (btn) btn.classList.toggle("on", c.cum);
+    });
+    bindHoverAll(c);
+  }));
   CHARTS.forEach(bindHoverAll);
 }
 
@@ -1329,8 +1668,9 @@ function bindHover(c, card) {
     svg.querySelectorAll(".bar").forEach(bar => {
       bar.addEventListener("mousemove", e => {
         const i = +bar.dataset.i;
+        const cumRow = c.cum ? `<div class="tv"><span>cumulative</span><b>${num(cumOf(c.chart.y)[i])}</b></div>` : "";
         show(`<div class="tp">${esc(String(c.chart.x[i]))}</div>
-              <div class="tv"><span>sum</span><b>${num(c.chart.y[i])}</b></div>`, e);
+              <div class="tv"><span>sum</span><b>${num(c.chart.y[i])}</b></div>${cumRow}`, e);
       });
       bar.addEventListener("mouseleave", hide);
     });
@@ -1507,6 +1847,11 @@ function attachBarRows() {
 function jumpToSheet(name) {
   const idx = SHEET_IDX[name];
   if (idx === undefined) return;
+  // sheet cards live on the Data tab (analyst view) — go there first
+  if (TAB !== "data" || MODE === "exec") {
+    MODE = "analyst"; localStorage.setItem("lumnia_mode", MODE);
+    TAB = "data"; renderAll();
+  }
   const el = document.getElementById("sheetcard-" + idx);
   if (!el) return;
   el.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1607,7 +1952,14 @@ function downloadFindings() {
 
 /* ---------- boot ---------- */
 (async function boot() {
+  if (SHARE) {           // read-only client view: one analysis, no library
+    await select("shared");
+    return;
+  }
   renderEmpty();
+  fetch("/health").then(r => r.json())
+    .then(h => { NARR_READY = !!h.narrative_ready; })
+    .catch(() => {});
   await loadWorkbooks();
   const first = $("#wb-list .wb");
   if (first) select(first.dataset.id);

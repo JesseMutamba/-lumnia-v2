@@ -69,6 +69,42 @@ def test_model_breakdown_excludes_totals_row():
     assert bd["items"][0] == {"label": "Semences", "value": 500}
 
 
+def _wide_vocab_book() -> bytes:
+    """Retail/services-style labels plus TWO volume series (in and out)."""
+    recap = pd.DataFrame([
+        [None, 2024, 2025, 2026],
+        ["RECETTES ANNUELLES", 1000, 2000, 3000],
+        ["COUTS D'EXPLOITATION", 400, 700, 900],
+        ["PRIX DE VENTE UNITAIRE", 10, 10, 10],
+        ["RECOLTE FFB (tonnes)", 500, 900, 1400],
+        ["PRODUCTION CPO", 100, 200, 300],
+        ["EFFECTIFS", 12, 20, 30],
+    ])
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as xw:
+        recap.to_excel(xw, sheet_name="PLAN", header=False, index=False)
+    return buf.getvalue()
+
+
+def test_model_wider_role_vocabulary():
+    m = _analyze(_wide_vocab_book(), "wide.xlsx")["model"]
+    met = m["metrics"]
+    assert met["revenue"]["label"] == "RECETTES ANNUELLES"
+    assert met["opex"]["label"] == "COUTS D'EXPLOITATION"
+    # "Prix de vente" must NOT be claimed as revenue
+    assert met["price"]["label"] == "PRIX DE VENTE UNITAIRE"
+    assert met["headcount"]["values"] == [12, 20, 30]
+
+
+def test_model_two_volumes_derive_conversion_ratio():
+    m = _analyze(_wide_vocab_book(), "wide.xlsx")["model"]
+    met = m["metrics"]
+    # primary = larger series (input), secondary = runner-up (output)
+    assert met["volume"]["label"] == "RECOLTE FFB (tonnes)"
+    assert met["volume_secondary"]["label"] == "PRODUCTION CPO"
+    assert m["derived"]["volume_ratio"] == [0.2, round(200 / 900, 4), round(300 / 1400, 4)]
+
+
 def test_no_year_series_means_no_model():
     df = pd.DataFrame([["A", "B"], ["x", 1], ["y", 2], ["z", 3]])
     buf = io.BytesIO()

@@ -26,6 +26,16 @@ database and stored uploads. Access is gated by a single shared password.
    fly secrets set LUMNIA_PASSWORD='choose-a-strong-password'
    ```
 
+   **Optional — AI narrative.** To enable the one-click executive narrative
+   (Claude phrases the pipeline's verified numbers; it never computes), add an
+   Anthropic API key from https://console.anthropic.com:
+   ```bash
+   fly secrets set ANTHROPIC_API_KEY='sk-ant-...'
+   ```
+   Without it the feature simply doesn't appear — everything else works.
+   Each narrative is one small API call (fractions of a cent), cached with
+   the analysis until you re-run it.
+
 5. **Deploy:**
    ```bash
    fly deploy
