@@ -96,10 +96,12 @@ def detect_schema(df: pd.DataFrame) -> Dict[str, Any]:
         num = pd.to_numeric(s, errors="coerce")
         if num.notna().sum() >= 0.8 * nonnull:
             uniq = set(num.dropna().unique())
-            if uniq <= {0, 1} and len(uniq) >= 1:
-                # a 0/1 flag is a category, not a quantity to sum
-                dims.append({"name": name, "kind": "flag", "cardinality": len(uniq),
-                             "members": sorted(int(v) for v in uniq)})
+            if uniq <= {0, 1}:
+                # a 0/1 flag is a category, not a quantity to sum — but a
+                # single-valued flag is a constant: nothing to group by
+                if len(uniq) == 2:
+                    dims.append({"name": name, "kind": "flag", "cardinality": 2,
+                                 "members": [0, 1]})
                 continue
             kind = ("change_pct" if CHANGE_RX.search(name)
                     else "ratio" if RATIO_RX.search(name) else "amount")
@@ -354,32 +356,43 @@ _INTENTS = [
 
 
 def plan_from_brief(brief: Dict[str, Any],
-                    story: Dict[str, Any]) -> Dict[str, Any]:
-    """Match every brief question against the computed story.
+                    stories: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Match every brief question against ALL of the workbook's stories.
 
-    Statuses are honest: ``answerable`` (metrics exist), ``partial`` (some of
-    what the question implies is missing), ``unanswerable`` (only gaps
-    matched — with what the file would need), ``unmatched`` (the question
-    didn't map to anything; a human should rephrase or the data lacks it).
+    Real workbooks answer different questions on different sheets (harvest
+    on one, fuel stock on another), so each question is scored against each
+    table's story and lands on the sheet that answers it best. Metric ids
+    are qualified ``s{story_index}:{metric_id}``.
+
+    Statuses stay honest: ``answerable``, ``partial``, ``unanswerable``
+    (with what the file would need), ``unmatched``.
     """
-    present = {m["id"] for m in story.get("metrics", [])}
-    gaps = {g["metric"]: g for g in story.get("gaps", [])}
+    if isinstance(stories, dict):                 # tolerate a single story
+        stories = [stories]
 
     questions = []
     claimed: set = set()
     for q in brief.get("questions", []):
-        hit_ids: List[str] = []
-        hit_gaps: List[Dict[str, Any]] = []
-        for _intent, rx, selector, gap_names in _INTENTS:
-            if not rx.search(q):
-                continue
-            hit_ids += [mid for mid in present if selector(mid)]
-            hit_gaps += [gaps[g] for g in gap_names if g in gaps]
-        hit_ids = sorted(set(hit_ids))
+        selectors = [(sel, gap_names) for _n, rx, sel, gap_names in _INTENTS
+                     if rx.search(q)]
+        best_si, best_ids = None, []
+        for si, st in enumerate(stories):
+            present = {m["id"] for m in st.get("metrics", [])}
+            ids = sorted({mid for sel, _g in selectors
+                          for mid in present if sel(mid)})
+            if len(ids) > len(best_ids):
+                best_si, best_ids = si, ids
+        hit_ids = [f"s{best_si}:{i}" for i in best_ids] if best_si is not None else []
         claimed.update(hit_ids)
-        seen = set()
-        missing = [g for g in hit_gaps
-                   if not (g["metric"] in seen or seen.add(g["metric"]))]
+
+        # missing pieces are reported from the answering sheet (or the spine)
+        gap_src = stories[best_si if best_si is not None else 0] if stories else {}
+        gaps = {g["metric"]: g for g in gap_src.get("gaps", [])}
+        seen: set = set()
+        missing = [gaps[g] for _sel, gap_names in selectors
+                   for g in gap_names if g in gaps
+                   and not (g in seen or seen.add(g))]
+
         if hit_ids and missing:
             status = "partial"
         elif hit_ids:
@@ -388,15 +401,18 @@ def plan_from_brief(brief: Dict[str, Any],
             status = "unanswerable"
         else:
             status = "unmatched"
-        questions.append({"question": q, "status": status,
-                          "metrics": hit_ids,
-                          "missing": [{"metric": g["metric"],
-                                       "requires": g["requires"]}
-                                      for g in missing]})
+        questions.append({
+            "question": q, "status": status, "metrics": hit_ids,
+            "sheet": (stories[best_si]["sheet"] if best_si is not None
+                      and stories[best_si].get("sheet") else None),
+            "missing": [{"metric": g["metric"], "requires": g["requires"]}
+                        for g in missing]})
 
+    spine_avail = [f"s0:{m['id']}" for m in
+                   (stories[0].get("metrics", []) if stories else [])]
     return {
         "questions": questions,
-        "also_available": sorted(present - claimed),
+        "also_available": sorted(set(spine_avail) - claimed),
         "approved": None,     # set by the approval endpoint
     }
 
@@ -412,3 +428,88 @@ def build_semantics(df: pd.DataFrame) -> Optional[Dict[str, Any]]:
     if story is None:
         return None
     return {"schema": schema, "story": story}
+
+
+# --------------------------------------------------------------------------
+# matrix (cross-tab) sheets: the long form drives the same story engine
+# --------------------------------------------------------------------------
+
+MAX_MATRIX_SERIES = 24
+# TOTAL/CUMUL rows are derived aggregates of the other series — including
+# them in sums would double-count, exactly like a totals row in a tidy table
+DERIVED_SERIES_RX = re.compile(r"total|cumul|sous.?tot|grand.?tot", re.IGNORECASE)
+
+
+def build_matrix_semantics(sheet_name: str, period_values: List[Any],
+                           series_values: Dict[str, Dict[int, float]]
+                           ) -> Optional[Dict[str, Any]]:
+    """Semantics for a DATE-axis matrix.
+
+    The unpivoted long form (Date x Série x value) feeds the same schema
+    detector and metric engine as a tidy table. The measure is named after
+    the sheet — that's honestly what the numbers are ("ENREGISTREMENT
+    PRODUCTION") — which also lets the role patterns tag it (production ->
+    volume, carburant/stock -> inventory…).
+
+    Matrix-specific intelligence:
+    * TOTAL/CUMUL series are derived aggregates — excluded from the data
+      (their sums would double-count) exactly like totals rows;
+    * stock-labeled series become a ``low_stock`` metric (latest level per
+      series) instead of being summed as flows;
+    * per-series month-over-month deltas become the ``movers`` metric —
+      "which série gained / lost the most last month".
+    """
+    measure = (str(sheet_name).strip() or "Valeur")[:60]
+    ranked = sorted(series_values.items(),
+                    key=lambda kv: -sum(abs(v) for v in kv[1].values()))
+    ranked = ranked[:MAX_MATRIX_SERIES]
+
+    stock = [(lbl, b) for lbl, b in ranked
+             if INVENTORY_RX.search(str(lbl)) and b]
+    flows = [(lbl, b) for lbl, b in ranked
+             if not DERIVED_SERIES_RX.search(str(lbl))
+             and not INVENTORY_RX.search(str(lbl))]
+
+    rows = [{"Date": period_values[k], "Série": str(lbl), measure: v}
+            for lbl, bucket in flows for k, v in bucket.items()
+            if period_values[k] is not None and v is not None]
+    if len(rows) < 6:
+        return None
+    df = pd.DataFrame(rows)
+    sem = build_semantics(df)
+    if sem is None:
+        return None
+    story = sem["story"]
+
+    if stock:
+        latest = [{"entity": str(lbl), "value": _round(b[max(b)])}
+                  for lbl, b in stock]
+        latest.sort(key=lambda r: (r["value"] is None, r["value"]))
+        story["metrics"].append({
+            "id": "low_stock", "metric": "latest", "measure": measure,
+            "grain": "Série", "rows": latest[:TOP_MOVERS]})
+        story["gaps"] = [g for g in story["gaps"]
+                         if g["metric"] != "stock_on_hand"]
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        months = pd.to_datetime(df["Date"], errors="coerce").dt.to_period("M")
+    grouped = (df.assign(_m=months).dropna(subset=["_m"])
+               .groupby(["Série", "_m"])[measure].sum())
+    deltas = []
+    for lbl in grouped.index.get_level_values(0).unique():
+        s = grouped.loc[lbl].sort_index()
+        if len(s) >= 2:
+            deltas.append({"entity": str(lbl),
+                           "value": _round(float(s.iloc[-1]) - float(s.iloc[-2])),
+                           "headline": _round(s.iloc[-1])})
+    if len(deltas) >= 2:
+        deltas.sort(key=lambda r: -(r["value"] or 0))
+        story["metrics"].append({
+            "id": "movers", "metric": "top_movers",
+            "measure": f"Δ {measure}"[:48], "grain": "Série",
+            "top": deltas[:TOP_MOVERS],
+            "bottom": deltas[-TOP_MOVERS:][::-1]})
+        story["gaps"] = [g for g in story["gaps"]
+                         if g["metric"] != "top_movers"]
+    return sem

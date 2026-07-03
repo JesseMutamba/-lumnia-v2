@@ -51,11 +51,12 @@ def test_brief_yields_plan_with_honest_statuses():
 
     trending = by_q["How is revenue trending?"]
     assert trending["status"] == "answerable"
-    assert "trend" in trending["metrics"] and "mom" in trending["metrics"]
+    short = [m.split(":", 1)[1] for m in trending["metrics"]]
+    assert "trend" in short and "mom" in short
 
     stock = by_q["Are products out of stock?"]
     assert stock["status"] == "answerable"
-    assert "low_stock" in stock["metrics"]
+    assert any(m.endswith(":low_stock") for m in stock["metrics"])
 
     assert by_q["What is the meaning of life?"]["status"] == "unmatched"
 
@@ -89,19 +90,19 @@ def test_approval_persists_and_filters_invalid_ids():
     an = _an(_dated_book(), "ventes2.xlsx")
     client.post(f"/analyses/{an['id']}/brief", json=BRIEF)
     r = client.post(f"/analyses/{an['id']}/plan",
-                    json={"approved": ["trend", "mom", "not-a-metric"]})
-    assert r.json()["approved"] == ["trend", "mom"]
+                    json={"approved": ["s0:trend", "s0:mom", "not-a-metric"]})
+    assert r.json()["approved"] == ["s0:trend", "s0:mom"]
     stored = client.get(f"/analyses/{an['id']}").json()
-    assert stored["plan"]["approved"] == ["trend", "mom"]
+    assert stored["plan"]["approved"] == ["s0:trend", "s0:mom"]
 
 
 def test_brief_survives_rerun_and_replans():
     an = _an(_dated_book(), "ventes3.xlsx")
     client.post(f"/analyses/{an['id']}/brief", json=BRIEF)
-    client.post(f"/analyses/{an['id']}/plan", json={"approved": ["trend"]})
+    client.post(f"/analyses/{an['id']}/plan", json={"approved": ["s0:trend"]})
     rerun = client.post(f"/analyses/{an['id']}/rerun").json()
     assert rerun["brief"]["role"] == "Regional sales manager"
-    assert rerun["plan"]["approved"] == ["trend"]
+    assert rerun["plan"]["approved"] == ["s0:trend"]
 
 
 def test_brief_suggestion_from_same_client():
@@ -129,3 +130,88 @@ def test_brief_requires_story_and_questions():
     an2 = _an(_dated_book() + b"   ", "noq.xlsx")
     assert client.post(f"/analyses/{an2['id']}/brief",
                        json={"questions": []}).status_code == 400
+
+
+def _matrix_book() -> bytes:
+    """A PVAK-shaped cross-tab: date columns, series rows incl. a TOTAL
+    (derived) and a STOCK series, on one sheet named for its content."""
+    import datetime as dt
+    days = [dt.date(2025, 7, 1) + dt.timedelta(days=i * 7) for i in range(10)]
+    rows = [["SERIE"] + days]
+    b19 = [10 + i for i in range(10)]
+    b20 = [5 + 2 * i for i in range(10)]
+    rows.append(["BLOC 2019"] + b19)
+    rows.append(["BLOC 2020"] + b20)
+    rows.append(["TOTAL MATURE"] + [a + b for a, b in zip(b19, b20)])
+    rows.append(["STOCK GASOIL"] + [100 - 9 * i for i in range(10)])
+    df = pd.DataFrame(rows)
+    buf = io.BytesIO()
+    df.to_excel(buf, sheet_name="PRODUCTION CHAMP", header=False,
+                index=False, engine="openpyxl")
+    return buf.getvalue()
+
+
+def test_matrix_story_with_movers_and_stock():
+    an = _an(_matrix_book(), "champ.xlsx")
+    st = an["story"]
+    assert st is not None and st["sheet"].strip() == "PRODUCTION CHAMP"
+    ids = {m["id"] for m in st["metrics"]}
+    assert {"headline", "trend", "mom", "by_Série", "movers", "low_stock"} <= ids
+    # TOTAL series excluded: headline == sum of the two blocs only
+    head = next(m for m in st["metrics"] if m["id"] == "headline")
+    assert head["value"] == sum(10 + i for i in range(10)) + sum(5 + 2 * i for i in range(10))
+    # movers never name the TOTAL series
+    mv = next(m for m in st["metrics"] if m["id"] == "movers")
+    names = {r["entity"] for r in mv["top"] + mv["bottom"]}
+    assert "TOTAL MATURE" not in names and "BLOC 2020" in names
+    # the declining stock series is tracked at its latest level
+    ls = next(m for m in st["metrics"] if m["id"] == "low_stock")
+    assert ls["rows"][0] == {"entity": "STOCK GASOIL", "value": 19.0}
+
+
+def test_french_questions_route_to_matrix_story():
+    an = _an(_matrix_book(), "champ2.xlsx")
+    r = client.post(f"/analyses/{an['id']}/brief", json={
+        "role": "Chef de plantation", "cadence": "monthly", "lang": "fr",
+        "questions": [
+            "Comment évolue la production mois par mois ?",
+            "Quel bloc produit le plus, et lequel sous-performe ?",
+            "Le stock de gasoil descend-il vers la rupture ?",
+        ]})
+    plan = r.json()["plan"]
+    by_q = {q["question"][:20]: q for q in plan["questions"]}
+    # 'partial' is honest here: trend + MoM computable, YoY needs 13 months
+    trend_q = by_q["Comment évolue la pr"]
+    assert trend_q["status"] in ("answerable", "partial")
+    short = [m.split(":", 1)[1] for m in trend_q["metrics"]]
+    assert "trend" in short and "mom" in short
+    perf_q = by_q["Quel bloc produit le"]
+    assert perf_q["status"] in ("answerable", "partial")
+    assert any(m.endswith(":movers") for m in perf_q["metrics"])
+    stock_q = by_q["Le stock de gasoil d"]
+    assert stock_q["status"] == "answerable"
+    assert any(m.endswith(":low_stock") for m in stock_q["metrics"])
+
+
+def test_questions_can_land_on_different_sheets():
+    """Two sheets, two stories: the stock question must route to the sheet
+    that actually has stock data, not the spine."""
+    import datetime as dt
+    days = [dt.date(2025, 7, 1) + dt.timedelta(days=i * 7) for i in range(10)]
+    prod = pd.DataFrame([["SERIE"] + days,
+                         ["BLOC A"] + [10 + i for i in range(10)],
+                         ["BLOC B"] + [8 + i for i in range(10)]])
+    stock = pd.DataFrame([["SERIE"] + days,
+                          ["STOCK GO"] + [50 - 4 * i for i in range(10)],
+                          ["ENTREE GO"] + [5] * 10])
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as xw:
+        prod.to_excel(xw, sheet_name="PRODUCTION", header=False, index=False)
+        stock.to_excel(xw, sheet_name="CARBURANT", header=False, index=False)
+    an = _an(buf.getvalue(), "twosheets.xlsx")
+    assert len(an["stories"]) >= 2
+    r = client.post(f"/analyses/{an['id']}/brief", json={
+        "questions": ["Le stock de gasoil descend-il ?"], "lang": "fr"})
+    q = r.json()["plan"]["questions"][0]
+    assert q["status"] == "answerable"
+    assert q["sheet"].strip() == "CARBURANT"

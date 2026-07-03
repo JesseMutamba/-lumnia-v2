@@ -111,7 +111,7 @@ def run_pipeline(content: bytes, filename: str) -> AnalyzeResponse:
         try:
             kinds = grid_kinds(df)           # one classification pass per sheet
             prof = profile_sheet(name, df, kinds=kinds)
-            orient = orient_sheet(df, kinds=kinds)
+            orient = orient_sheet(df, kinds=kinds, name=name)
             reports.append(
                 SheetReport(
                     **prof,
@@ -144,20 +144,26 @@ def run_pipeline(content: bytes, filename: str) -> AnalyzeResponse:
             if t and t.get("eda"):
                 eda_results.append({**t["eda"], "sheet": r.name})
 
+    stories = _collect_stories(reports)
     return AnalyzeResponse(
         filename=filename or "upload",
         n_sheets=len(reports),
         sheets=reports,
         insights=generate_insights(eda_results) or None,
         model=build_model(reports),
-        story=_pick_story(reports),
+        story=stories[0] if stories else None,
+        stories=stories or None,
     )
 
 
-def _pick_story(reports) -> Optional[dict]:
-    """The workbook's storytelling table: the semantics candidate with the
-    richest grounding (rows x groupability, time is a strong bonus)."""
-    best, best_score = None, 0.0
+MAX_STORIES = 8
+
+
+def _collect_stories(reports) -> list:
+    """Every table's story, ranked by grounding: rows x real groupability
+    (dimensions with >= 2 members), with a strong bonus for a time axis.
+    The first entry is the workbook's spine; questions may land on any."""
+    scored = []
     for r in reports:
         candidates = []
         if r.tidy and r.tidy.semantics:
@@ -168,13 +174,13 @@ def _pick_story(reports) -> Optional[dict]:
                 candidates.append((t.get("n_records", 0), t["semantics"]))
         for n_rows, sem in candidates:
             schema = sem["schema"]
-            score = n_rows * (1 + len(schema["dimensions"])) \
-                * (2 if schema["time"] else 1)
-            if score > best_score:
-                best_score = score
-                best = {"sheet": r.name, "schema": sem["schema"],
-                        **sem["story"]}
-    return best
+            real_dims = sum(1 for d in schema["dimensions"]
+                            if d["cardinality"] >= 2)
+            score = n_rows * (1 + real_dims) * (3 if schema["time"] else 1)
+            scored.append((score, {"sheet": r.name, "schema": schema,
+                                   **sem["story"]}))
+    scored.sort(key=lambda x: -x[0])
+    return [s for _score, s in scored[:MAX_STORIES]]
 
 
 _INDEX = Path(__file__).parent / "static" / "index.html"
@@ -279,7 +285,7 @@ async def set_brief(analysis_id: str, request: Request) -> dict:
     if not brief["questions"]:
         raise HTTPException(status_code=400,
                             detail="A brief needs at least one question.")
-    plan = plan_from_brief(brief, report["story"])
+    plan = plan_from_brief(brief, report.get("stories") or [report["story"]])
     report["brief"] = brief
     report["plan"] = plan
     storage.update_report(analysis_id, report)
@@ -295,7 +301,9 @@ async def approve_plan(analysis_id: str, request: Request) -> dict:
         raise HTTPException(status_code=404,
                             detail="No plan to approve — set the brief first.")
     body = await request.json()
-    valid = {m["id"] for m in report["story"]["metrics"]}
+    stories = report.get("stories") or [report["story"]]
+    valid = {f"s{si}:{m['id']}" for si, st in enumerate(stories)
+             for m in st.get("metrics", [])}
     seen: set = set()
     approved = [i for i in (body.get("approved") or [])
                 if i in valid and not (i in seen or seen.add(i))]
@@ -423,10 +431,13 @@ def rerun_analysis(analysis_id: str) -> AnalyzeResponse:
     # the metric still exists)
     if old.get("brief") and result.story:
         result.brief = old["brief"]
-        result.plan = plan_from_brief(old["brief"], result.story)
+        result.plan = plan_from_brief(old["brief"],
+                                      result.stories or [result.story])
         prev = (old.get("plan") or {}).get("approved")
         if prev is not None:
-            valid = {m["id"] for m in result.story["metrics"]}
+            valid = {f"s{si}:{m['id']}"
+                     for si, st in enumerate(result.stories or [result.story])
+                     for m in st.get("metrics", [])}
             result.plan["approved"] = [i for i in prev if i in valid]
     storage.update_report(analysis_id, result.model_dump())
     return result
