@@ -65,3 +65,24 @@ def test_analyze_csv_single_sheet():
     body = resp.json()
     assert body["n_sheets"] == 1
     assert body["sheets"][0]["orientation"] == "tidy"
+
+
+def test_client_workspace_assignment():
+    import io
+    import pandas as pd
+    df = pd.DataFrame([["A", "B"], ["x", 1], ["y", 2]])
+    buf = io.BytesIO()
+    df.to_excel(buf, sheet_name="S", header=False, index=False, engine="openpyxl")
+    an_id = client.post("/analyze", files={
+        "file": ("cw.xlsx", buf.getvalue(), "application/octet-stream")}).json()["id"]
+
+    r = client.post(f"/analyses/{an_id}/client", json={"client": "  PVAK  "})
+    assert r.json() == {"id": an_id, "client": "PVAK"}
+    meta = next(m for m in client.get("/analyses").json() if m["id"] == an_id)
+    assert meta["client"] == "PVAK"
+
+    # empty clears; unknown id 404s
+    assert client.post(f"/analyses/{an_id}/client",
+                       json={"client": ""}).json()["client"] is None
+    assert client.post("/analyses/nope/client",
+                       json={"client": "X"}).status_code == 404

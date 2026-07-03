@@ -111,8 +111,11 @@ def build_facts(report: Dict[str, Any],
     return "\n".join(lines)
 
 
-def _call_claude(facts: str) -> str:
+def _call_claude(facts: str, lang: str = "en") -> str:
     """One Messages API call; returns the raw text of the first block."""
+    lang_line = ("Écris headline, narrative et watchouts en français."
+                 if lang == "fr" else
+                 "Write headline, narrative and watchouts in English.")
     resp = httpx.post(
         API_URL,
         headers={
@@ -126,7 +129,7 @@ def _call_claude(facts: str) -> str:
             "temperature": 0.2,
             "system": SYSTEM_PROMPT,
             "messages": [{"role": "user",
-                          "content": f"FACTS:\n{facts}"}],
+                          "content": f"FACTS:\n{facts}\n\n{lang_line}"}],
         },
         timeout=60.0,
     )
@@ -140,11 +143,12 @@ class NarrativeError(RuntimeError):
 
 
 def generate_narrative(report: Dict[str, Any],
-                       audit: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                       audit: Optional[Dict[str, Any]] = None,
+                       lang: str = "en") -> Dict[str, Any]:
     """Fact sheet -> Claude -> validated narrative payload."""
     facts = build_facts(report, audit)
     try:
-        raw = _call_claude(facts)
+        raw = _call_claude(facts, lang)
     except Exception as exc:
         raise NarrativeError(f"Narrative call failed: {exc}") from exc
 
@@ -165,4 +169,5 @@ def generate_narrative(report: Dict[str, Any],
         "narrative": out["narrative"].strip(),
         "watchouts": [str(w) for w in watch][:3] if isinstance(watch, list) else [],
         "model": os.environ.get("LUMNIA_NARRATIVE_MODEL", DEFAULT_MODEL),
+        "lang": lang,
     }

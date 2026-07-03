@@ -293,13 +293,17 @@ def generate_insights(eda_results: list[dict[str, Any]]) -> list[dict[str, Any]]
             if pct >= 80:
                 # near-empty columns in operational sheets are usually
                 # structural (future periods not yet filled) — note, not alarm
-                sev, msg = "low", (
-                    f"'{col}' is mostly empty ({pct:.0f}%) — likely not yet "
-                    f"filled in or structural.")
+                sev = "low"
+                msg = (f"'{col}' is mostly empty ({pct:.0f}%) — likely not yet "
+                       f"filled in or structural.")
+                msg_fr = (f"« {col} » est presque vide ({pct:.0f} %) — "
+                          f"probablement pas encore rempli, ou structurel.")
             else:
                 sev = "high" if pct >= 30 else "medium" if pct >= 15 else "low"
                 msg = (f"{pct:.1f}% of '{col}' values are missing "
                        f"({info['count']} of {row_count} rows).")
+                msg_fr = (f"{pct:.1f} % des valeurs de « {col} » sont "
+                          f"manquantes ({info['count']} lignes sur {row_count}).")
             missing_here.append(
                 {
                     "type": "missingness",
@@ -307,6 +311,7 @@ def generate_insights(eda_results: list[dict[str, Any]]) -> list[dict[str, Any]]
                     "sheet": sheet,
                     "column": col,
                     "message": msg,
+                    "message_fr": msg_fr,
                     "evidence": info,
                     # partial gaps are the interesting ones: score peaks
                     # mid-band instead of at 100%
@@ -324,6 +329,7 @@ def generate_insights(eda_results: list[dict[str, Any]]) -> list[dict[str, Any]]
                     "severity": "medium" if dupes > 5 else "low",
                     "sheet": sheet,
                     "message": f"{dupes} duplicate row(s) detected in '{sheet}'.",
+                    "message_fr": f"{dupes} ligne(s) en double détectée(s) dans « {sheet} ».",
                     "evidence": {"count": dupes},
                     "score": dupes,
                 }
@@ -342,6 +348,11 @@ def generate_insights(eda_results: list[dict[str, Any]]) -> list[dict[str, Any]]
                             f"(skewness={info['skewness']}) — a few large values "
                             f"dominate; averages will mislead."
                         ),
+                        "message_fr": (
+                            f"« {col} » est très asymétrique "
+                            f"(asymétrie = {info['skewness']}) — quelques grandes "
+                            f"valeurs dominent ; les moyennes seront trompeuses."
+                        ),
                         "evidence": info,
                         "score": abs(info.get("skewness") or 0),
                     }
@@ -358,6 +369,11 @@ def generate_insights(eda_results: list[dict[str, Any]]) -> list[dict[str, Any]]
                             f"'{col}' has {info['outlier_count']} unusual value(s) "
                             f"({outlier_pct:.1f}% of rows) — worth a look before "
                             f"trusting totals."
+                        ),
+                        "message_fr": (
+                            f"« {col} » contient {info['outlier_count']} valeur(s) "
+                            f"atypique(s) ({outlier_pct:.1f} % des lignes) — à "
+                            f"vérifier avant de se fier aux totaux."
                         ),
                         "evidence": info,
                         "score": outlier_pct,
@@ -382,6 +398,10 @@ def generate_insights(eda_results: list[dict[str, Any]]) -> list[dict[str, Any]]
                             f"'{driver['column']}' moves with '{target}' "
                             f"(r={r:.2f} over {driver['n_pairs']} rows)."
                         ),
+                        "message_fr": (
+                            f"« {driver['column']} » évolue avec « {target} » "
+                            f"(r = {r:.2f} sur {driver['n_pairs']} lignes)."
+                        ),
                         "evidence": driver,
                         "score": abs(r) * 100,
                     }
@@ -402,6 +422,11 @@ def generate_insights(eda_results: list[dict[str, Any]]) -> list[dict[str, Any]]
                             f"'{bd['column']}' varies by category: "
                             f"'{top['category']}' has the highest mean {target} "
                             f"({top['mean']:.2f}, n={top['count']})."
+                        ),
+                        "message_fr": (
+                            f"« {bd['column']} » varie selon la catégorie : "
+                            f"« {top['category']} » a la moyenne de {target} la "
+                            f"plus élevée ({top['mean']:.2f}, n = {top['count']})."
                         ),
                         "evidence": bd,
                         "score": 50,
