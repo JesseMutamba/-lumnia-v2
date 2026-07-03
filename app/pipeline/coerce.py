@@ -9,11 +9,17 @@ guessed into a wrong number.
 from __future__ import annotations
 
 import datetime as _dt
+import re
 from typing import Any, Optional
 
 import pandas as pd
 
 from .celltypes import cell_kind, BLANK, DATE, NUMBER, _DATE_RE
+
+# ISO dates are year-first BY DEFINITION; feeding them through a dayfirst
+# parse silently swaps day and month whenever the day is <= 12
+# ("2025-01-05" -> May 1st). dayfirst is only for dd/mm/yyyy-style strings.
+_ISO_RE = re.compile(r"^\d{4}-\d{1,2}-\d{1,2}([T ].*)?$")
 
 
 def coerce_number(v: Any) -> Optional[float]:
@@ -54,7 +60,8 @@ def coerce_date(v: Any) -> Optional[str]:
     if isinstance(v, _dt.date):
         return v.isoformat()
     if isinstance(v, str) and _DATE_RE.match(v.strip()):
-        ts = pd.to_datetime(v.strip(), dayfirst=True, errors="coerce")
+        s = v.strip()
+        ts = pd.to_datetime(s, dayfirst=not _ISO_RE.match(s), errors="coerce")
         if pd.notna(ts):
             return ts.date().isoformat() if ts.normalize() == ts else ts.isoformat()
     return None
