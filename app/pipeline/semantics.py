@@ -96,7 +96,14 @@ def detect_schema(df: pd.DataFrame) -> Dict[str, Any]:
             continue
         num = pd.to_numeric(s, errors="coerce")
         if num.notna().sum() >= 0.8 * nonnull:
-            uniq = set(num.dropna().unique())
+            vals = num.dropna()
+            # a column of calendar years (2019, 2020…) is a period label,
+            # not a quantity — summing years is never meaningful
+            if (vals.between(1900, 2100).mean() >= 0.9
+                    and (vals % 1 == 0).mean() >= 0.95
+                    and vals.nunique() >= 3):
+                continue
+            uniq = set(vals.unique())
             if uniq <= {0, 1}:
                 # a 0/1 flag is a category, not a quantity to sum — but a
                 # single-valued flag is a constant: nothing to group by
