@@ -33,6 +33,7 @@ from .models import (
 )
 from .pipeline.celltypes import grid_kinds
 from .pipeline.eda import generate_insights
+from .pipeline.model import build_model
 from .pipeline.ingest import read_upload
 from .pipeline.orient import orient_sheet
 from .pipeline.profile import profile_sheet
@@ -143,6 +144,7 @@ def run_pipeline(content: bytes, filename: str) -> AnalyzeResponse:
         n_sheets=len(reports),
         sheets=reports,
         insights=generate_insights(eda_results) or None,
+        model=build_model(reports),
     )
 
 

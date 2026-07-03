@@ -48,6 +48,8 @@ class AnalyzeResponse(BaseModel):
     sheets: List[SheetReport]
     # Step 6 — ranked narrative insights aggregated across all tables' EDA
     insights: Optional[List[Dict[str, Any]]] = None
+    # Step 7 — the semantic business model (role-tagged series + breakdowns)
+    model: Optional[Dict[str, Any]] = None
 
 
 class AnalysisMeta(BaseModel):

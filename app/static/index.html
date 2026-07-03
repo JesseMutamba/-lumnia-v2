@@ -488,12 +488,14 @@ function renderAll() {
   if (exec) {
     $("#content").innerHTML =
       `<section id="sec-overview">${renderVerdict()}${renderOverview()}${renderInsights()}</section>` +
+      renderFinancials() +
       `<section id="sec-charts"><span class="kicker">Trends</span>${renderChartGrid()}</section>` +
       `<section id="sec-audit"><span class="kicker">What to do</span>${renderActionList()}</section>`;
   } else {
     $("#content").innerHTML =
       renderFilters() +
       `<section id="sec-overview">${renderVerdict()}${renderOverview()}${renderInsights()}</section>` +
+      renderFinancials() +
       `<section id="sec-charts"><span class="kicker">Charts</span>${renderChartGrid()}</section>` +
       `<section id="sec-audit"><span class="kicker">Audit</span>${renderHighlights()}${renderLeaderboards()}${renderFindingsTable()}</section>` +
       `<section id="sec-sheets"><span class="kicker">Sheets (${r.n_sheets})</span>${renderSheets()}</section>`;
@@ -603,7 +605,7 @@ function renderOverview() {
     <div class="tile"><div class="label">Records extracted</div>
       <div class="value">${compact(recs)}</div></div>`;
 
-  const vis = visCharts();
+  const vis = visCharts().filter(c => !c.pseudo);
   const primary = vis.filter(c => c.chart.kind === "timeseries")
     .sort((x, y) => y.chart.periods.length - x.chart.periods.length)[0];
   const right = primary ? chartCard(primary, true)
@@ -776,6 +778,87 @@ function printReport() {
   window.print();
 }
 
+/* ---------- financials: generated from the semantic business model ------- */
+const ROLE_LABELS = { revenue: "Revenue", opex: "OPEX", capex: "CAPEX",
+  volume: "Volume", area: "Area" };
+
+function renderFinancials() {
+  const m = REPORT.model;
+  if (!m) return "";
+  const sum = a => a.reduce((t, v) => t + (v ?? 0), 0);
+  const lastIdx = a => { for (let i = a.length - 1; i >= 0; i--) if (a[i] != null) return i; return -1; };
+  const met = m.metrics;
+
+  // KPI cards — only for the roles actually found
+  const tiles = [];
+  if (met.revenue) {
+    const v = met.revenue.values, li = lastIdx(v);
+    const fi = v.findIndex(x => x != null);
+    const growth = fi >= 0 && li > fi && v[fi] ? ((v[li] / v[fi] - 1) * 100) : null;
+    tiles.push(`<div class="tile"><div class="label">Revenue · ${esc(m.periods[fi])}–${esc(m.periods[li])}</div>
+      <div class="value">${compact(sum(v))}</div>
+      ${growth != null ? `<div class="label" style="margin-top:4px;color:var(--good)">+${growth.toFixed(0)}% over the horizon</div>` : ""}</div>`);
+  }
+  if (met.capex) tiles.push(`<div class="tile"><div class="label">Total CAPEX</div>
+      <div class="value">${compact(sum(met.capex.values))}</div></div>`);
+  if (met.opex) {
+    const v = met.opex.values, li = lastIdx(v);
+    tiles.push(`<div class="tile"><div class="label">OPEX · ${esc(m.periods[li])}</div>
+      <div class="value">${compact(v[li])}</div></div>`);
+  }
+  if (met.area) {
+    const v = met.area.values;
+    const peak = v.indexOf(Math.max(...v.filter(x => x != null)));
+    tiles.push(`<div class="tile"><div class="label">Peak ${esc(met.area.label.slice(0, 18))}</div>
+      <div class="value">${esc(m.periods[peak])}</div>
+      <div class="label" style="margin-top:4px">${compact(v[peak])} that period</div></div>`);
+  }
+  const mp = m.derived.margin_pct;
+  if (mp) {
+    const li = lastIdx(mp);
+    if (li >= 0) tiles.push(`<div class="tile"><div class="label">Margin · ${esc(m.periods[li])}</div>
+      <div class="value">${mp[li].toFixed(0)}%</div></div>`);
+  }
+
+  // trajectory chart: the role series as a pseudo-timeseries (reuses hover/legend)
+  const lines = Object.entries(met).map(([role, s], k) => ({
+    label: `${ROLE_LABELS[role] || role} — ${s.label.slice(0, 26)}`,
+    values: s.values, color: SERIES_COLORS[k % SERIES_COLORS.length], on: true,
+  }));
+  const traj = { pseudo: true, sheet: `Financial trajectory (${m.source_sheet.trim()})`, loc: null,
+    chart: { kind: "timeseries", periods: m.periods, series: [], other: null,
+             truncated: false }, lines, i: CHARTS.length, range: null };
+  CHARTS.push(traj);
+
+  let marginCard = "";
+  if (mp && mp.some(v => v != null)) {
+    const bars = { pseudo: true, sheet: "Operating margin %", loc: null,
+      chart: { kind: "profile", x: m.periods,
+               y: mp.map(v => v ?? 0) }, i: CHARTS.length, range: null };
+    CHARTS.push(bars);
+    marginCard = chartCard(bars, false);
+  }
+
+  // breakdown panels: top line items per sheet (tracks, like the audit bars)
+  const bds = (m.breakdowns || []).slice(0, 4).map(b => {
+    const mx = Math.max(1, ...b.items.map(i => Math.abs(i.value)));
+    return `<div class="card"><div class="card-head">
+        <span class="ct">${esc(b.sheet)}</span>
+        <span class="cs">top items by ${esc(b.value_col.slice(0, 26))}</span></div>
+      ${b.items.slice(0, 6).map(i => `<div class="bar-row">
+        <span class="bl">${esc(i.label.slice(0, 44))}</span>
+        <span class="bv">${compact(i.value)}</span>
+        <div class="track"><div class="fill" style="width:${Math.max(3, Math.abs(i.value) / mx * 100)}%;background:var(--gold)"></div></div>
+      </div>`).join("")}</div>`;
+  }).join("");
+
+  return `<section id="sec-financials"><span class="kicker">Financials — detected from this workbook</span>
+    ${tiles.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px">${tiles.join("")}</div>` : ""}
+    <div class="grid2">${chartCard(traj, false)}${marginCard}</div>
+    ${bds ? `<div class="grid2" style="margin-top:14px">${bds}</div>` : ""}
+  </section>`;
+}
+
 /* ---------- insights: decision-support bullets from the data ---------- */
 function pct(a, b) { return b ? ((a - b) / Math.abs(b) * 100) : null; }
 
@@ -892,7 +975,7 @@ function chartRange(c) {
 }
 
 function renderChartGrid() {
-  const vis = visCharts();
+  const vis = visCharts().filter(c => !c.pseudo);
   if (!vis.length) return `<div class="card muted">No chartable series${CHARTS.length ? " for this filter" : " in this analysis — press rerun to recompute with the current pipeline"}.</div>`;
   return `<div class="grid2">${vis.map(c => chartCard(c, false)).join("")}</div>`;
 }
