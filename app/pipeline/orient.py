@@ -22,6 +22,7 @@ import pandas as pd
 from .celltypes import cell_kind, grid_kinds, is_blank, BLANK, DATE, NUMBER, TEXT
 from .charts import profile_chart, timeseries_chart
 from .checks import detect_total_rows, run_checks
+from .eda import run_eda_df
 from .coerce import coerce_value
 from .jsonsafe import jsonify
 from .metrics import ColumnAcc, table_summary
@@ -509,12 +510,18 @@ def _extract_tidy_table(df, kinds, meta, max_rows) -> dict:
     if chart:
         summary["chart"] = chart
 
+    # Step 6: EDA over the FULL columns (col_values), never the record preview.
+    eda = run_eda_df(
+        pd.DataFrame({name: vals for name, vals in zip(names, col_values)})
+    ) if total else None
+
     return {"columns": names, "records": records, "n_records": total,
             "n_columns": len(names),
             "column_types": [a.profile() for a in accs],
             "header_rows": header_rows,
             "summary": summary,
             "checks": checks,
+            "eda": eda,
             # 1-based sheet rows detected as summary/totals rows
             "total_rows": [row_numbers[t["i"]] for t in totals] or None}
 

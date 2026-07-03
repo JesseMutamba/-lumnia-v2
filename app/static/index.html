@@ -584,7 +584,14 @@ function renderInsights() {
       plan cash and capacity around that period.` });
   }
 
-  // 4. what still needs a human
+  // 4. server-side EDA: drivers, gaps, duplicates (computed on full data)
+  const SEV = { high: "var(--critical)", medium: "var(--warning)", low: "var(--ink-3)" };
+  for (const i of (REPORT.insights || []).slice(0, 3)) {
+    out.push({ sheet: i.sheet, html: `<span style="color:${SEV[i.severity] || "var(--ink-3)"}">●</span>
+      <b>${esc(i.sheet)}</b> — ${esc(i.message)}` });
+  }
+
+  // 5. what still needs a human
   if (AUDIT.n_unverified_relations) {
     out.push({ html: `${AUDIT.n_unverified_relations} totals row${AUDIT.n_unverified_relations === 1 ? "" : "s"}
       could not be verified automatically (hierarchical sections) — worth a manual glance.` });

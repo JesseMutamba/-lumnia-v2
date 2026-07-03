@@ -18,10 +18,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
-from . import storage
+from . import auth, storage
 from .findings import aggregate_findings
 from .models import (
     AnalysisMeta,
@@ -32,6 +32,7 @@ from .models import (
     SheetReport,
 )
 from .pipeline.celltypes import grid_kinds
+from .pipeline.eda import generate_insights
 from .pipeline.ingest import read_upload
 from .pipeline.orient import orient_sheet
 from .pipeline.profile import profile_sheet
@@ -41,6 +42,52 @@ app = FastAPI(title="Lumnia v2", version="0.5.0")
 # Reject uploads beyond this size with 413 — bigger files need a real queue,
 # not a synchronous request.
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+
+
+@app.middleware("http")
+async def require_password(request: Request, call_next):
+    """Gate everything behind the shared password when one is configured.
+
+    No password set (local dev, tests) -> pass through unchanged. Otherwise
+    a valid session cookie is required; browsers hitting the app get the login
+    page, API calls get 401.
+    """
+    if auth.password() is None or request.url.path in auth.PUBLIC_PATHS:
+        return await call_next(request)
+    if auth.valid_token(request.cookies.get(auth.COOKIE)):
+        return await call_next(request)
+    if request.method == "GET" and "text/html" in request.headers.get("accept", ""):
+        return RedirectResponse("/login", status_code=303)
+    return JSONResponse({"detail": "Authentication required."}, status_code=401)
+
+
+def _secure(request: Request) -> bool:
+    return (request.url.scheme == "https"
+            or request.headers.get("x-forwarded-proto") == "https")
+
+
+@app.get("/login", include_in_schema=False)
+def login_page() -> HTMLResponse:
+    return HTMLResponse(auth.LOGIN_HTML.replace("__ERROR__", ""))
+
+
+@app.post("/login", include_in_schema=False)
+def login(request: Request, password: str = Form(...)):
+    if not auth.check_password(password):
+        return HTMLResponse(
+            auth.LOGIN_HTML.replace("__ERROR__", "Incorrect password."),
+            status_code=401)
+    resp = RedirectResponse("/", status_code=303)
+    resp.set_cookie(auth.COOKIE, auth.make_token(), max_age=auth.MAX_AGE,
+                    httponly=True, samesite="lax", secure=_secure(request))
+    return resp
+
+
+@app.get("/logout", include_in_schema=False)
+def logout() -> RedirectResponse:
+    resp = RedirectResponse("/login", status_code=303)
+    resp.delete_cookie(auth.COOKIE)
+    return resp
 
 
 def run_pipeline(content: bytes, filename: str) -> AnalyzeResponse:
@@ -81,10 +128,21 @@ def run_pipeline(content: bytes, filename: str) -> AnalyzeResponse:
                 tidy=None, panels=None,
             ))
 
+    # Step 6: fold every table's EDA facts into ranked workbook insights.
+    eda_results = []
+    for r in reports:
+        if r.tidy and r.tidy.eda:
+            eda_results.append({**r.tidy.eda, "sheet": r.name})
+        for p in r.panels or []:
+            t = p.get("tidy")
+            if t and t.get("eda"):
+                eda_results.append({**t["eda"], "sheet": r.name})
+
     return AnalyzeResponse(
         filename=filename or "upload",
         n_sheets=len(reports),
         sheets=reports,
+        insights=generate_insights(eda_results) or None,
     )
 
 

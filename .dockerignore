@@ -1,0 +1,17 @@
+.git
+.gitignore
+tests
+data
+*.db
+.venv
+venv
+__pycache__
+**/__pycache__
+*.pyc
+.pytest_cache
+.mypy_cache
+*.xlsx
+*.xls
+*.ods
+DEPLOY.md
+README.md

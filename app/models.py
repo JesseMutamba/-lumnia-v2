@@ -15,6 +15,8 @@ class TidyTable(BaseModel):
     header_rows: Optional[List[int]] = None
     summary: Optional[Dict[str, Any]] = None
     checks: Optional[List[Dict[str, Any]]] = None
+    # Step 6 — bounded EDA facts computed on the full extracted columns
+    eda: Optional[Dict[str, Any]] = None
     # 1-based sheet rows detected as summary/totals rows (derived, not data)
     total_rows: Optional[List[int]] = None
 
@@ -44,6 +46,8 @@ class AnalyzeResponse(BaseModel):
     filename: str
     n_sheets: int
     sheets: List[SheetReport]
+    # Step 6 — ranked narrative insights aggregated across all tables' EDA
+    insights: Optional[List[Dict[str, Any]]] = None
 
 
 class AnalysisMeta(BaseModel):
