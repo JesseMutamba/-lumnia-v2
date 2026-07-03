@@ -515,6 +515,27 @@ def _extract_tidy_table(df, kinds, meta, max_rows) -> dict:
         pd.DataFrame({name: vals for name, vals in zip(names, col_values)})
     ) if total else None
 
+    # Step 7 raw material: top line items by the detected target column
+    # (label x value), data rows only — feeds the business-model breakdowns.
+    if eda and eda.get("target_column") and label_idx is not None:
+        tcol = names.index(eda["target_column"])
+        skip = {t["i"] for t in totals}
+        items = [
+            {"label": str(col_values[label_idx][i]),
+             "value": round(float(v), 4)}
+            for i, v in enumerate(numeric_cols[eda["target_column"]])
+            if v is not None and i not in skip
+            and col_values[label_idx][i] is not None
+        ]
+        items.sort(key=lambda x: -abs(x["value"]))
+        if len(items) >= 3:
+            summary["breakdown"] = {
+                "label_col": names[label_idx],
+                "value_col": eda["target_column"],
+                "items": items[:10],
+                "n_items": len(items),
+            }
+
     return {"columns": names, "records": records, "n_records": total,
             "n_columns": len(names),
             "column_types": [a.profile() for a in accs],
@@ -597,7 +618,8 @@ def _extract_matrix(df, kinds, meta, max_rows) -> dict:
         "period_max": span[-1] if span else None,
     }
     summary = table_summary(accs, total, extra)
-    chart = timeseries_chart([periods[p] for p in period_cols], series_values)
+    chart = timeseries_chart([periods[p] for p in period_cols], series_values,
+                             axis=meta.get("axis", "date"))
     if chart:
         summary["chart"] = chart
 

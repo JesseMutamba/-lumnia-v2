@@ -30,8 +30,15 @@ def _round(v: float) -> float:
     return round(float(v), 4)
 
 
+# Year-axis cross-tabs are small (a handful of columns); keep EVERY series so
+# the business-model layer can role-tag them — the top-5 fold is only for
+# plotting sanity on big daily matrices.
+MAX_FULL_SERIES = 24
+
+
 def timeseries_chart(periods: List[object],
-                     series_values: Dict[str, Dict[int, float]]) -> Optional[dict]:
+                     series_values: Dict[str, Dict[int, float]],
+                     axis: str = "date") -> Optional[dict]:
     """Build the timeseries payload.
 
     ``periods``: coerced period labels in axis order.
@@ -65,14 +72,19 @@ def timeseries_chart(periods: List[object],
         other = {"label": f"Other ({len(rest)})", "values": row(merged),
                  "total": _round(sum(abs(v) for v in merged.values()))}
 
-    return {
+    out = {
         "kind": "timeseries",
+        "axis": axis,
         "periods": [str(p) if not isinstance(p, (int, float)) else p
                     for p in periods[:n]],
         "series": series,
         "other": other,
         "truncated": truncated,
     }
+    if axis == "year" and len(ranked) <= MAX_FULL_SERIES:
+        out["series_all"] = [{"label": str(label), "values": row(vals)}
+                             for label, vals, _ in ranked]
+    return out
 
 
 def profile_chart(names: List[str],

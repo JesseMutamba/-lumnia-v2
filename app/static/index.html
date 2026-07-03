@@ -225,6 +225,92 @@
   .flash { animation: flash 1.6s ease-out; }
   @keyframes flash { 0% { background: #f3e8cd; } 100% { background: var(--card); } }
 
+  /* executive mode */
+  .modes { display: inline-flex; border: 1px solid var(--border); border-radius: 8px;
+    overflow: hidden; }
+  .modes button { border: none; background: var(--card); color: var(--ink-3);
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em;
+    text-transform: uppercase; padding: 8px 14px; cursor: pointer; }
+  .modes button.on { background: var(--gold-tint); color: var(--gold); }
+  .verdict { display: flex; gap: 16px; align-items: flex-start;
+    background: var(--card); border: 1px solid var(--hairline); border-radius: 14px;
+    padding: 18px 22px; box-shadow: var(--shadow); margin-bottom: 16px;
+    border-left: 4px solid var(--vcolor, var(--ink-3)); }
+  .verdict .vic { font-size: 26px; line-height: 1; color: var(--vcolor); }
+  .verdict .vlabel { font-family: var(--mono); font-size: 11px; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--vcolor); font-weight: 600; }
+  .verdict p { margin: 6px 0 0; font-size: 14px; line-height: 1.65; max-width: 75ch; }
+  .action-card { background: var(--card); border: 1px solid var(--hairline);
+    border-radius: 14px; padding: 15px 19px; box-shadow: var(--shadow);
+    margin-bottom: 12px; border-left: 4px solid var(--acolor, var(--border)); }
+  .action-card .ahead { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .action-card .asheet { font-weight: 650; }
+  .action-card .aval { margin-left: auto; font-variant-numeric: tabular-nums;
+    font-weight: 650; color: var(--critical); }
+  .action-card .awhat { color: var(--ink-2); font-size: 13px; margin-top: 5px;
+    line-height: 1.55; }
+  .action-card .ado { margin-top: 8px; font-size: 13px; line-height: 1.5; }
+  .action-card .ado b { color: var(--gold); }
+
+  /* scenario & simulation */
+  .scen-grid { display: grid; grid-template-columns: 300px minmax(0,1fr); gap: 16px; }
+  @media (max-width: 900px) { .scen-grid { grid-template-columns: 1fr; } }
+  .sl { margin-bottom: 13px; }
+  .sl .slh { display: flex; justify-content: space-between; margin-bottom: 4px; }
+  .sl .sln { color: var(--ink-2); font-size: 12px; }
+  .sl .slv { font-family: var(--mono); font-size: 12px; font-weight: 700;
+    color: var(--gold); }
+  .sl input[type=range] { width: 100%; accent-color: var(--gold-strong);
+    height: 4px; cursor: pointer; }
+  .preset { border: none; border-radius: 7px; padding: 5px 12px; font-size: 11px;
+    font-weight: 600; cursor: pointer; margin: 0 6px 6px 0; }
+  .scard { background: var(--card); border: 1px solid var(--hairline);
+    border-top: 3px solid var(--scolor, var(--border)); border-radius: 12px;
+    padding: 13px 16px; box-shadow: var(--shadow); }
+  .scard .sn { font-family: var(--mono); font-size: 10px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--ink-3); }
+  .scard .sv { font-size: 19px; font-weight: 700; color: var(--scolor);
+    font-variant-numeric: tabular-nums; margin: 4px 0 1px; }
+  .scard .ss { font-size: 10.5px; color: var(--ink-3); }
+  .runbtn { width: 100%; margin-top: 12px; background: var(--gold); color: #fff;
+    border: none; border-radius: 8px; padding: 10px 0; font-family: var(--mono);
+    font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+    cursor: pointer; }
+  .runbtn:hover { background: var(--gold-strong); }
+  .prob-row { display: flex; align-items: center; justify-content: space-between;
+    padding: 7px 0; border-bottom: 1px solid var(--hairline); font-size: 12.5px; }
+  .prob-row:last-child { border-bottom: none; }
+  .prob-row .pv { font-family: var(--mono); font-weight: 700; }
+
+  /* print report */
+  #printdoc { display: none; }
+  @media print {
+    .app { display: none !important; }
+    #printdoc { display: block; }
+    body { background: #fff; }
+  }
+  #printdoc { font: 13px/1.55 var(--sans); color: #1a1a19; }
+  #printdoc .ph { display: flex; align-items: center; gap: 14px;
+    border-bottom: 1.5px solid #1a1a19; padding-bottom: 14px; margin-bottom: 18px; }
+  #printdoc h1 { font-family: var(--serif); font-size: 24px; font-weight: 500;
+    letter-spacing: .12em; margin: 0; }
+  #printdoc .pmeta { margin-left: auto; text-align: right; font-family: var(--mono);
+    font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #777; }
+  #printdoc h2 { font-family: var(--mono); font-size: 10.5px; letter-spacing: .16em;
+    text-transform: uppercase; color: #999; font-weight: 600; margin: 22px 0 8px; }
+  #printdoc .pverdict { font-family: var(--mono); font-size: 12px; letter-spacing: .12em;
+    text-transform: uppercase; font-weight: 700; }
+  #printdoc .pkpis { display: flex; gap: 26px; flex-wrap: wrap; margin: 10px 0; }
+  #printdoc .pkpi .l { font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em;
+    text-transform: uppercase; color: #999; }
+  #printdoc .pkpi .v { font-size: 21px; font-weight: 650; }
+  #printdoc .pcharts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  #printdoc .pcharts svg { width: 100%; height: auto; }
+  #printdoc .pact { padding: 8px 0; border-bottom: 1px solid #e8e8e8; }
+  #printdoc .pfoot { margin-top: 26px; font-family: var(--mono); font-size: 9.5px;
+    letter-spacing: .1em; text-transform: uppercase; color: #999;
+    border-top: 1px solid #e8e8e8; padding-top: 10px; }
+
   /* empty / drop */
   #drop { border: 1px dashed var(--border); border-radius: 14px; padding: 60px 30px;
     text-align: center; color: var(--ink-2); cursor: pointer; background: var(--card);
@@ -258,6 +344,7 @@
     <div id="content"></div>
   </main>
 </div>
+<div id="printdoc"></div>
 
 <script>
 "use strict";
@@ -278,6 +365,8 @@ const compact = v => {
 let current = null, REPORT = null, AUDIT = null, CHARTS = [];
 let SHEET_IDX = {};
 const FILTER = { sheets: null, status: null, periods: "all" };  // sheets: Set|null
+// Executive mode: decisions in sentences. Analyst mode: the full machinery.
+let MODE = localStorage.getItem("lumnia_mode") || "exec";
 
 /* ---------- brand sun ---------- */
 (function drawSun() {
@@ -355,9 +444,12 @@ const NAV = [
   ["audit", "Audit", `<svg width="14" height="14" viewBox="0 0 14 14"><path d="M2.5 7.4l3 3L11.5 4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`],
   ["sheets", "Sheets", `<svg width="14" height="14" viewBox="0 0 14 14"><rect x="1.6" y="1.6" width="10.8" height="10.8" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M1.6 5.2h10.8M5.4 5.2V12.4" stroke="currentColor" stroke-width="1.2"/></svg>`],
 ];
-function renderNav(counts) {
+function renderNav(counts, exec) {
+  const items = NAV.filter(([id]) => !(exec && id === "sheets"))
+    .map(([id, label, icon]) =>
+      [id, exec && id === "audit" ? "Actions" : id === "charts" && exec ? "Trends" : label, icon]);
   $("#nav-analysis").innerHTML = `<span class="kicker">Analysis</span>` +
-    NAV.map(([id, label, icon], k) => `
+    items.map(([id, label, icon], k) => `
       <div class="nav-item ${k === 0 ? "active" : ""}" data-target="sec-${id}">
         ${icon}${label}${counts[id] != null ? `<span class="cnt">${counts[id]}</span>` : ""}
       </div>`).join("");
@@ -378,6 +470,7 @@ async function select(id) {
     fetch(`/analyses/${id}/findings`).then(r => r.json()),
   ]);
   FILTER.sheets = null; FILTER.status = null; FILTER.periods = "all";
+  MC_RESULTS = null; SCEN = { price: 1.0, vol: 1.0, cost: 1.0 };
   renderAll();
 }
 
@@ -395,31 +488,52 @@ function renderAll() {
   const r = REPORT, a = AUDIT;
   SHEET_IDX = {}; r.sheets.forEach((s, i) => { SHEET_IDX[s.name] = i; });
   CHARTS = collectCharts(r);
+  const exec = MODE === "exec";
 
   renderNav({
     overview: null,
     charts: visCharts().length,
     audit: a.n_mismatched_relations,
-    sheets: r.n_sheets,
-  });
+    sheets: exec ? undefined : r.n_sheets,
+  }, exec);
   $("#topbar").innerHTML = `<div class="topbar">
     <h2>${esc(r.filename)}</h2>
     <span class="sub">${r.n_sheets} sheets analyzed</span>
     <span class="grow"></span>
+    <span class="modes">
+      <button data-mode="exec" class="${exec ? "on" : ""}">Executive</button>
+      <button data-mode="analyst" class="${exec ? "" : "on"}">Analyst</button>
+    </span>
+    <button class="btn" id="print-report">⎙&nbsp; Report</button>
     <button class="btn" id="dl-corrections">⤓&nbsp; Corrections CSV</button>
-    <button class="btn" id="dl-findings">⤓&nbsp; Findings CSV</button>
+    ${exec ? "" : `<button class="btn" id="dl-findings">⤓&nbsp; Findings CSV</button>`}
   </div>`;
-  $("#dl-findings").addEventListener("click", downloadFindings);
+  $$(".modes button").forEach(b => b.addEventListener("click", () => {
+    MODE = b.dataset.mode; localStorage.setItem("lumnia_mode", MODE); renderAll();
+  }));
+  $("#print-report").addEventListener("click", printReport);
   $("#dl-corrections").addEventListener("click", downloadCorrections);
+  const dlf = $("#dl-findings");
+  if (dlf) dlf.addEventListener("click", downloadFindings);
 
-  $("#content").innerHTML =
-    renderFilters() +
-    `<section id="sec-overview">${renderOverview()}${renderInsights()}</section>` +
-    `<section id="sec-charts"><span class="kicker">Charts</span>${renderChartGrid()}</section>` +
-    `<section id="sec-audit"><span class="kicker">Audit</span>${renderHighlights()}${renderLeaderboards()}${renderFindingsTable()}</section>` +
-    `<section id="sec-sheets"><span class="kicker">Sheets (${r.n_sheets})</span>${renderSheets()}</section>`;
+  if (exec) {
+    $("#content").innerHTML =
+      `<section id="sec-overview">${renderVerdict()}${renderOverview()}${renderInsights()}</section>` +
+      renderFinancials() + renderScenario() + renderMC() +
+      `<section id="sec-charts"><span class="kicker">Trends</span>${renderChartGrid()}</section>` +
+      `<section id="sec-audit"><span class="kicker">What to do</span>${renderActionList()}</section>`;
+  } else {
+    $("#content").innerHTML =
+      renderFilters() +
+      `<section id="sec-overview">${renderVerdict()}${renderOverview()}${renderInsights()}</section>` +
+      renderFinancials() + renderScenario() + renderMC() +
+      `<section id="sec-charts"><span class="kicker">Charts</span>${renderChartGrid()}</section>` +
+      `<section id="sec-audit"><span class="kicker">Audit</span>${renderHighlights()}${renderLeaderboards()}${renderFindingsTable()}</section>` +
+      `<section id="sec-sheets"><span class="kicker">Sheets (${r.n_sheets})</span>${renderSheets()}</section>`;
+  }
 
   attachFilters(); attachCharts(); attachFindingRows(); attachBarRows();
+  attachScenario(); attachMC();
 }
 
 /* ---------- filters ---------- */
@@ -523,12 +637,435 @@ function renderOverview() {
     <div class="tile"><div class="label">Records extracted</div>
       <div class="value">${compact(recs)}</div></div>`;
 
-  const vis = visCharts();
+  const vis = visCharts().filter(c => !c.pseudo);
   const primary = vis.filter(c => c.chart.kind === "timeseries")
     .sort((x, y) => y.chart.periods.length - x.chart.periods.length)[0];
   const right = primary ? chartCard(primary, true)
     : `<div class="card"><div class="muted" style="padding:40px 0;text-align:center">No time series to plot${CHARTS.length ? "" : " — press rerun on this workbook to compute charts"}.</div></div>`;
   return `<div class="overview"><div class="kpis">${tiles}</div><div>${right}</div></div>`;
+}
+
+/* ---------- executive mode: verdict, plain language, actions, report ----- */
+function safeFixes(f) {
+  return f.fix_confidence === "high"
+    ? f.mismatches.filter(m => m.suggest !== false) : [];
+}
+
+function kpiData() {
+  const r = REPORT;
+  const extracted = r.sheets.filter(s => s.orientation !== "unknown" && s.orientation !== "error").length;
+  const recs = r.sheets.reduce((t, s) => {
+    let n = s.tidy ? s.tidy.n_records : 0;
+    for (const p of s.panels || []) n += p.tidy ? p.tidy.n_records : 0;
+    return t + n;
+  }, 0);
+  return { extracted, recs };
+}
+
+function verdictInfo() {
+  const m = AUDIT.n_mismatched_relations, u = AUDIT.n_unverified_relations;
+  if (m === 0 && u === 0)
+    return { label: "Consistent", color: "var(--good)", icon: "✓" };
+  if (m === 0)
+    return { label: "Review recommended", color: "var(--warning)", icon: "?" };
+  return { label: "Needs corrections", color: "var(--critical)", icon: "✕" };
+}
+
+function execSummary() {
+  const { extracted, recs } = kpiData();
+  const s = [];
+  s.push(`This workbook has ${REPORT.n_sheets} sheets; ${extracted} were read
+    successfully (${compact(recs)} records).`);
+
+  const m = AUDIT.n_mismatched_relations;
+  if (m === 0) {
+    s.push(`All ${AUDIT.n_verified_relations} automated checks passed — the
+      numbers agree with each other.`);
+  } else {
+    s.push(`The numbers disagree with each other in <b>${m}</b> place${m === 1 ? "" : "s"},
+      worth <b>${compact(AUDIT.total_abs_delta)}</b> in total.`);
+    const cells = AUDIT.findings.reduce((t, f) => t + safeFixes(f).length, 0);
+    const worth = AUDIT.findings.reduce((t, f) =>
+      t + safeFixes(f).reduce((u2, x) => u2 + Math.abs(x.delta), 0), 0);
+    if (cells) s.push(`<b>${cells}</b> of those cells can be corrected right away
+      (worth ${compact(worth)}); the rest need the file's owner to check.`);
+    else s.push(`They need the file's owner to check the underlying figures —
+      the correct values can't be determined automatically.`);
+  }
+
+  const ts = visCharts().filter(c => c.chart.kind === "timeseries")
+    .sort((a, b) => b.chart.periods.length - a.chart.periods.length)[0];
+  if (ts && ts.lines.length) {
+    const l = ts.lines[0];
+    const pts = l.values.map((v, i) => [v, i]).filter(([v]) => v != null);
+    if (pts.length >= 2) {
+      const [vL, iL] = pts[pts.length - 1], [vP] = pts[pts.length - 2];
+      const p = pct(vL, vP);
+      if (p != null) s.push(`“${esc(l.label)}” on ${esc(ts.sheet)} is
+        ${p >= 0 ? "up" : "down"} <b>${Math.abs(p).toFixed(0)}%</b> in the latest
+        period (${esc(String(ts.chart.periods[iL]))}).`);
+    }
+  }
+  return s.join(" ");
+}
+
+function renderVerdict() {
+  const v = verdictInfo();
+  return `<div class="verdict" style="--vcolor:${v.color}">
+    <span class="vic">${v.icon}</span>
+    <div><span class="vlabel">${v.label}</span><p>${execSummary()}</p></div>
+  </div>`;
+}
+
+function plainFormula(f) {
+  if (f.kind === "product")
+    return `'${esc(f.target)}' should equal '${esc(f.inputs[0])}' × '${esc(f.inputs[1])}'`;
+  if (f.kind === "row_sum")
+    return `'${esc(f.target)}' should equal the sum of ${esc(f.inputs[0])} through ${esc(f.inputs[f.inputs.length - 1])}`;
+  if (f.kind === "column_sum") {
+    const row = f.mismatches[0] ? f.mismatches[0].row : "";
+    return `the totals row${row ? " " + row : ""} should match the sum of the rows above it`;
+  }
+  return esc(f.formula);
+}
+
+function renderActionList() {
+  const cards = [];
+  for (const f of AUDIT.findings) {
+    const safe = safeFixes(f);
+    let action;
+    if (safe.length) {
+      action = `<b>Fix now:</b> ` + safe.slice(0, 3).map(m =>
+        `change <b>${esc(m.cell || "row " + m.row)}</b> from ${num(m.actual)} to <b>${num(m.expected)}</b>`).join("; ")
+        + (safe.length > 3 ? ` — plus ${safe.length - 3} more in the Corrections CSV` : "") + ".";
+    } else {
+      const rows = [...new Set(f.mismatches.map(m => m.row))].slice(0, 4);
+      action = `<b>Check with the file's owner:</b> row${rows.length > 1 ? "s" : ""}
+        ${rows.join(", ")} — the correct value can't be determined automatically
+        (other rules contest these cells).`;
+    }
+    cards.push(`<div class="action-card" style="--acolor:var(--critical)">
+      <div class="ahead"><span class="asheet">${esc(f.sheet)}</span>
+        <span class="aval">${compact(f.total_abs_delta)}</span></div>
+      <div class="awhat">In this sheet, ${plainFormula(f)} — but
+        ${f.n_mismatched} of ${f.n_checked} rows don't match.</div>
+      <div class="ado">→ ${action}</div>
+    </div>`);
+  }
+  if (AUDIT.n_unverified_relations) {
+    cards.push(`<div class="action-card" style="--acolor:var(--warning)">
+      <div class="ahead"><span class="asheet">Totals to eyeball</span></div>
+      <div class="awhat">${AUDIT.n_unverified_relations} totals row(s) couldn't be
+        verified automatically — their sections have an unusual structure.</div>
+      <div class="ado">→ <b>Quick manual check</b> next time the file is open.</div>
+    </div>`);
+  }
+  if (!cards.length) {
+    cards.push(`<div class="action-card" style="--acolor:var(--good)">
+      <div class="ahead"><span class="asheet">Nothing to fix</span></div>
+      <div class="awhat">Every automated check passed. The workbook's internal
+        math is consistent.</div></div>`);
+  }
+  return cards.join("");
+}
+
+function printReport() {
+  const v = verdictInfo();
+  const { extracted, recs } = kpiData();
+  const seen = new Set();
+  const charts = $$(".chart-card").map(c => ({
+    title: c.querySelector(".ct") ? c.querySelector(".ct").textContent : "",
+    svg: c.querySelector(".plot svg") ? c.querySelector(".plot svg").outerHTML : "",
+  })).filter(c => c.svg && !seen.has(c.title) && seen.add(c.title)).slice(0, 2);
+  const date = new Date().toISOString().slice(0, 10);
+
+  $("#printdoc").innerHTML = `
+    <div class="ph">
+      <h1>LUMNIA</h1>
+      <div class="pmeta">${esc(REPORT.filename)}<br>${date}</div>
+    </div>
+    <div class="pverdict" style="color:${v.color}">${v.icon} ${v.label}</div>
+    <p style="max-width:80ch">${execSummary()}</p>
+    <h2>Key figures</h2>
+    <div class="pkpis">
+      <div class="pkpi"><div class="l">Total discrepancy</div><div class="v">${compact(AUDIT.total_abs_delta)}</div></div>
+      <div class="pkpi"><div class="l">Issues found</div><div class="v">${AUDIT.n_mismatched_relations}</div></div>
+      <div class="pkpi"><div class="l">Checks passed</div><div class="v">${AUDIT.n_verified_relations}</div></div>
+      <div class="pkpi"><div class="l">Sheets read</div><div class="v">${extracted}/${REPORT.n_sheets}</div></div>
+      <div class="pkpi"><div class="l">Records</div><div class="v">${compact(recs)}</div></div>
+    </div>
+    ${charts.length ? `<h2>Trends</h2><div class="pcharts">${charts.map(c =>
+      `<div><div style="font-weight:650;font-size:12px;margin-bottom:4px">${esc(c.title)}</div>${c.svg}</div>`).join("")}</div>` : ""}
+    <h2>What to do</h2>
+    ${AUDIT.findings.map(f => {
+      const safe = safeFixes(f);
+      const act = safe.length
+        ? "Fix: " + safe.slice(0, 3).map(m => `${m.cell || "row " + m.row}: ${num(m.actual)} → ${num(m.expected)}`).join("; ")
+        : "Owner to verify rows " + [...new Set(f.mismatches.map(m => m.row))].slice(0, 4).join(", ");
+      return `<div class="pact"><b>${esc(f.sheet)}</b> — ${plainFormula(f)}
+        (${f.n_mismatched} of ${f.n_checked} rows off, ${compact(f.total_abs_delta)}).
+        <i>${esc(act)}</i></div>`;
+    }).join("") || `<div class="pact">✓ Every automated check passed.</div>`}
+    <div class="pfoot">Generated by Lumnia · light where there was none · ${date}</div>`;
+  window.print();
+}
+
+/* ---------- financials: generated from the semantic business model ------- */
+const ROLE_LABELS = { revenue: "Revenue", opex: "OPEX", capex: "CAPEX",
+  volume: "Volume", area: "Area" };
+
+function renderFinancials() {
+  const m = REPORT.model;
+  if (!m) return "";
+  const sum = a => a.reduce((t, v) => t + (v ?? 0), 0);
+  const lastIdx = a => { for (let i = a.length - 1; i >= 0; i--) if (a[i] != null) return i; return -1; };
+  const met = m.metrics;
+
+  // KPI cards — only for the roles actually found
+  const tiles = [];
+  if (met.revenue) {
+    const v = met.revenue.values, li = lastIdx(v);
+    const fi = v.findIndex(x => x != null);
+    const growth = fi >= 0 && li > fi && v[fi] ? ((v[li] / v[fi] - 1) * 100) : null;
+    tiles.push(`<div class="tile"><div class="label">Revenue · ${esc(m.periods[fi])}–${esc(m.periods[li])}</div>
+      <div class="value">${compact(sum(v))}</div>
+      ${growth != null ? `<div class="label" style="margin-top:4px;color:var(--good)">+${growth.toFixed(0)}% over the horizon</div>` : ""}</div>`);
+  }
+  if (met.capex) tiles.push(`<div class="tile"><div class="label">Total CAPEX</div>
+      <div class="value">${compact(sum(met.capex.values))}</div></div>`);
+  if (met.opex) {
+    const v = met.opex.values, li = lastIdx(v);
+    tiles.push(`<div class="tile"><div class="label">OPEX · ${esc(m.periods[li])}</div>
+      <div class="value">${compact(v[li])}</div></div>`);
+  }
+  if (met.area) {
+    const v = met.area.values;
+    const peak = v.indexOf(Math.max(...v.filter(x => x != null)));
+    tiles.push(`<div class="tile"><div class="label">Peak ${esc(met.area.label.slice(0, 18))}</div>
+      <div class="value">${esc(m.periods[peak])}</div>
+      <div class="label" style="margin-top:4px">${compact(v[peak])} that period</div></div>`);
+  }
+  const mp = m.derived.margin_pct;
+  if (mp) {
+    const li = lastIdx(mp);
+    if (li >= 0) tiles.push(`<div class="tile"><div class="label">Margin · ${esc(m.periods[li])}</div>
+      <div class="value">${mp[li].toFixed(0)}%</div></div>`);
+  }
+
+  // trajectory chart: the role series as a pseudo-timeseries (reuses hover/legend)
+  const lines = Object.entries(met).map(([role, s], k) => ({
+    label: `${ROLE_LABELS[role] || role} — ${s.label.slice(0, 26)}`,
+    values: s.values, color: SERIES_COLORS[k % SERIES_COLORS.length], on: true,
+  }));
+  const traj = { pseudo: true, sheet: `Financial trajectory (${m.source_sheet.trim()})`, loc: null,
+    chart: { kind: "timeseries", periods: m.periods, series: [], other: null,
+             truncated: false }, lines, i: CHARTS.length, range: null };
+  CHARTS.push(traj);
+
+  let marginCard = "";
+  if (mp && mp.some(v => v != null)) {
+    const bars = { pseudo: true, sheet: "Operating margin %", loc: null,
+      chart: { kind: "profile", x: m.periods,
+               y: mp.map(v => v ?? 0) }, i: CHARTS.length, range: null };
+    CHARTS.push(bars);
+    marginCard = chartCard(bars, false);
+  }
+
+  // breakdown panels: top line items per sheet (tracks, like the audit bars)
+  const bds = (m.breakdowns || []).slice(0, 4).map(b => {
+    const mx = Math.max(1, ...b.items.map(i => Math.abs(i.value)));
+    return `<div class="card"><div class="card-head">
+        <span class="ct">${esc(b.sheet)}</span>
+        <span class="cs">top items by ${esc(b.value_col.slice(0, 26))}</span></div>
+      ${b.items.slice(0, 6).map(i => `<div class="bar-row">
+        <span class="bl">${esc(i.label.slice(0, 44))}</span>
+        <span class="bv">${compact(i.value)}</span>
+        <div class="track"><div class="fill" style="width:${Math.max(3, Math.abs(i.value) / mx * 100)}%;background:var(--gold)"></div></div>
+      </div>`).join("")}</div>`;
+  }).join("");
+
+  return `<section id="sec-financials"><span class="kicker">Financials — detected from this workbook</span>
+    ${tiles.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px">${tiles.join("")}</div>` : ""}
+    <div class="grid2">${chartCard(traj, false)}${marginCard}</div>
+    ${bds ? `<div class="grid2" style="margin-top:14px">${bds}</div>` : ""}
+  </section>`;
+}
+
+/* ---------- scenario analysis + monte carlo (generic over the model) ----- */
+const SCEN_DEFS = {
+  bear:   { label: "Downside", color: "#b03a2a", price: 0.7, vol: 0.85, cost: 1.2 },
+  base:   { label: "Base",     color: "#a8821f", price: 1.0, vol: 1.0,  cost: 1.0 },
+  bull:   { label: "Upside",   color: "#2c5f1a", price: 1.3, vol: 1.1,  cost: 0.9 },
+  custom: { label: "Custom",   color: "#c8a04a" },
+};
+let SCEN = { price: 1.0, vol: 1.0, cost: 1.0 };
+let MCP = { priceSd: 0.15, volSd: 0.10, costSd: 0.08, N: 2000 };
+let MC_RESULTS = null;
+
+function scenSeries(f) {           // apply factors to the model, per period
+  const m = REPORT.model, rev = m.metrics.revenue.values;
+  const opx = m.metrics.opex ? m.metrics.opex.values : null;
+  return rev.map((r, i) => {
+    if (r == null) return { rev: null, opex: null, margin: null };
+    const r2 = r * f.price * f.vol;
+    const o2 = opx && opx[i] != null ? opx[i] * f.cost : null;
+    return { rev: r2, opex: o2, margin: o2 != null ? r2 - o2 : null };
+  });
+}
+const scenTotal = rows => rows.reduce((t, r) => t + (r.rev ?? 0), 0);
+
+function renderScenario() {
+  const m = REPORT.model;
+  if (!m || !m.scenario_ready) return "";
+  const hasCost = !!m.metrics.opex;
+  const scens = {
+    bear: scenSeries(SCEN_DEFS.bear), base: scenSeries(SCEN_DEFS.base),
+    bull: scenSeries(SCEN_DEFS.bull), custom: scenSeries(SCEN),
+  };
+  const cards = Object.entries(SCEN_DEFS).map(([k, d]) => {
+    const rows = scens[k];
+    const mt = rows.reduce((t, r) => t + (r.margin ?? 0), 0);
+    return `<div class="scard" style="--scolor:${d.color}">
+      <div class="sn">${d.label}</div>
+      <div class="sv">${compact(scenTotal(rows))}</div>
+      <div class="ss">total revenue over the horizon${hasCost ? ` · margin ${compact(mt)}` : ""}</div>
+    </div>`;
+  }).join("");
+
+  const lines = Object.entries(SCEN_DEFS).map(([k, d]) => ({
+    label: d.label, color: d.color, on: true,
+    values: scens[k].map(r => r.rev),
+  }));
+  const chart = { pseudo: true, i: "scen", range: null, lines,
+    chart: { kind: "timeseries", periods: m.periods, series: [], other: null, truncated: false } };
+
+  const sliders = `
+    ${slider("Price factor", "price", 0.5, 1.8, 0.05, SCEN.price, v => (v*100).toFixed(0)+"%")}
+    ${slider("Volume factor", "vol", 0.5, 1.5, 0.05, SCEN.vol, v => (v*100).toFixed(0)+"%")}
+    ${hasCost ? slider("Cost factor", "cost", 0.7, 1.5, 0.05, SCEN.cost, v => (v*100).toFixed(0)+"%") : ""}
+    <div style="margin-top:10px">
+      ${Object.entries(SCEN_DEFS).filter(([k]) => k !== "custom").map(([k, d]) =>
+        `<button class="preset" data-preset="${k}" style="background:${d.color}22;color:${d.color}">${d.label}</button>`).join("")}
+    </div>`;
+
+  return `<section id="sec-scenario"><span class="kicker">Scenario analysis — what if</span>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:14px">${cards}</div>
+    <div class="scen-grid">
+      <div class="card"><div class="card-head"><span class="ct">Custom levers</span></div>
+        <div style="margin-top:10px">${sliders}</div></div>
+      <div class="card chart-card"><div class="card-head"><span class="ct">Revenue by scenario</span>
+        <span class="cs">${esc(m.metrics.revenue.label.slice(0, 30))} · adjusted</span></div>
+        <div class="plot">${svgTimeseries(chart)}</div>
+        <div class="legend">${lines.map(l => `<span class="lg"><span class="sw" style="background:${l.color}"></span>${l.label}</span>`).join("")}</div>
+      </div>
+    </div></section>`;
+}
+
+function slider(name, key, min, max, step, val, fmt) {
+  return `<div class="sl"><div class="slh"><span class="sln">${name}</span>
+    <span class="slv">${fmt(val)}</span></div>
+    <input type="range" data-scen="${key}" min="${min}" max="${max}" step="${step}" value="${val}"></div>`;
+}
+
+function attachScenario() {
+  $$('#sec-scenario input[data-scen]').forEach(inp => inp.addEventListener("input", () => {
+    SCEN[inp.dataset.scen] = +inp.value;
+    refreshScenario();
+  }));
+  $$('#sec-scenario .preset').forEach(b => b.addEventListener("click", () => {
+    const d = SCEN_DEFS[b.dataset.preset];
+    SCEN = { price: d.price, vol: d.vol, cost: d.cost };
+    refreshScenario();
+  }));
+}
+function refreshScenario() {
+  const sec = $("#sec-scenario");
+  if (!sec) return;
+  sec.outerHTML = renderScenario();
+  attachScenario();
+}
+
+/* monte carlo */
+function gauss() {
+  let u = 0, v = 0;
+  while (!u) u = Math.random();
+  while (!v) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+function runMC() {
+  const m = REPORT.model, out = [];
+  for (let i = 0; i < MCP.N; i++) {
+    const f = {
+      price: Math.max(0.2, 1 + gauss() * MCP.priceSd),
+      vol: Math.max(0.2, 1 + gauss() * MCP.volSd),
+      cost: Math.max(0.4, 1 + gauss() * MCP.costSd),
+    };
+    out.push(scenTotal(scenSeries(f)));
+  }
+  out.sort((a, b) => a - b);
+  MC_RESULTS = out;
+}
+const pctl = (a, p) => a[Math.min(a.length - 1, Math.floor(p / 100 * a.length))];
+
+function renderMC() {
+  const m = REPORT.model;
+  if (!m || !m.scenario_ready) return "";
+  let body = `<div class="muted" style="padding:24px 0;text-align:center">Press run to simulate.</div>`;
+  if (MC_RESULTS) {
+    const r = MC_RESULTS, base = scenTotal(scenSeries(SCEN_DEFS.base));
+    const p10 = pctl(r, 10), p50 = pctl(r, 50), p90 = pctl(r, 90);
+    const bins = 30, mn = r[0], mx = r[r.length - 1], step = (mx - mn) / bins || 1;
+    const y = Array.from({ length: bins }, () => 0);
+    for (const v of r) y[Math.min(bins - 1, Math.floor((v - mn) / step))]++;
+    const hist = { pseudo: true, i: "mc", range: null,
+      chart: { kind: "profile", x: y.map((_, i2) => compact(mn + i2 * step)), y } };
+    const probs = [0.8, 1.0, 1.2].map(f2 => {
+      const t = base * f2, p = r.filter(v => v >= t).length / r.length * 100;
+      return `<div class="prob-row"><span>Total revenue ≥ ${compact(t)} (${(f2*100).toFixed(0)}% of base)</span>
+        <span class="pv" style="color:${p >= 70 ? "var(--good)" : p >= 40 ? "var(--gold)" : "var(--critical)"}">${p.toFixed(1)}%</span></div>`;
+    }).join("");
+    body = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:12px">
+        <div class="scard" style="--scolor:#b03a2a"><div class="sn">P10 — downside</div><div class="sv">${compact(p10)}</div></div>
+        <div class="scard" style="--scolor:#a8821f"><div class="sn">P50 — median</div><div class="sv">${compact(p50)}</div></div>
+        <div class="scard" style="--scolor:#2c5f1a"><div class="sn">P90 — upside</div><div class="sv">${compact(p90)}</div></div>
+      </div>
+      <div class="grid2">
+        <div class="card chart-card"><div class="card-head"><span class="ct">Distribution of total revenue</span>
+          <span class="cs">${MCP.N.toLocaleString()} draws</span></div>
+          <div class="plot">${svgProfile(hist)}</div></div>
+        <div class="card"><div class="card-head"><span class="ct">Probability of hitting targets</span></div>${probs}</div>
+      </div>`;
+  }
+  return `<section id="sec-mc"><span class="kicker">Monte Carlo — how sure can we be</span>
+    <div class="scen-grid">
+      <div class="card"><div class="card-head"><span class="ct">Uncertainty</span></div>
+        <div style="margin-top:10px">
+        ${mcslider("Price volatility (σ)", "priceSd", 0.02, 0.4, 0.01, MCP.priceSd)}
+        ${mcslider("Volume volatility (σ)", "volSd", 0.02, 0.3, 0.01, MCP.volSd)}
+        ${REPORT.model.metrics.opex ? mcslider("Cost volatility (σ)", "costSd", 0.02, 0.3, 0.01, MCP.costSd) : ""}
+        ${mcslider("Simulations (N)", "N", 500, 5000, 500, MCP.N)}
+        <button class="runbtn" id="mc-run">Run ${MCP.N.toLocaleString()} simulations</button>
+        </div></div>
+      <div id="mc-body">${body}</div>
+    </div></section>`;
+}
+function mcslider(name, key, min, max, step, val) {
+  const fmt = key === "N" ? v => (+v).toLocaleString() : v => "±" + (v * 100).toFixed(0) + "%";
+  return `<div class="sl"><div class="slh"><span class="sln">${name}</span>
+    <span class="slv">${fmt(val)}</span></div>
+    <input type="range" data-mc="${key}" min="${min}" max="${max}" step="${step}" value="${val}"></div>`;
+}
+function attachMC() {
+  $$('#sec-mc input[data-mc]').forEach(inp => inp.addEventListener("input", () => {
+    MCP[inp.dataset.mc] = +inp.value;
+    const sec = $("#sec-mc"); sec.outerHTML = renderMC(); attachMC();
+  }));
+  const run = $("#mc-run");
+  if (run) run.addEventListener("click", () => {
+    runMC();
+    const sec = $("#sec-mc"); sec.outerHTML = renderMC(); attachMC();
+  });
 }
 
 /* ---------- insights: decision-support bullets from the data ---------- */
@@ -647,7 +1184,7 @@ function chartRange(c) {
 }
 
 function renderChartGrid() {
-  const vis = visCharts();
+  const vis = visCharts().filter(c => !c.pseudo);
   if (!vis.length) return `<div class="card muted">No chartable series${CHARTS.length ? " for this filter" : " in this analysis — press rerun to recompute with the current pipeline"}.</div>`;
   return `<div class="grid2">${vis.map(c => chartCard(c, false)).join("")}</div>`;
 }
