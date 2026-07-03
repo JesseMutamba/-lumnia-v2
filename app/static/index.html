@@ -182,6 +182,31 @@
   /* read-only share view: no library, no upload */
   body.share aside.side { display: none; }
   body.share .app { grid-template-columns: 1fr; }
+  /* non-technical home (Flexport-style): greeting, tasks, exceptions */
+  .greet { display: flex; align-items: center; gap: 16px; margin: 4px 0 14px; }
+  .greet h1 { font-family: var(--serif); font-size: 32px; font-weight: 650; margin: 0; }
+  .greet .gsub { font-size: 13px; color: var(--ink-3); margin-top: 3px; }
+  .gchip { margin-left: auto; font-size: 13px; font-weight: 650; color: var(--vcolor);
+    border: 1.5px solid var(--vcolor); border-radius: 999px; padding: 6px 14px;
+    background: var(--card); white-space: nowrap; }
+  .home-grid { display: grid; grid-template-columns: 1.6fr 1fr; gap: 14px; margin-top: 16px; }
+  @media (max-width: 1100px) { .home-grid { grid-template-columns: 1fr; } }
+  .trow { display: flex; align-items: center; gap: 12px; padding: 11px 0;
+    border-bottom: 1px solid var(--hairline); font-size: 13.5px; }
+  .trow:last-child { border-bottom: none; }
+  .trow.clicky { cursor: pointer; }
+  .trow.clicky:hover b { color: var(--gold-strong); }
+  .tico { flex: none; width: 30px; height: 30px; border-radius: 50%; display: flex;
+    align-items: center; justify-content: center; font-size: 13px; font-weight: 700; }
+  .tbody { min-width: 0; line-height: 1.45; }
+  .tbody .tsub { display: block; color: var(--ink-3); font-size: 12.5px; }
+  .tchip { margin-left: auto; font-family: var(--mono); font-size: 12px; font-weight: 600;
+    background: var(--crit-track); color: var(--critical); border-radius: 8px; padding: 3px 9px; }
+  .cnt2 { font-family: var(--mono); font-size: 10.5px; background: var(--card-2);
+    border-radius: 8px; padding: 2px 8px; margin-left: 8px; color: var(--ink-3); }
+  .seeall { font-size: 12.5px; font-weight: 600; color: var(--gold-strong); cursor: pointer; }
+  .langs { margin-right: 4px; }
+  .glead { font-size: 14px; line-height: 1.65; max-width: 90ch; margin: 0 0 14px; }
 
   section > .kicker { display: block; margin: 30px 0 12px; }
   .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; }
@@ -372,11 +397,11 @@
       <h1>LUMNIA</h1>
     </div>
     <div id="nav-analysis"></div>
-    <span class="kicker">Workbooks</span>
+    <span class="kicker" id="wb-kicker">Workbooks</span>
     <div id="wb-list"></div>
     <div class="nav-item" id="newupload">
       <svg width="13" height="13" viewBox="0 0 13 13"><path d="M6.5 1v11M1 6.5h11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-      New upload
+      <span id="newupload-txt">New upload</span>
     </div>
   </aside>
   <main>
@@ -393,14 +418,290 @@ const $ = (s, el) => (el || document).querySelector(s);
 const $$ = (s, el) => [...(el || document).querySelectorAll(s)];
 const esc = s => String(s ?? "").replace(/[&<>"']/g,
   c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const nf = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
+/* ---------- language: auto-detected from the browser, switchable ---------- */
+const LANG = (() => {
+  const saved = localStorage.getItem("lumnia_lang");
+  if (saved === "fr" || saved === "en") return saved;
+  return (navigator.language || "en").toLowerCase().startsWith("fr") ? "fr" : "en";
+})();
+const LOCALE = LANG === "fr" ? "fr-FR" : "en-US";
+const nf = new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 2 });
+const nf1 = new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 1 });
 const num = v => typeof v === "number" ? nf.format(v) : (v ?? "");
 const compact = v => {
   const a = Math.abs(v);
-  if (a >= 1e6) return (v / 1e6).toFixed(1) + "M";
-  if (a >= 1e3) return (v / 1e3).toFixed(1) + "K";
+  if (a >= 1e6) return nf1.format(v / 1e6) + (LANG === "fr" ? " M" : "M");
+  if (a >= 1e3) return nf1.format(v / 1e3) + (LANG === "fr" ? " k" : "K");
   return nf.format(v);
 };
+// scenario levers shown as deltas an operator thinks in: 0.7 -> "−30%"
+const deltaPct = f => (f >= 1 ? "+" : "−") + Math.abs((f - 1) * 100).toFixed(0) + (LANG === "fr" ? " %" : "%");
+const pctFmt = (v, d = 0) => new Intl.NumberFormat(LOCALE, { maximumFractionDigits: d, minimumFractionDigits: d })
+  .format(v) + (LANG === "fr" ? " %" : "%");
+
+/* Every customer-facing string, EN + FR. Values are strings or functions of
+   the interpolated parts. Backend-computed text (formulas, EDA insight
+   sentences, sheet diagnostics) is shown as produced. */
+const STR = {
+  en: {
+    tab_overview: "Overview", tab_financials: "Financials", tab_whatif: "What-if",
+    tab_data: "Data", tab_trends: "Trends", tab_audit: "Audit", tab_actions: "Actions",
+    sheets_analyzed: n => `${n} sheet${n === 1 ? "" : "s"} analyzed`,
+    shared_view: "shared view", mode_exec: "Executive", mode_analyst: "Analyst",
+    btn_report: "Report", btn_share: "Share", btn_corrections: "Corrections CSV",
+    btn_findings: "Findings CSV",
+    drop_big: "Drop a CSV / Excel file anywhere, or click to browse",
+    drop_hint: "Every sheet read & verified · totals and formulas checked",
+    nothing_yet: "Nothing yet.", new_upload: "New upload", nav_kicker: "Analysis",
+    wb_kicker: "Workbooks", rerun: "rerun", del: "del",
+    wb_meta: (n, kb) => `${n} sheet${n === 1 ? "" : "s"} · ${kb} KB`,
+    analyzing: name => `Analyzing ${name}…`,
+    analysis_failed: msg => `Analysis failed: ${msg}`,
+    reanalyzing: "Re-analyzing…",
+    resolved: (d, a, b) => `✓ Resolved ${d} of discrepancy (${a} → ${b})`,
+    unchanged: t => `Discrepancy unchanged (${t}) — fix the suggested cells in the file, save, and re-upload`,
+    share_copied: url => `Share link copied — anyone with it can view (not edit): ${url}`,
+    share_manual: url => `Share link (copy it): ${url}`,
+    share_failed: "Could not create the share link.",
+    v_ok: "Consistent", v_review: "Review recommended", v_bad: "Needs corrections",
+    s_read: (n, x, r) => `This file has ${n} sheet${n === 1 ? "" : "s"}; ${x} were read successfully (${r} rows).`,
+    s_allok: v => `All ${v} automated checks passed — the numbers agree with each other.`,
+    s_disagree: (m, t) => `The numbers disagree with each other in <b>${m}</b> place${m === 1 ? "" : "s"}, worth <b>${t}</b> in total.`,
+    s_fixable: (c, w) => `<b>${c}</b> of those cells can be corrected right away (worth ${w}); the rest need the file's owner to check.`,
+    s_owner: `They need the file's owner to check the underlying figures — the correct values can't be determined automatically.`,
+    s_move: (l, sh, up, p, per) => `“${l}” on ${sh} is ${up ? "up" : "down"} <b>${p}%</b> in the latest period (${per}).`,
+    narr_title: "Executive narrative", narr_write: "✦ write it", narr_writing: "writing…",
+    narr_rewrite: "↻ rewrite", narr_failed: "The narrative call failed.",
+    narr_pitch: "One click and Claude writes the story of this file — from the verified numbers only.",
+    narr_foot: "AI-written from the verified figures — it phrases, never computes.",
+    h_revenue: (a, b) => `Revenue · ${a}–${b}`, h_horizon: p => `${p}% over the horizon`,
+    h_margin: "Operating margin", h_latest: "latest period", h_conversion: "Conversion rate",
+    h_capex: "Total investment (CAPEX)", h_rows: "Rows analyzed",
+    h_tables: n => `across ${n} table${n === 1 ? "" : "s"}`, h_complete: "Completeness",
+    h_filled: "of all cells filled", h_dupes: "Duplicate rows",
+    t_discrepancy: "Total discrepancy", t_sheets: "Sheets read", t_mismatch: "Disagreements",
+    t_verified: "Checks passed", t_unverified: "Totals to double-check", t_rows: "Rows read",
+    no_ts: "No time series to plot.",
+    fin_kicker: "Financials — detected in this file",
+    fin_traj: s => `Financial trajectory (${s})`, fin_margin: "Operating margin %",
+    fin_unit: "Unit economics — efficiency curve", fin_per: l => `per ${l}`,
+    fin_conv: (a, b) => `Conversion rate — ${a} / ${b}`,
+    fin_top: c => `top items by ${c}`, fin_opex_at: p => `Operating costs · ${p}`,
+    fin_peak: l => `Peak ${l}`, fin_that: v => `${v} that period`,
+    fin_margin_at: p => `Margin · ${p}`, fin_cpu: p => `Cost per unit · ${p}`,
+    fin_since: (pc, p) => `${pc}% since ${p}`,
+    roles: { revenue: "Revenue", opex: "Operating costs", capex: "Investment",
+      volume: "Volume", volume_secondary: "Volume (output)", area: "Area",
+      headcount: "Headcount", price: "Price" },
+    sc_kicker: "What-if — test your assumptions",
+    sc_bear: "Downside", sc_base: "Base", sc_bull: "Upside", sc_custom: "Custom",
+    sc_total: "total revenue over the horizon", sc_margin: m => `margin ${m}`,
+    sc_levers: "Your own scenario", sc_price: "Prices", sc_vol: "Volumes", sc_cost: "Costs",
+    sc_chart: "Revenue by scenario", sc_adj: "adjusted",
+    sc_assume: (p, v, c) => `prices ${p}, volumes ${v}${c ? `, costs ${c}` : ""}`,
+    mc_kicker: "Stress test — how sure can we be",
+    mc_unc: "Uncertainty", mc_price: "Price swings", mc_vol: "Volume swings",
+    mc_cost: "Cost swings", mc_n: "Number of trials",
+    mc_run: n => `Run ${n} simulations`, mc_press: "Press run to simulate.",
+    mc_p10: "P10 — pessimistic", mc_p50: "P50 — median", mc_p90: "P90 — optimistic",
+    mc_dist: "Distribution of total revenue", mc_draws: n => `${n} draws`,
+    mc_prob: "Probability of hitting targets",
+    mc_row: (t, p) => `Total revenue ≥ ${t} (${p}% of base)`,
+    ch_kicker: "Charts", ch_trends: "Trends", ch_cum: "Σ cumulative",
+    ch_hint: "drag to zoom · double-click to reset",
+    ch_periods: (a, b) => `${a} of ${b} periods`, ch_cols: n => `${n} columns`,
+    ch_trunc: "truncated", ch_hidden: "all series hidden", ch_sum: "sum",
+    ch_cumt: "cumulative", ch_avg: "avg",
+    ch_none: "No chartable series in this analysis (older analyses may need a rerun).",
+    ch_none_f: "No chartable series for this filter.",
+    pf_kicker: "Data profile",
+    pf_dims: (r, c) => `${r} rows × ${c} cols`, pf_complete: p => `${p}% complete`,
+    pf_dupes: n => `${n} duplicate row${n === 1 ? "" : "s"}`,
+    pf_const: n => `${n} constant column${n === 1 ? "" : "s"}`,
+    pf_avg: (t, c) => `avg ${t} by ${c}`, pf_min: "min", pf_med: "median",
+    pf_max: "max", pf_out: "outliers",
+    pf_none: "No profiling facts — nothing tabular enough to profile.",
+    ins_title: "Insights", ins_sub: "computed from this file",
+    ins_fix: (c, w, t) => `<b>${c} cell${c === 1 ? "" : "s"}</b> can be corrected with high confidence, closing <b>${w}</b> of the ${t} total discrepancy.`,
+    ins_largest: (sh, cell, lbl, a, e, n) => `Largest single correction: <b>${sh}</b> ${cell} (${lbl}) — ${a} should be <b>${e}</b>, per a rule verified on ${n} other rows.`,
+    ins_cell: c => `cell <b>${c}</b>`, ins_row: r => `row ${r}`,
+    ins_ok: "Every discovered relation holds — this file's internal math is <b>consistent</b>. Safe to circulate on that front.",
+    ins_latest: (sh, per, lbl, v) => `<b>${sh}</b> — latest ${per}: “${lbl}” at <b>${v}</b>`,
+    ins_vs: p => `(<b>${p}</b> vs previous period)`,
+    ins_peak: (sh, x, v) => `<b>${sh}</b> peaks at “${x}” (<b>${v}</b>) — plan cash and capacity around that period.`,
+    ins_unv: n => `${n} totals row${n === 1 ? "" : "s"} could not be verified automatically — worth a manual glance.`,
+    a_fixnow: "Fix now:", a_change: (c, a, b) => `change <b>${c}</b> from ${a} to <b>${b}</b>`,
+    a_more: n => ` — plus ${n} more in the corrections file`,
+    a_owner: "Check with the file's owner:",
+    a_rows: (rs, plural) => `row${plural ? "s" : ""} ${rs} — the correct value can't be determined automatically (other rules contest these cells).`,
+    a_in: f => `In this sheet, ${f} — but`,
+    a_off: (m, n) => `${m} of ${n} rows don't match.`,
+    a_eyeball: "Totals to double-check",
+    a_unv: n => `${n} totals row(s) couldn't be verified automatically — their sections have an unusual structure.`,
+    a_manual: "→ <b>Quick manual check</b> next time the file is open.",
+    a_none: "Nothing to fix", a_none_txt: "Every automated check passed. This file's internal math is consistent.",
+    a_dl: "⤓ Download the corrections list",
+    f_product: (t, a, b) => `'${t}' should equal '${a}' × '${b}'`,
+    f_rowsum: (t, a, b) => `'${t}' should equal the sum of ${a} through ${b}`,
+    f_colsum: r => `the totals row${r ? " " + r : ""} should match the sum of the rows above it`,
+    row_w: "row",
+    au_largest: "Largest discrepancies", au_verified: "Verified relations",
+    au_none_f: "✓ none for this filter", au_rows: (a, b) => `${a}/${b} rows`,
+    au_most: "Most data extracted", au_by_sheet: "Discrepancy by sheet",
+    au_nothing: "nothing extracted", au_no_disc: "✓ no discrepancies",
+    st_ok: "OK", st_mismatch: "Mismatch", st_unverified: "Unverified",
+    fx_hand: "review inputs by hand", fx_more: n => `+${n} more in CSV`,
+    fl_periods: "Periods", fl_sheets: "Sheets", fl_status: "Status",
+    fl_all: "All", fl_p30: "Last 30", fl_p90: "Last 90",
+    fl_sel: n => `${n} selected`, fl_search: "Search sheets", fl_clear: "Clear",
+    fl_mismatch: "Mismatched", fl_ok: "Verified", fl_unv: "Unverified",
+    sh_kicker: n => `Sheets (${n})`,
+    p_key: "Key figures", p_fin: "Financials", p_trends: "Trends", p_todo: "What to do",
+    p_fix: "Fix: ", p_owner: rs => `Owner to verify rows ${rs}`,
+    p_rowsoff: (m, n, d) => `(${m} of ${n} rows off, ${d})`,
+    p_allok: "✓ Every automated check passed.",
+    p_rev: "Revenue (horizon)", p_margin: "Margin (latest)", p_capex: "Total CAPEX",
+    p_conv: "Conversion", p_issues: "Issues found", p_checks: "Checks passed",
+    p_sheets: "Sheets read", p_records: "Rows",
+    p_foot: d => `Generated by Lumnia · light where there was none · ${d}`,
+    greet: "Hello!", tasks_t: "Tasks", exceptions_t: "Exceptions",
+    see_all: "See all →", ex_none: "Nothing needs your attention.",
+    ex_unv: n => `${n} total${n === 1 ? "" : "s"} to double-check by eye`,
+    ex_err: s => `Sheet “${s}” could not be read`,
+    task_sub: (m, n) => `${m} of ${n} rows ${m === 1 ? "doesn't" : "don't"} match`,
+    all_clear: "All clear — every automated check passed.",
+  },
+  fr: {
+    tab_overview: "Aperçu", tab_financials: "Finances", tab_whatif: "Scénarios",
+    tab_data: "Données", tab_trends: "Tendances", tab_audit: "Audit", tab_actions: "À faire",
+    sheets_analyzed: n => `${n} feuille${n === 1 ? "" : "s"} analysée${n === 1 ? "" : "s"}`,
+    shared_view: "vue partagée", mode_exec: "Direction", mode_analyst: "Analyste",
+    btn_report: "Rapport", btn_share: "Partager", btn_corrections: "CSV corrections",
+    btn_findings: "CSV anomalies",
+    drop_big: "Déposez un fichier CSV / Excel ici, ou cliquez pour parcourir",
+    drop_hint: "Chaque feuille lue et vérifiée · totaux et formules contrôlés",
+    nothing_yet: "Aucun fichier pour l'instant.", new_upload: "Nouveau fichier",
+    nav_kicker: "Analyse", wb_kicker: "Classeurs", rerun: "relancer", del: "suppr.",
+    wb_meta: (n, kb) => `${n} feuille${n === 1 ? "" : "s"} · ${kb} Ko`,
+    analyzing: name => `Analyse de ${name}…`,
+    analysis_failed: msg => `Échec de l'analyse : ${msg}`,
+    reanalyzing: "Nouvelle analyse…",
+    resolved: (d, a, b) => `✓ ${d} d'écart résolu (${a} → ${b})`,
+    unchanged: t => `Écart inchangé (${t}) — corrigez les cellules suggérées dans le fichier, enregistrez, puis re-déposez-le`,
+    share_copied: url => `Lien de partage copié — toute personne avec ce lien peut consulter (sans modifier) : ${url}`,
+    share_manual: url => `Lien de partage (à copier) : ${url}`,
+    share_failed: "Impossible de créer le lien de partage.",
+    v_ok: "Cohérent", v_review: "Vérification conseillée", v_bad: "Corrections nécessaires",
+    s_read: (n, x, r) => `Ce fichier contient ${n} feuille${n === 1 ? "" : "s"} ; ${x} ont été lues (${r} lignes).`,
+    s_allok: v => `Les ${v} contrôles automatiques sont bons — les chiffres concordent.`,
+    s_disagree: (m, t) => `Les chiffres se contredisent à <b>${m}</b> endroit${m === 1 ? "" : "s"}, pour un écart total de <b>${t}</b>.`,
+    s_fixable: (c, w) => `<b>${c}</b> de ces cellules peuvent être corrigées immédiatement (${w}) ; le reste est à vérifier avec le propriétaire du fichier.`,
+    s_owner: `Le propriétaire du fichier doit vérifier les chiffres d'origine — la bonne valeur ne peut pas être déterminée automatiquement.`,
+    s_move: (l, sh, up, p, per) => `« ${l} » (${sh}) est en ${up ? "hausse" : "baisse"} de <b>${p} %</b> sur la dernière période (${per}).`,
+    narr_title: "Synthèse rédigée", narr_write: "✦ rédiger", narr_writing: "rédaction…",
+    narr_rewrite: "↻ réécrire", narr_failed: "La rédaction a échoué.",
+    narr_pitch: "En un clic, Claude rédige l'histoire de ce fichier — uniquement à partir des chiffres vérifiés.",
+    narr_foot: "Rédigé par IA à partir des chiffres vérifiés — elle formule, ne calcule jamais.",
+    h_revenue: (a, b) => `Revenus · ${a}–${b}`, h_horizon: p => `${p} % sur la période`,
+    h_margin: "Marge opérationnelle", h_latest: "dernière période", h_conversion: "Taux de conversion",
+    h_capex: "Investissement total (CAPEX)", h_rows: "Lignes analysées",
+    h_tables: n => `sur ${n} table${n === 1 ? "" : "s"}`, h_complete: "Complétude",
+    h_filled: "des cellules remplies", h_dupes: "Lignes en double",
+    t_discrepancy: "Écart total", t_sheets: "Feuilles lues", t_mismatch: "Incohérences",
+    t_verified: "Contrôles réussis", t_unverified: "Totaux à revérifier", t_rows: "Lignes lues",
+    no_ts: "Aucune série temporelle à tracer.",
+    fin_kicker: "Finances — détectées dans ce fichier",
+    fin_traj: s => `Trajectoire financière (${s})`, fin_margin: "Marge opérationnelle %",
+    fin_unit: "Économie unitaire — courbe d'efficacité", fin_per: l => `par ${l}`,
+    fin_conv: (a, b) => `Taux de conversion — ${a} / ${b}`,
+    fin_top: c => `principaux postes par ${c}`, fin_opex_at: p => `Charges · ${p}`,
+    fin_peak: l => `Pic ${l}`, fin_that: v => `${v} cette période`,
+    fin_margin_at: p => `Marge · ${p}`, fin_cpu: p => `Coût unitaire · ${p}`,
+    fin_since: (pc, p) => `${pc} % depuis ${p}`,
+    roles: { revenue: "Revenus", opex: "Charges", capex: "Investissements",
+      volume: "Volume", volume_secondary: "Volume (sortie)", area: "Surface",
+      headcount: "Effectifs", price: "Prix" },
+    sc_kicker: "Scénarios — testez vos hypothèses",
+    sc_bear: "Pessimiste", sc_base: "Référence", sc_bull: "Optimiste", sc_custom: "Personnalisé",
+    sc_total: "revenus totaux sur la période", sc_margin: m => `marge ${m}`,
+    sc_levers: "Votre scénario", sc_price: "Prix", sc_vol: "Volumes", sc_cost: "Coûts",
+    sc_chart: "Revenus par scénario", sc_adj: "ajusté",
+    sc_assume: (p, v, c) => `prix ${p}, volumes ${v}${c ? `, coûts ${c}` : ""}`,
+    mc_kicker: "Test de résistance — quel niveau de confiance",
+    mc_unc: "Incertitudes", mc_price: "Variations de prix", mc_vol: "Variations de volume",
+    mc_cost: "Variations de coûts", mc_n: "Nombre de tirages",
+    mc_run: n => `Lancer ${n} simulations`, mc_press: "Lancez la simulation.",
+    mc_p10: "P10 — défavorable", mc_p50: "P50 — médian", mc_p90: "P90 — favorable",
+    mc_dist: "Distribution des revenus totaux", mc_draws: n => `${n} tirages`,
+    mc_prob: "Probabilité d'atteindre les objectifs",
+    mc_row: (t, p) => `Revenus totaux ≥ ${t} (${p} % de la référence)`,
+    ch_kicker: "Graphiques", ch_trends: "Tendances", ch_cum: "Σ cumul",
+    ch_hint: "glisser pour zoomer · double-clic pour réinitialiser",
+    ch_periods: (a, b) => `${a} sur ${b} périodes`, ch_cols: n => `${n} colonnes`,
+    ch_trunc: "tronqué", ch_hidden: "toutes les séries sont masquées", ch_sum: "somme",
+    ch_cumt: "cumul", ch_avg: "moy",
+    ch_none: "Aucune série à tracer dans cette analyse (les anciennes analyses peuvent nécessiter une relance).",
+    ch_none_f: "Aucune série pour ce filtre.",
+    pf_kicker: "Profil des données",
+    pf_dims: (r, c) => `${r} lignes × ${c} col.`, pf_complete: p => `${p} % rempli`,
+    pf_dupes: n => `${n} ligne${n === 1 ? "" : "s"} en double`,
+    pf_const: n => `${n} colonne${n === 1 ? "" : "s"} constante${n === 1 ? "" : "s"}`,
+    pf_avg: (t, c) => `moyenne de ${t} par ${c}`, pf_min: "min", pf_med: "médiane",
+    pf_max: "max", pf_out: "valeurs atypiques",
+    pf_none: "Rien d'assez tabulaire à profiler dans ce fichier.",
+    ins_title: "Observations", ins_sub: "calculées sur ce fichier",
+    ins_fix: (c, w, t) => `<b>${c} cellule${c === 1 ? "" : "s"}</b> peuvent être corrigées avec un haut niveau de confiance, résorbant <b>${w}</b> sur ${t} d'écart total.`,
+    ins_largest: (sh, cell, lbl, a, e, n) => `Correction la plus importante : <b>${sh}</b> ${cell} (${lbl}) — ${a} devrait être <b>${e}</b>, selon une règle vérifiée sur ${n} autres lignes.`,
+    ins_cell: c => `cellule <b>${c}</b>`, ins_row: r => `ligne ${r}`,
+    ins_ok: "Toutes les relations découvertes sont respectées — les calculs internes de ce fichier sont <b>cohérents</b>.",
+    ins_latest: (sh, per, lbl, v) => `<b>${sh}</b> — dernière période ${per} : « ${lbl} » à <b>${v}</b>`,
+    ins_vs: p => `(<b>${p}</b> vs période précédente)`,
+    ins_peak: (sh, x, v) => `<b>${sh}</b> culmine à « ${x} » (<b>${v}</b>) — planifiez trésorerie et capacité autour de cette période.`,
+    ins_unv: n => `${n} ligne${n === 1 ? "" : "s"} de totaux n'ont pas pu être vérifiées automatiquement — un coup d'œil manuel s'impose.`,
+    a_fixnow: "À corriger :", a_change: (c, a, b) => `remplacer <b>${c}</b> : ${a} → <b>${b}</b>`,
+    a_more: n => ` — plus ${n} autres dans le fichier de corrections`,
+    a_owner: "À vérifier avec le propriétaire du fichier :",
+    a_rows: (rs, plural) => `ligne${plural ? "s" : ""} ${rs} — la bonne valeur ne peut pas être déterminée automatiquement (d'autres règles contestent ces cellules).`,
+    a_in: f => `Dans cette feuille, ${f} — mais`,
+    a_off: (m, n) => `${m} ligne${m === 1 ? "" : "s"} sur ${n} ne concorde${m === 1 ? "" : "nt"} pas.`,
+    a_eyeball: "Totaux à revérifier",
+    a_unv: n => `${n} ligne(s) de totaux n'ont pas pu être vérifiées automatiquement — leur structure est inhabituelle.`,
+    a_manual: "→ <b>Vérification manuelle rapide</b> à la prochaine ouverture du fichier.",
+    a_none: "Rien à corriger", a_none_txt: "Tous les contrôles automatiques sont bons. Les calculs internes de ce fichier sont cohérents.",
+    a_dl: "⤓ Télécharger la liste des corrections",
+    f_product: (t, a, b) => `« ${t} » devrait être égal à « ${a} » × « ${b} »`,
+    f_rowsum: (t, a, b) => `« ${t} » devrait être la somme de ${a} à ${b}`,
+    f_colsum: r => `la ligne de totaux${r ? " " + r : ""} devrait correspondre à la somme des lignes au-dessus`,
+    row_w: "ligne",
+    au_largest: "Plus grands écarts", au_verified: "Relations vérifiées",
+    au_none_f: "✓ aucun pour ce filtre", au_rows: (a, b) => `${a}/${b} lignes`,
+    au_most: "Le plus de données extraites", au_by_sheet: "Écart par feuille",
+    au_nothing: "rien d'extrait", au_no_disc: "✓ aucun écart",
+    st_ok: "OK", st_mismatch: "Incohérent", st_unverified: "Non vérifié",
+    fx_hand: "à vérifier à la main", fx_more: n => `+${n} autres dans le CSV`,
+    fl_periods: "Périodes", fl_sheets: "Feuilles", fl_status: "Statut",
+    fl_all: "Toutes", fl_p30: "30 dern.", fl_p90: "90 dern.",
+    fl_sel: n => `${n} sélectionnées`, fl_search: "Rechercher une feuille", fl_clear: "Effacer",
+    fl_mismatch: "Incohérents", fl_ok: "Vérifiés", fl_unv: "Non vérifiés",
+    sh_kicker: n => `Feuilles (${n})`,
+    p_key: "Chiffres clés", p_fin: "Finances", p_trends: "Tendances", p_todo: "Actions",
+    p_fix: "Corriger : ", p_owner: rs => `Propriétaire : vérifier les lignes ${rs}`,
+    p_rowsoff: (m, n, d) => `(${m} lignes sur ${n} en écart, ${d})`,
+    p_allok: "✓ Tous les contrôles automatiques sont bons.",
+    p_rev: "Revenus (période)", p_margin: "Marge (dernière)", p_capex: "CAPEX total",
+    p_conv: "Conversion", p_issues: "Anomalies", p_checks: "Contrôles réussis",
+    p_sheets: "Feuilles lues", p_records: "Lignes",
+    p_foot: d => `Généré par Lumnia · la lumière là où il n'y en avait pas · ${d}`,
+    greet: "Bonjour !", tasks_t: "À faire", exceptions_t: "Points d'attention",
+    see_all: "Tout voir →", ex_none: "Rien ne demande votre attention.",
+    ex_unv: n => `${n} total${n === 1 ? "" : "aux"} à revérifier d'un coup d'œil`,
+    ex_err: s => `La feuille « ${s} » n'a pas pu être lue`,
+    task_sub: (m, n) => `${m} ligne${m === 1 ? "" : "s"} sur ${n} ne concorde${m === 1 ? "" : "nt"} pas`,
+    all_clear: "Tout est bon — tous les contrôles automatiques sont passés.",
+  },
+};
+const T = STR[LANG];
+function setLang(l) { localStorage.setItem("lumnia_lang", l); location.reload(); }
 
 /* ---------- state ---------- */
 let current = null, REPORT = null, AUDIT = null, CHARTS = [];
@@ -446,7 +747,7 @@ if (!SHARE) {
 }
 
 async function upload(file) {
-  setStatus(`Analyzing ${file.name}…`);
+  setStatus(T.analyzing(file.name));
   const fd = new FormData(); fd.append("file", file);
   try {
     const r = await fetch("/analyze", { method: "POST", body: fd });
@@ -455,7 +756,7 @@ async function upload(file) {
     setStatus("");
     await loadWorkbooks();
     select(body.id);
-  } catch (err) { setStatus("Analysis failed: " + err.message, true); }
+  } catch (err) { setStatus(T.analysis_failed(err.message), true); }
   fileInput.value = "";
 }
 function setStatus(msg, isErr) { statusEl.textContent = msg; statusEl.className = isErr ? "err" : ""; }
@@ -466,9 +767,9 @@ async function loadWorkbooks() {
   $("#wb-list").innerHTML = items.length ? items.map(i => `
     <div class="wb ${i.id === current ? "active" : ""}" data-id="${esc(i.id)}">
       <div class="name">${esc(i.filename)}</div>
-      <div class="meta"><span>${i.n_sheets} sheets · ${(i.size_bytes/1024).toFixed(0)} KB</span>
-        <span><button data-act="rerun">rerun</button><button data-act="del">del</button></span></div>
-    </div>`).join("") : `<div class="muted" style="font-size:12px;padding:0 10px">Nothing yet.</div>`;
+      <div class="meta"><span>${T.wb_meta(i.n_sheets, (i.size_bytes/1024).toFixed(0))}</span>
+        <span><button data-act="rerun">${T.rerun}</button><button data-act="del">${T.del}</button></span></div>
+    </div>`).join("") : `<div class="muted" style="font-size:12px;padding:0 10px">${T.nothing_yet}</div>`;
   $$("#wb-list .wb").forEach(el => el.addEventListener("click", async e => {
     const act = e.target.dataset && e.target.dataset.act, id = el.dataset.id;
     if (act === "del") { e.stopPropagation();
@@ -477,14 +778,14 @@ async function loadWorkbooks() {
       loadWorkbooks();
     } else if (act === "rerun") { e.stopPropagation();
       const prev = (current === id && AUDIT) ? AUDIT.total_abs_delta : null;
-      setStatus("Re-analyzing…");
+      setStatus(T.reanalyzing);
       await fetch(`/analyses/${id}/rerun`, { method: "POST" });
       await select(id);
       if (prev != null) {
         const d = prev - AUDIT.total_abs_delta;
         setStatus(d > 0.01
-          ? `✓ Resolved ${compact(d)} of discrepancy (${compact(prev)} → ${compact(AUDIT.total_abs_delta)})`
-          : `Discrepancy unchanged (${compact(AUDIT.total_abs_delta)}) — fix the suggested cells in the file, save, and re-upload`);
+          ? T.resolved(compact(d), compact(prev), compact(AUDIT.total_abs_delta))
+          : T.unchanged(compact(AUDIT.total_abs_delta)));
       } else setStatus("");
     } else select(id);
   }));
@@ -503,11 +804,11 @@ const TAB_ICONS = {
 
 function availableTabs() {
   const exec = MODE === "exec";
-  const t = [["overview", "Overview"]];
-  if (REPORT.model) t.push(["financials", "Financials"]);
-  if (REPORT.model && REPORT.model.scenario_ready) t.push(["whatif", "What-if"]);
-  t.push(["data", exec ? "Trends" : "Data"]);
-  t.push(["audit", exec ? "Actions" : "Audit"]);
+  const t = [["overview", T.tab_overview]];
+  if (REPORT.model) t.push(["financials", T.tab_financials]);
+  if (REPORT.model && REPORT.model.scenario_ready) t.push(["whatif", T.tab_whatif]);
+  t.push(["data", exec ? T.tab_trends : T.tab_data]);
+  t.push(["audit", exec ? T.tab_actions : T.tab_audit]);
   return t;
 }
 function tabCounts() {
@@ -537,6 +838,8 @@ function renderTabBar() {
 function attachTabBar() {
   $$(".tabs .tabbtn").forEach(b =>
     b.addEventListener("click", () => setTab(b.dataset.tab)));
+  $$(".seeall").forEach(a =>
+    a.addEventListener("click", () => setTab(a.dataset.tab)));
 }
 
 /* ---------- select + render ---------- */
@@ -556,12 +859,27 @@ async function select(id) {
 
 function renderEmpty() {
   $("#nav-analysis").innerHTML = "";
+  $("#wb-kicker").textContent = T.wb_kicker;
+  $("#newupload-txt").textContent = T.new_upload;
   $("#topbar").innerHTML = `<div class="topbar"><h2>Lumnia</h2>
-    <span class="sub">Light where there was none</span></div>`;
+    <span class="sub">${LANG === "fr" ? "La lumière là où il n'y en avait pas" : "Light where there was none"}</span>
+    <span class="grow"></span>${langToggle()}</div>`;
+  attachLang();
   $("#content").innerHTML = `<div id="drop">
-    <div class="big">Drop a CSV / Excel file anywhere, or click to browse</div>
-    <div class="hint2">Every sheet classified &amp; extracted · totals &amp; formulas verified</div></div>`;
+    <div class="big">${T.drop_big}</div>
+    <div class="hint2">${T.drop_hint}</div></div>`;
   $("#drop").addEventListener("click", () => fileInput.click());
+}
+
+function langToggle() {
+  return `<span class="modes langs">
+    <button data-lang="fr" class="${LANG === "fr" ? "on" : ""}">FR</button>
+    <button data-lang="en" class="${LANG === "en" ? "on" : ""}">EN</button></span>`;
+}
+function attachLang() {
+  $$(".langs button").forEach(b => b.addEventListener("click", () => {
+    if (b.dataset.lang !== LANG) setLang(b.dataset.lang);
+  }));
 }
 
 function renderAll() {
@@ -572,20 +890,24 @@ function renderAll() {
   if (!availableTabs().some(([id]) => id === TAB)) TAB = "overview";
 
   renderNav();
+  $("#wb-kicker").textContent = T.wb_kicker;
+  $("#newupload-txt").textContent = T.new_upload;
   $("#topbar").innerHTML = `<div class="topbar">
     <h2>${esc(r.filename)}</h2>
-    <span class="sub">${r.n_sheets} sheets analyzed${SHARE ? " · shared view" : ""}</span>
+    <span class="sub">${T.sheets_analyzed(r.n_sheets)}${SHARE ? ` · ${T.shared_view}` : ""}</span>
     <span class="grow"></span>
+    ${langToggle()}
     <span class="modes">
-      <button data-mode="exec" class="${exec ? "on" : ""}">Executive</button>
-      <button data-mode="analyst" class="${exec ? "" : "on"}">Analyst</button>
+      <button data-mode="exec" class="${exec ? "on" : ""}">${T.mode_exec}</button>
+      <button data-mode="analyst" class="${exec ? "" : "on"}">${T.mode_analyst}</button>
     </span>
-    <button class="btn" id="print-report">⎙&nbsp; Report</button>
-    ${SHARE ? "" : `<button class="btn" id="share-link">↗&nbsp; Share</button>
-    <button class="btn" id="dl-corrections">⤓&nbsp; Corrections CSV</button>
-    ${exec ? "" : `<button class="btn" id="dl-findings">⤓&nbsp; Findings CSV</button>`}`}
+    <button class="btn" id="print-report">⎙&nbsp; ${T.btn_report}</button>
+    ${SHARE ? "" : `<button class="btn" id="share-link">↗&nbsp; ${T.btn_share}</button>
+    ${exec ? "" : `<button class="btn" id="dl-corrections">⤓&nbsp; ${T.btn_corrections}</button>
+    <button class="btn" id="dl-findings">⤓&nbsp; ${T.btn_findings}</button>`}`}
   </div>`;
-  $$(".modes button").forEach(b => b.addEventListener("click", () => {
+  attachLang();
+  $$(".modes:not(.langs) button").forEach(b => b.addEventListener("click", () => {
     MODE = b.dataset.mode; localStorage.setItem("lumnia_mode", MODE); renderAll();
   }));
   $("#print-report").addEventListener("click", printReport);
@@ -598,26 +920,31 @@ function renderAll() {
 
   let body = "";
   if (TAB === "overview") {
-    body = `<section id="sec-overview">${renderVerdict()}${renderNarrative()}${renderHero()}${renderOverview()}${renderInsights()}</section>`;
+    body = exec
+      // non-technical home: greeting, story, big numbers, tasks & exceptions
+      ? `<section id="sec-overview">${renderGreeting()}${renderNarrative()}${renderHero()}${renderHome()}${renderInsights()}</section>`
+      : `<section id="sec-overview">${renderVerdict()}${renderNarrative()}${renderHero()}${renderOverview()}${renderInsights()}</section>`;
   } else if (TAB === "financials") {
     body = renderFinancials();
   } else if (TAB === "whatif") {
     body = renderScenario() + renderMC();
   } else if (TAB === "data") {
     body = (exec ? "" : renderFilters()) +
-      `<section id="sec-charts"><span class="kicker">${exec ? "Trends" : "Charts"}</span>${renderChartGrid()}</section>` +
-      ((!exec || !r.model) ? `<section id="sec-profile"><span class="kicker">Data profile</span>${renderProfile()}</section>` : "") +
-      (exec ? "" : `<section id="sec-sheets"><span class="kicker">Sheets (${r.n_sheets})</span>${renderSheets()}</section>`);
+      `<section id="sec-charts"><span class="kicker">${exec ? T.ch_trends : T.ch_kicker}</span>${renderChartGrid()}</section>` +
+      ((!exec || !r.model) ? `<section id="sec-profile"><span class="kicker">${T.pf_kicker}</span>${renderProfile()}</section>` : "") +
+      (exec ? "" : `<section id="sec-sheets"><span class="kicker">${T.sh_kicker(r.n_sheets)}</span>${renderSheets()}</section>`);
   } else if (TAB === "audit") {
     body = exec
-      ? `<section id="sec-audit"><span class="kicker">What to do</span>${renderActionList()}</section>`
+      ? `<section id="sec-audit"><span class="kicker">${T.tab_actions}</span>${renderActionList()}${renderExecDownloads()}</section>`
       : (renderFilters() +
-         `<section id="sec-audit"><span class="kicker">Audit</span>${renderHighlights()}${renderLeaderboards()}${renderFindingsTable()}</section>`);
+         `<section id="sec-audit"><span class="kicker">${T.tab_audit}</span>${renderHighlights()}${renderLeaderboards()}${renderFindingsTable()}</section>`);
   }
   $("#content").innerHTML = renderTabBar() + body;
 
   attachTabBar(); attachFilters(); attachCharts(); attachFindingRows();
   attachBarRows(); attachScenario(); attachMC(); attachNarrative();
+  const dlx = $("#dl-corrections-exec");
+  if (dlx) dlx.addEventListener("click", downloadCorrections);
 }
 
 /* ---------- filters ---------- */
@@ -627,26 +954,26 @@ function visCharts() { return CHARTS.filter(c => sheetVisible(c.sheet)); }
 function renderFilters() {
   const sheets = [...new Set(CHARTS.map(c => c.sheet).concat(REPORT.sheets.map(s => s.name)))];
   const selN = FILTER.sheets ? FILTER.sheets.size : 0;
-  const periodLabels = { all: "All", p30: "Last 30", p90: "Last 90" };
-  const statusLabels = { mismatch: "Mismatched", ok: "Verified", unverified: "Unverified" };
+  const periodLabels = { all: T.fl_all, p30: T.fl_p30, p90: T.fl_p90 };
+  const statusLabels = { mismatch: T.fl_mismatch, ok: T.fl_ok, unverified: T.fl_unv };
   return `<div class="filters">
-    <div class="pill" id="pf-periods"><button>Periods: <b>${periodLabels[FILTER.periods]}</b> <span class="car">▾</span></button>
+    <div class="pill" id="pf-periods"><button>${T.fl_periods}: <b>${periodLabels[FILTER.periods]}</b> <span class="car">▾</span></button>
       <div class="pop">${Object.entries(periodLabels).map(([k, l]) =>
-        `<div class="opt ${FILTER.periods === k ? "sel" : ""}" data-v="${k}"><span class="radio"></span>${l} periods</div>`).join("")}
+        `<div class="opt ${FILTER.periods === k ? "sel" : ""}" data-v="${k}"><span class="radio"></span>${l}</div>`).join("")}
       </div></div>
-    <div class="pill" id="pf-sheets"><button>Sheets: <b>${selN ? selN + " selected" : "All"}</b> <span class="car">▾</span></button>
+    <div class="pill" id="pf-sheets"><button>${T.fl_sheets}: <b>${selN ? T.fl_sel(selN) : T.fl_all}</b> <span class="car">▾</span></button>
       <div class="pop" style="min-width:280px">
         ${selN ? `<div class="fchips">${[...FILTER.sheets].map(s =>
           `<span class="fchip" data-v="${esc(s)}">${esc(s)} ✕</span>`).join("")}</div>` : ""}
         <div class="search"><svg width="12" height="12" viewBox="0 0 12 12"><circle cx="5" cy="5" r="3.6" fill="none" stroke="#99917e" stroke-width="1.4"/><path d="M8 8l2.6 2.6" stroke="#99917e" stroke-width="1.4" stroke-linecap="round"/></svg>
-          <input placeholder="Search sheets" id="sheet-search"></div>
+          <input placeholder="${T.fl_search}" id="sheet-search"></div>
         <div id="sheet-opts">${sheets.map(s =>
           `<div class="opt ${FILTER.sheets && FILTER.sheets.has(s) ? "sel" : ""}" data-v="${esc(s)}"><span class="box"></span>${esc(s)}</div>`).join("")}</div>
-        ${selN ? `<div class="clear" id="sheets-clear">Clear</div>` : ""}
+        ${selN ? `<div class="clear" id="sheets-clear">${T.fl_clear}</div>` : ""}
       </div></div>
-    <div class="pill" id="pf-status"><button>Status: <b>${FILTER.status ? statusLabels[FILTER.status] : "All"}</b> <span class="car">▾</span></button>
+    <div class="pill" id="pf-status"><button>${T.fl_status}: <b>${FILTER.status ? statusLabels[FILTER.status] : T.fl_all}</b> <span class="car">▾</span></button>
       <div class="pop">
-        <div class="opt ${!FILTER.status ? "sel" : ""}" data-v=""><span class="radio"></span>All</div>
+        <div class="opt ${!FILTER.status ? "sel" : ""}" data-v=""><span class="radio"></span>${T.fl_all}</div>
         ${Object.entries(statusLabels).map(([k, l]) =>
           `<div class="opt ${FILTER.status === k ? "sel" : ""}" data-v="${k}"><span class="radio"></span>${l}</div>`).join("")}
       </div></div>
@@ -698,6 +1025,60 @@ function openPill(id) {
   if (p) { p.classList.add("open"); const s = $("#sheet-search"); if (s) s.focus(); }
 }
 
+/* ---------- non-technical home: greeting + tasks + exceptions ------------ */
+function renderGreeting() {
+  const v = verdictInfo();
+  const date = new Date().toLocaleDateString(LOCALE,
+    { day: "numeric", month: "long", year: "numeric" });
+  return `<div class="greet"><div>
+      <h1>${T.greet}</h1>
+      <div class="gsub">${esc(REPORT.filename)} · ${date}</div></div>
+    <span class="gchip" style="--vcolor:${v.color}">${v.icon} ${v.label}</span></div>
+    <p class="glead">${execSummary()}</p>`;
+}
+
+function renderHome() {
+  const vis = visCharts().filter(c => !c.pseudo);
+  const primary = vis.filter(c => c.chart.kind === "timeseries")
+    .sort((x, y) => y.chart.periods.length - x.chart.periods.length)[0];
+  const left = primary ? chartCard(primary, true)
+    : `<div class="card"><div class="muted" style="padding:40px 0;text-align:center">${T.no_ts}</div></div>`;
+
+  // tasks = the concrete problems, one row each, Flexport-style
+  const tasks = AUDIT.findings.slice(0, 4).map(f => `
+    <div class="trow clicky bar-row" data-sheet="${esc(f.sheet)}" style="display:flex">
+      <span class="tico" style="background:var(--crit-track);color:var(--critical)">✕</span>
+      <span class="tbody"><b>${esc(f.sheet)}</b>
+        <span class="tsub">${T.task_sub(f.n_mismatched, f.n_checked)}</span></span>
+      <span class="tchip">${compact(f.total_abs_delta)}</span>
+    </div>`).join("");
+  const taskCard = `<div class="card"><div class="card-head">
+      <span class="ct">${T.tasks_t}</span><span class="cnt2">${AUDIT.findings.length}</span>
+      <span class="grow"></span><a class="seeall" data-tab="audit">${T.see_all}</a></div>
+    ${tasks || `<div class="trow"><span class="tico" style="background:var(--good-track);color:var(--good)">✓</span>
+      <span class="tbody">${T.all_clear}</span></div>`}</div>`;
+
+  // exceptions = things a human must look at
+  const ex = [];
+  if (AUDIT.n_unverified_relations)
+    ex.push({ ico: "?", c: "var(--warning)", tr: "#f3ecd6", txt: T.ex_unv(AUDIT.n_unverified_relations) });
+  for (const s of REPORT.sheets.filter(s => s.orientation === "error").slice(0, 3))
+    ex.push({ ico: "!", c: "var(--critical)", tr: "var(--crit-track)", txt: T.ex_err(esc(s.name)) });
+  const exCard = `<div class="card" style="margin-top:14px"><div class="card-head">
+      <span class="ct">${T.exceptions_t}</span><span class="cnt2">${ex.length}</span></div>
+    ${ex.length ? ex.map(e => `<div class="trow"><span class="tico" style="background:${e.tr};color:${e.c}">${e.ico}</span>
+      <span class="tbody">${e.txt}</span></div>`).join("")
+      : `<div class="trow"><span class="tico" style="background:var(--good-track);color:var(--good)">✓</span><span class="tbody">${T.ex_none}</span></div>`}</div>`;
+
+  return `<div class="home-grid"><div>${left}</div><div>${taskCard}${exCard}</div></div>`;
+}
+
+function renderExecDownloads() {
+  const cells = AUDIT.findings.reduce((t, f) => t + safeFixes(f).length, 0);
+  return cells && !SHARE
+    ? `<button class="btn" id="dl-corrections-exec" style="margin-top:12px">${T.a_dl}</button>` : "";
+}
+
 /* ---------- overview hero: the 3-4 numbers that lead this workbook -------- */
 function renderHero() {
   const m = REPORT.model, tiles = [];
@@ -709,18 +1090,18 @@ function renderHero() {
       const v = rev.values, fi = v.findIndex(x => x != null);
       let li = -1; for (let i = v.length - 1; i >= 0; i--) if (v[i] != null) { li = i; break; }
       const growth = fi >= 0 && li > fi && v[fi] ? ((v[li] / v[fi] - 1) * 100) : null;
-      tiles.push(`<div class="hero-tile"><div class="hl">Revenue · ${esc(m.periods[fi])}–${esc(m.periods[li])}</div>
+      tiles.push(`<div class="hero-tile"><div class="hl">${T.h_revenue(esc(m.periods[fi]), esc(m.periods[li]))}</div>
         <div class="hv">${compact(sum(v))}</div>
-        ${growth != null ? `<div class="hs" style="color:var(--good)">${growth >= 0 ? "▲" : "▼"} ${Math.abs(growth).toFixed(0)}% over the horizon</div>` : ""}</div>`);
+        ${growth != null ? `<div class="hs" style="color:var(--good)">${growth >= 0 ? "▲" : "▼"} ${T.h_horizon(Math.abs(growth).toFixed(0))}</div>` : ""}</div>`);
     }
     const mp = m.derived.margin_pct && last(m.derived.margin_pct);
-    if (mp != null) tiles.push(`<div class="hero-tile"><div class="hl">Operating margin</div>
-      <div class="hv">${mp.toFixed(0)}%</div><div class="hs">latest period</div></div>`);
+    if (mp != null) tiles.push(`<div class="hero-tile"><div class="hl">${T.h_margin}</div>
+      <div class="hv">${pctFmt(mp)}</div><div class="hs">${T.h_latest}</div></div>`);
     const vr = m.derived.volume_ratio && last(m.derived.volume_ratio);
-    if (vr != null) tiles.push(`<div class="hero-tile"><div class="hl">Conversion rate</div>
-      <div class="hv">${(vr * 100).toFixed(1)}%</div>
+    if (vr != null) tiles.push(`<div class="hero-tile"><div class="hl">${T.h_conversion}</div>
+      <div class="hv">${pctFmt(vr * 100, 1)}</div>
       <div class="hs">${esc(m.metrics.volume_secondary.label.slice(0, 16))} / ${esc(m.metrics.volume.label.slice(0, 16))}</div></div>`);
-    if (m.metrics.capex) tiles.push(`<div class="hero-tile"><div class="hl">Total CAPEX</div>
+    if (m.metrics.capex) tiles.push(`<div class="hero-tile"><div class="hl">${T.h_capex}</div>
       <div class="hv">${compact(sum(m.metrics.capex.values))}</div></div>`);
   } else {
     // no business model role-tagged -> lead with the data-profile numbers
@@ -733,11 +1114,11 @@ function renderHero() {
       dupes += e.eda.duplicates || 0;
       for (const info of Object.values(e.eda.missingness || {})) nulls += info.count || 0;
     }
-    tiles.push(`<div class="hero-tile"><div class="hl">Rows profiled</div>
-      <div class="hv">${compact(rows)}</div><div class="hs">across ${es.length} table${es.length === 1 ? "" : "s"}</div></div>`);
-    if (cells) tiles.push(`<div class="hero-tile"><div class="hl">Completeness</div>
-      <div class="hv">${(100 - nulls / cells * 100).toFixed(0)}%</div><div class="hs">of all cells filled</div></div>`);
-    tiles.push(`<div class="hero-tile"><div class="hl">Duplicate rows</div>
+    tiles.push(`<div class="hero-tile"><div class="hl">${T.h_rows}</div>
+      <div class="hv">${compact(rows)}</div><div class="hs">${T.h_tables(es.length)}</div></div>`);
+    if (cells) tiles.push(`<div class="hero-tile"><div class="hl">${T.h_complete}</div>
+      <div class="hv">${(100 - nulls / cells * 100).toFixed(0)}%</div><div class="hs">${T.h_filled}</div></div>`);
+    tiles.push(`<div class="hero-tile"><div class="hl">${T.h_dupes}</div>
       <div class="hv">${dupes}</div></div>`);
   }
   return tiles.length ? `<div class="hero">${tiles.slice(0, 4).join("")}</div>` : "";
@@ -756,16 +1137,16 @@ function collectEda() {
 
 function renderProfile() {
   const es = collectEda().filter(e => sheetVisible(e.sheet));
-  if (!es.length) return `<div class="card muted">No profiling facts — nothing tabular enough to profile.</div>`;
+  if (!es.length) return `<div class="card muted">${T.pf_none}</div>`;
   const cards = es.slice(0, 6).map(({ sheet, eda }) => {
     const cells = eda.row_count * eda.column_count;
     let nulls = 0;
     for (const info of Object.values(eda.missingness || {})) nulls += info.count || 0;
     const badges = [
-      `${compact(eda.row_count)} rows × ${eda.column_count} cols`,
-      cells ? `${(100 - nulls / cells * 100).toFixed(0)}% complete` : null,
-      eda.duplicates ? `${eda.duplicates} duplicate row${eda.duplicates === 1 ? "" : "s"}` : null,
-      (eda.constant_columns || []).length ? `${eda.constant_columns.length} constant col${eda.constant_columns.length === 1 ? "" : "s"}` : null,
+      T.pf_dims(compact(eda.row_count), eda.column_count),
+      cells ? T.pf_complete((100 - nulls / cells * 100).toFixed(0)) : null,
+      eda.duplicates ? T.pf_dupes(eda.duplicates) : null,
+      (eda.constant_columns || []).length ? T.pf_const(eda.constant_columns.length) : null,
     ].filter(Boolean).map(b => `<span class="pbadge">${esc(b)}</span>`).join("");
 
     // top categories by average of the detected target column
@@ -773,7 +1154,7 @@ function renderProfile() {
     const bd = (eda.categorical_breakdowns || [])[0];
     if (bd && eda.target_column) {
       const mx = Math.max(1, ...bd.categories.map(c => Math.abs(c.mean)));
-      breakdown = `<div class="psub">avg ${esc(String(eda.target_column).slice(0, 24))} by ${esc(bd.column.slice(0, 24))}</div>` +
+      breakdown = `<div class="psub">${T.pf_avg(esc(String(eda.target_column).slice(0, 24)), esc(bd.column.slice(0, 24)))}</div>` +
         bd.categories.slice(0, 5).map(c => `<div class="bar-row">
           <span class="bl">${esc(c.category.slice(0, 40))} <span class="muted">(${c.count})</span></span>
           <span class="bv">${compact(c.mean)}</span>
@@ -787,9 +1168,9 @@ function renderProfile() {
     if (t) {
       stats = `<div class="psub">${esc(String(eda.target_column).slice(0, 28))}</div>
         <div class="pstats">
-          <span>min <b>${compact(t.min)}</b></span><span>median <b>${compact(t.median)}</b></span>
-          <span>max <b>${compact(t.max)}</b></span>
-          ${t.outlier_count ? `<span style="color:var(--warning)">outliers <b>${t.outlier_count}</b></span>` : ""}
+          <span>${T.pf_min} <b>${compact(t.min)}</b></span><span>${T.pf_med} <b>${compact(t.median)}</b></span>
+          <span>${T.pf_max} <b>${compact(t.max)}</b></span>
+          ${t.outlier_count ? `<span style="color:var(--warning)">${T.pf_out} <b>${t.outlier_count}</b></span>` : ""}
         </div>`;
     }
     return `<div class="card"><div class="card-head"><span class="ct">${esc(sheet)}</span></div>
@@ -801,12 +1182,12 @@ function renderProfile() {
 /* ---------- share: read-only link for clients ---------- */
 async function shareLink() {
   const r = await fetch(`/analyses/${current}/share`, { method: "POST" });
-  if (!r.ok) { setStatus("Could not create the share link.", true); return; }
+  if (!r.ok) { setStatus(T.share_failed, true); return; }
   const full = location.origin + (await r.json()).url;
   try {
     await navigator.clipboard.writeText(full);
-    setStatus(`Share link copied to clipboard — anyone with it can view (not edit): ${full}`);
-  } catch { setStatus(`Share link (copy it): ${full}`); }
+    setStatus(T.share_copied(full));
+  } catch { setStatus(T.share_manual(full)); }
 }
 
 /* ---------- overview: KPIs + primary chart ---------- */
@@ -819,24 +1200,24 @@ function renderOverview() {
     return t + n;
   }, 0);
   const tiles = `
-    <div class="tile"><div class="label">Total discrepancy</div>
+    <div class="tile"><div class="label">${T.t_discrepancy}</div>
       <div class="value">${compact(a.total_abs_delta)}</div></div>
-    <div class="tile"><div class="label">Sheets extracted</div>
+    <div class="tile"><div class="label">${T.t_sheets}</div>
       <div class="value">${extracted}<span class="den">/${r.n_sheets}</span></div></div>
-    <div class="tile"><div class="label">Mismatched</div>
+    <div class="tile"><div class="label">${T.t_mismatch}</div>
       <div class="value"><span class="ico" style="color:var(--critical)">✕</span>${a.n_mismatched_relations}</div></div>
-    <div class="tile"><div class="label">Verified</div>
+    <div class="tile"><div class="label">${T.t_verified}</div>
       <div class="value"><span class="ico" style="color:var(--good)">✓</span>${a.n_verified_relations}</div></div>
-    <div class="tile"><div class="label">Unverified totals</div>
+    <div class="tile"><div class="label">${T.t_unverified}</div>
       <div class="value"><span class="ico" style="color:var(--warning)">?</span>${a.n_unverified_relations}</div></div>
-    <div class="tile"><div class="label">Records extracted</div>
+    <div class="tile"><div class="label">${T.t_rows}</div>
       <div class="value">${compact(recs)}</div></div>`;
 
   const vis = visCharts().filter(c => !c.pseudo);
   const primary = vis.filter(c => c.chart.kind === "timeseries")
     .sort((x, y) => y.chart.periods.length - x.chart.periods.length)[0];
   const right = primary ? chartCard(primary, true)
-    : `<div class="card"><div class="muted" style="padding:40px 0;text-align:center">No time series to plot${CHARTS.length ? "" : " — press rerun on this workbook to compute charts"}.</div></div>`;
+    : `<div class="card"><div class="muted" style="padding:40px 0;text-align:center">${T.no_ts}</div></div>`;
   return `<div class="overview"><div class="kpis">${tiles}</div><div>${right}</div></div>`;
 }
 
@@ -860,32 +1241,25 @@ function kpiData() {
 function verdictInfo() {
   const m = AUDIT.n_mismatched_relations, u = AUDIT.n_unverified_relations;
   if (m === 0 && u === 0)
-    return { label: "Consistent", color: "var(--good)", icon: "✓" };
+    return { label: T.v_ok, color: "var(--good)", icon: "✓" };
   if (m === 0)
-    return { label: "Review recommended", color: "var(--warning)", icon: "?" };
-  return { label: "Needs corrections", color: "var(--critical)", icon: "✕" };
+    return { label: T.v_review, color: "var(--warning)", icon: "?" };
+  return { label: T.v_bad, color: "var(--critical)", icon: "✕" };
 }
 
 function execSummary() {
   const { extracted, recs } = kpiData();
-  const s = [];
-  s.push(`This workbook has ${REPORT.n_sheets} sheets; ${extracted} were read
-    successfully (${compact(recs)} records).`);
+  const s = [T.s_read(REPORT.n_sheets, extracted, compact(recs))];
 
   const m = AUDIT.n_mismatched_relations;
   if (m === 0) {
-    s.push(`All ${AUDIT.n_verified_relations} automated checks passed — the
-      numbers agree with each other.`);
+    if (AUDIT.n_verified_relations > 0) s.push(T.s_allok(AUDIT.n_verified_relations));
   } else {
-    s.push(`The numbers disagree with each other in <b>${m}</b> place${m === 1 ? "" : "s"},
-      worth <b>${compact(AUDIT.total_abs_delta)}</b> in total.`);
+    s.push(T.s_disagree(m, compact(AUDIT.total_abs_delta)));
     const cells = AUDIT.findings.reduce((t, f) => t + safeFixes(f).length, 0);
     const worth = AUDIT.findings.reduce((t, f) =>
       t + safeFixes(f).reduce((u2, x) => u2 + Math.abs(x.delta), 0), 0);
-    if (cells) s.push(`<b>${cells}</b> of those cells can be corrected right away
-      (worth ${compact(worth)}); the rest need the file's owner to check.`);
-    else s.push(`They need the file's owner to check the underlying figures —
-      the correct values can't be determined automatically.`);
+    s.push(cells ? T.s_fixable(cells, compact(worth)) : T.s_owner);
   }
 
   const ts = visCharts().filter(c => c.chart.kind === "timeseries")
@@ -896,9 +1270,8 @@ function execSummary() {
     if (pts.length >= 2) {
       const [vL, iL] = pts[pts.length - 1], [vP] = pts[pts.length - 2];
       const p = pct(vL, vP);
-      if (p != null) s.push(`“${esc(l.label)}” on ${esc(ts.sheet)} is
-        ${p >= 0 ? "up" : "down"} <b>${Math.abs(p).toFixed(0)}%</b> in the latest
-        period (${esc(String(ts.chart.periods[iL]))}).`);
+      if (p != null) s.push(T.s_move(esc(l.label), esc(ts.sheet), p >= 0,
+        Math.abs(p).toFixed(0), esc(String(ts.chart.periods[iL]))));
     }
   }
   return s.join(" ");
@@ -922,17 +1295,16 @@ function renderNarrative() {
       .map(p => `<p>${esc(p)}</p>`).join("");
     return `<div class="card narr"><div class="card-head">
         <span class="ct">✦ ${esc(n.headline)}</span>
-        <span class="grow"></span>${SHARE ? "" : `<button class="iconbtn" id="gen-narr">↻ rewrite</button>`}</div>
+        <span class="grow"></span>${SHARE ? "" : `<button class="iconbtn" id="gen-narr">${T.narr_rewrite}</button>`}</div>
       ${paras}
       ${(n.watchouts || []).length ? `<ul class="nwatch">${n.watchouts.map(w => `<li>${esc(w)}</li>`).join("")}</ul>` : ""}
-      <div class="nfoot">AI-written from the pipeline's verified figures — it phrases, never computes.</div></div>`;
+      <div class="nfoot">${T.narr_foot}</div></div>`;
   }
   if (!NARR_READY || !REPORT.id || SHARE) return "";
   return `<div class="card narr">
-    <div class="card-head"><span class="ct">Executive narrative</span>
-      <span class="grow"></span><button class="iconbtn on" id="gen-narr">✦ write it</button></div>
-    <p class="muted" style="margin:8px 0 0">One click and Claude writes the story of this workbook —
-      from the verified numbers only.</p>
+    <div class="card-head"><span class="ct">${T.narr_title}</span>
+      <span class="grow"></span><button class="iconbtn on" id="gen-narr">${T.narr_write}</button></div>
+    <p class="muted" style="margin:8px 0 0">${T.narr_pitch}</p>
     <div class="nerr" id="narr-err"></div></div>`;
 }
 
@@ -940,14 +1312,14 @@ function attachNarrative() {
   const b = $("#gen-narr");
   if (!b) return;
   b.addEventListener("click", async () => {
-    b.disabled = true; b.textContent = "writing…";
+    b.disabled = true; b.textContent = T.narr_writing;
     const resp = await fetch(`/analyses/${current}/narrative`, { method: "POST" });
     if (resp.ok) {
       REPORT.narrative = await resp.json();
       renderAll();
     } else {
-      const detail = (await resp.json().catch(() => ({}))).detail || "The narrative call failed.";
-      b.disabled = false; b.textContent = "✦ write it";
+      const detail = (await resp.json().catch(() => ({}))).detail || T.narr_failed;
+      b.disabled = false; b.textContent = T.narr_write;
       const e = $("#narr-err");
       if (e) e.textContent = detail;
     }
@@ -956,12 +1328,12 @@ function attachNarrative() {
 
 function plainFormula(f) {
   if (f.kind === "product")
-    return `'${esc(f.target)}' should equal '${esc(f.inputs[0])}' × '${esc(f.inputs[1])}'`;
+    return T.f_product(esc(f.target), esc(f.inputs[0]), esc(f.inputs[1]));
   if (f.kind === "row_sum")
-    return `'${esc(f.target)}' should equal the sum of ${esc(f.inputs[0])} through ${esc(f.inputs[f.inputs.length - 1])}`;
+    return T.f_rowsum(esc(f.target), esc(f.inputs[0]), esc(f.inputs[f.inputs.length - 1]));
   if (f.kind === "column_sum") {
     const row = f.mismatches[0] ? f.mismatches[0].row : "";
-    return `the totals row${row ? " " + row : ""} should match the sum of the rows above it`;
+    return T.f_colsum(row);
   }
   return esc(f.formula);
 }
@@ -972,36 +1344,31 @@ function renderActionList() {
     const safe = safeFixes(f);
     let action;
     if (safe.length) {
-      action = `<b>Fix now:</b> ` + safe.slice(0, 3).map(m =>
-        `change <b>${esc(m.cell || "row " + m.row)}</b> from ${num(m.actual)} to <b>${num(m.expected)}</b>`).join("; ")
-        + (safe.length > 3 ? ` — plus ${safe.length - 3} more in the Corrections CSV` : "") + ".";
+      action = `<b>${T.a_fixnow}</b> ` + safe.slice(0, 3).map(m =>
+        T.a_change(esc(m.cell || T.row_w + " " + m.row), num(m.actual), num(m.expected))).join("; ")
+        + (safe.length > 3 ? T.a_more(safe.length - 3) : "") + ".";
     } else {
       const rows = [...new Set(f.mismatches.map(m => m.row))].slice(0, 4);
-      action = `<b>Check with the file's owner:</b> row${rows.length > 1 ? "s" : ""}
-        ${rows.join(", ")} — the correct value can't be determined automatically
-        (other rules contest these cells).`;
+      action = `<b>${T.a_owner}</b> ${T.a_rows(rows.join(", "), rows.length > 1)}`;
     }
     cards.push(`<div class="action-card" style="--acolor:var(--critical)">
       <div class="ahead"><span class="asheet">${esc(f.sheet)}</span>
         <span class="aval">${compact(f.total_abs_delta)}</span></div>
-      <div class="awhat">In this sheet, ${plainFormula(f)} — but
-        ${f.n_mismatched} of ${f.n_checked} rows don't match.</div>
+      <div class="awhat">${T.a_in(plainFormula(f))} ${T.a_off(f.n_mismatched, f.n_checked)}</div>
       <div class="ado">→ ${action}</div>
     </div>`);
   }
   if (AUDIT.n_unverified_relations) {
     cards.push(`<div class="action-card" style="--acolor:var(--warning)">
-      <div class="ahead"><span class="asheet">Totals to eyeball</span></div>
-      <div class="awhat">${AUDIT.n_unverified_relations} totals row(s) couldn't be
-        verified automatically — their sections have an unusual structure.</div>
-      <div class="ado">→ <b>Quick manual check</b> next time the file is open.</div>
+      <div class="ahead"><span class="asheet">${T.a_eyeball}</span></div>
+      <div class="awhat">${T.a_unv(AUDIT.n_unverified_relations)}</div>
+      <div class="ado">${T.a_manual}</div>
     </div>`);
   }
   if (!cards.length) {
     cards.push(`<div class="action-card" style="--acolor:var(--good)">
-      <div class="ahead"><span class="asheet">Nothing to fix</span></div>
-      <div class="awhat">Every automated check passed. The workbook's internal
-        math is consistent.</div></div>`);
+      <div class="ahead"><span class="asheet">${T.a_none}</span></div>
+      <div class="awhat">${T.a_none_txt}</div></div>`);
   }
   return cards.join("");
 }
@@ -1036,13 +1403,13 @@ function printReport() {
     const sum = a => a.reduce((t, x) => t + (x ?? 0), 0);
     const last = a => { for (let i = a.length - 1; i >= 0; i--) if (a[i] != null) return a[i]; return null; };
     const bits = [];
-    if (m.metrics.revenue) bits.push(`<div class="pkpi"><div class="l">Revenue (horizon)</div><div class="v">${compact(sum(m.metrics.revenue.values))}</div></div>`);
+    if (m.metrics.revenue) bits.push(`<div class="pkpi"><div class="l">${T.p_rev}</div><div class="v">${compact(sum(m.metrics.revenue.values))}</div></div>`);
     const mp = m.derived.margin_pct && last(m.derived.margin_pct);
-    if (mp != null) bits.push(`<div class="pkpi"><div class="l">Margin (latest)</div><div class="v">${mp.toFixed(0)}%</div></div>`);
-    if (m.metrics.capex) bits.push(`<div class="pkpi"><div class="l">Total CAPEX</div><div class="v">${compact(sum(m.metrics.capex.values))}</div></div>`);
+    if (mp != null) bits.push(`<div class="pkpi"><div class="l">${T.p_margin}</div><div class="v">${mp.toFixed(0)}%</div></div>`);
+    if (m.metrics.capex) bits.push(`<div class="pkpi"><div class="l">${T.p_capex}</div><div class="v">${compact(sum(m.metrics.capex.values))}</div></div>`);
     const vr = m.derived.volume_ratio && last(m.derived.volume_ratio);
-    if (vr != null) bits.push(`<div class="pkpi"><div class="l">Conversion</div><div class="v">${(vr * 100).toFixed(1)}%</div></div>`);
-    if (bits.length) finKpis = `<h2>Financials</h2><div class="pkpis">${bits.join("")}</div>`;
+    if (vr != null) bits.push(`<div class="pkpi"><div class="l">${T.p_conv}</div><div class="v">${(vr * 100).toFixed(1)}%</div></div>`);
+    if (bits.length) finKpis = `<h2>${T.p_fin}</h2><div class="pkpis">${bits.join("")}</div>`;
   }
   const date = new Date().toISOString().slice(0, 10);
 
@@ -1055,35 +1422,33 @@ function printReport() {
     <p style="max-width:80ch">${execSummary()}</p>
     ${REPORT.narrative ? `<h2>${esc(REPORT.narrative.headline)}</h2>
       <p style="max-width:80ch">${REPORT.narrative.narrative.split(/\n+/).filter(p => p.trim()).map(esc).join("<br><br>")}</p>` : ""}
-    <h2>Key figures</h2>
+    <h2>${T.p_key}</h2>
     <div class="pkpis">
-      <div class="pkpi"><div class="l">Total discrepancy</div><div class="v">${compact(AUDIT.total_abs_delta)}</div></div>
-      <div class="pkpi"><div class="l">Issues found</div><div class="v">${AUDIT.n_mismatched_relations}</div></div>
-      <div class="pkpi"><div class="l">Checks passed</div><div class="v">${AUDIT.n_verified_relations}</div></div>
-      <div class="pkpi"><div class="l">Sheets read</div><div class="v">${extracted}/${REPORT.n_sheets}</div></div>
-      <div class="pkpi"><div class="l">Records</div><div class="v">${compact(recs)}</div></div>
+      <div class="pkpi"><div class="l">${T.t_discrepancy}</div><div class="v">${compact(AUDIT.total_abs_delta)}</div></div>
+      <div class="pkpi"><div class="l">${T.p_issues}</div><div class="v">${AUDIT.n_mismatched_relations}</div></div>
+      <div class="pkpi"><div class="l">${T.p_checks}</div><div class="v">${AUDIT.n_verified_relations}</div></div>
+      <div class="pkpi"><div class="l">${T.p_sheets}</div><div class="v">${extracted}/${REPORT.n_sheets}</div></div>
+      <div class="pkpi"><div class="l">${T.p_records}</div><div class="v">${compact(recs)}</div></div>
     </div>
     ${finKpis}
-    ${charts.length ? `<h2>Trends</h2><div class="pcharts">${charts.map(c =>
+    ${charts.length ? `<h2>${T.p_trends}</h2><div class="pcharts">${charts.map(c =>
       `<div><div style="font-weight:650;font-size:12px;margin-bottom:4px">${esc(c.title)}</div>${c.svg}</div>`).join("")}</div>` : ""}
-    <h2>What to do</h2>
+    <h2>${T.p_todo}</h2>
     ${AUDIT.findings.map(f => {
       const safe = safeFixes(f);
       const act = safe.length
-        ? "Fix: " + safe.slice(0, 3).map(m => `${m.cell || "row " + m.row}: ${num(m.actual)} → ${num(m.expected)}`).join("; ")
-        : "Owner to verify rows " + [...new Set(f.mismatches.map(m => m.row))].slice(0, 4).join(", ");
+        ? T.p_fix + safe.slice(0, 3).map(m => `${m.cell || T.row_w + " " + m.row}: ${num(m.actual)} → ${num(m.expected)}`).join("; ")
+        : T.p_owner([...new Set(f.mismatches.map(m => m.row))].slice(0, 4).join(", "));
       return `<div class="pact"><b>${esc(f.sheet)}</b> — ${plainFormula(f)}
-        (${f.n_mismatched} of ${f.n_checked} rows off, ${compact(f.total_abs_delta)}).
+        ${T.p_rowsoff(f.n_mismatched, f.n_checked, compact(f.total_abs_delta))}.
         <i>${esc(act)}</i></div>`;
-    }).join("") || `<div class="pact">✓ Every automated check passed.</div>`}
-    <div class="pfoot">Generated by Lumnia · light where there was none · ${date}</div>`;
+    }).join("") || `<div class="pact">${T.p_allok}</div>`}
+    <div class="pfoot">${T.p_foot(date)}</div>`;
   window.print();
 }
 
 /* ---------- financials: generated from the semantic business model ------- */
-const ROLE_LABELS = { revenue: "Revenue", opex: "OPEX", capex: "CAPEX",
-  volume: "Volume", volume_secondary: "Volume (out)", area: "Area",
-  headcount: "Headcount", price: "Price" };
+const ROLE_LABELS = T.roles;
 
 function renderFinancials() {
   const m = REPORT.model;
@@ -1098,38 +1463,38 @@ function renderFinancials() {
     const v = met.revenue.values, li = lastIdx(v);
     const fi = v.findIndex(x => x != null);
     const growth = fi >= 0 && li > fi && v[fi] ? ((v[li] / v[fi] - 1) * 100) : null;
-    tiles.push(`<div class="tile"><div class="label">Revenue · ${esc(m.periods[fi])}–${esc(m.periods[li])}</div>
+    tiles.push(`<div class="tile"><div class="label">${T.h_revenue(esc(m.periods[fi]), esc(m.periods[li]))}</div>
       <div class="value">${compact(sum(v))}</div>
-      ${growth != null ? `<div class="label" style="margin-top:4px;color:var(--good)">+${growth.toFixed(0)}% over the horizon</div>` : ""}</div>`);
+      ${growth != null ? `<div class="label" style="margin-top:4px;color:var(--good)">▲ ${T.h_horizon(growth.toFixed(0))}</div>` : ""}</div>`);
   }
-  if (met.capex) tiles.push(`<div class="tile"><div class="label">Total CAPEX</div>
+  if (met.capex) tiles.push(`<div class="tile"><div class="label">${T.h_capex}</div>
       <div class="value">${compact(sum(met.capex.values))}</div></div>`);
   if (met.opex) {
     const v = met.opex.values, li = lastIdx(v);
-    tiles.push(`<div class="tile"><div class="label">OPEX · ${esc(m.periods[li])}</div>
+    tiles.push(`<div class="tile"><div class="label">${T.fin_opex_at(esc(m.periods[li]))}</div>
       <div class="value">${compact(v[li])}</div></div>`);
   }
   if (met.area) {
     const v = met.area.values;
     const peak = v.indexOf(Math.max(...v.filter(x => x != null)));
-    tiles.push(`<div class="tile"><div class="label">Peak ${esc(met.area.label.slice(0, 18))}</div>
+    tiles.push(`<div class="tile"><div class="label">${T.fin_peak(esc(met.area.label.slice(0, 18)))}</div>
       <div class="value">${esc(m.periods[peak])}</div>
-      <div class="label" style="margin-top:4px">${compact(v[peak])} that period</div></div>`);
+      <div class="label" style="margin-top:4px">${T.fin_that(compact(v[peak]))}</div></div>`);
   }
   const mp = m.derived.margin_pct;
   if (mp) {
     const li = lastIdx(mp);
-    if (li >= 0) tiles.push(`<div class="tile"><div class="label">Margin · ${esc(m.periods[li])}</div>
-      <div class="value">${mp[li].toFixed(0)}%</div></div>`);
+    if (li >= 0) tiles.push(`<div class="tile"><div class="label">${T.fin_margin_at(esc(m.periods[li]))}</div>
+      <div class="value">${pctFmt(mp[li])}</div></div>`);
   }
   const upv = m.derived.opex_per_volume;
   if (upv) {
     const li = lastIdx(upv), fi = upv.findIndex(x => x != null);
     if (li >= 0) {
       const chg = fi >= 0 && li > fi && upv[fi] ? ((upv[li] / upv[fi] - 1) * 100) : null;
-      tiles.push(`<div class="tile"><div class="label">Cost per unit · ${esc(m.periods[li])}</div>
+      tiles.push(`<div class="tile"><div class="label">${T.fin_cpu(esc(m.periods[li]))}</div>
         <div class="value">${compact(upv[li])}</div>
-        ${chg != null ? `<div class="label" style="margin-top:4px;color:${chg <= 0 ? "var(--good)" : "var(--critical)"}">${chg <= 0 ? "▼" : "▲"} ${Math.abs(chg).toFixed(0)}% since ${esc(m.periods[fi])}</div>` : ""}</div>`);
+        ${chg != null ? `<div class="label" style="margin-top:4px;color:${chg <= 0 ? "var(--good)" : "var(--critical)"}">${chg <= 0 ? "▼" : "▲"} ${T.fin_since(Math.abs(chg).toFixed(0), esc(m.periods[fi]))}</div>` : ""}</div>`);
     }
   }
 
@@ -1138,14 +1503,14 @@ function renderFinancials() {
     label: `${ROLE_LABELS[role] || role} — ${s.label.slice(0, 26)}`,
     values: s.values, color: SERIES_COLORS[k % SERIES_COLORS.length], on: true,
   }));
-  const traj = { pseudo: true, sheet: `Financial trajectory (${m.source_sheet.trim()})`, loc: null,
+  const traj = { pseudo: true, sheet: T.fin_traj(m.source_sheet.trim()), loc: null,
     chart: { kind: "timeseries", periods: m.periods, series: [], other: null,
              truncated: false }, lines, i: CHARTS.length, range: null };
   CHARTS.push(traj);
 
   let marginCard = "";
   if (mp && mp.some(v => v != null)) {
-    const bars = { pseudo: true, sheet: "Operating margin %", loc: null,
+    const bars = { pseudo: true, sheet: T.fin_margin, loc: null,
       chart: { kind: "profile", x: m.periods,
                y: mp.map(v => v ?? 0) }, i: CHARTS.length, range: null };
     CHARTS.push(bars);
@@ -1157,12 +1522,14 @@ function renderFinancials() {
   const d = m.derived;
   if (met.volume && (d.opex_per_volume || d.revenue_per_volume)) {
     const ulines = [];
-    if (d.revenue_per_volume) ulines.push({ label: "Revenue per unit",
+    if (d.revenue_per_volume) ulines.push({
+      label: LANG === "fr" ? "Revenu par unité" : "Revenue per unit",
       values: d.revenue_per_volume, color: SERIES_COLORS[0], on: true });
-    if (d.opex_per_volume) ulines.push({ label: "Cost per unit (OPEX)",
+    if (d.opex_per_volume) ulines.push({
+      label: LANG === "fr" ? "Coût par unité" : "Cost per unit",
       values: d.opex_per_volume, color: SERIES_COLORS[2], on: true });
-    const uc = { pseudo: true, sheet: "Unit economics — efficiency curve",
-      loc: `per ${met.volume.label.slice(0, 24)}`,
+    const uc = { pseudo: true, sheet: T.fin_unit,
+      loc: T.fin_per(met.volume.label.slice(0, 24)),
       chart: { kind: "timeseries", periods: m.periods, series: [], other: null,
                truncated: false }, lines: ulines, i: CHARTS.length, range: null };
     CHARTS.push(uc);
@@ -1170,7 +1537,7 @@ function renderFinancials() {
   }
   if (d.volume_ratio && met.volume_secondary) {
     const conv = { pseudo: true,
-      sheet: `Conversion rate — ${met.volume_secondary.label.slice(0, 20)} / ${met.volume.label.slice(0, 20)}`,
+      sheet: T.fin_conv(met.volume_secondary.label.slice(0, 20), met.volume.label.slice(0, 20)),
       loc: null, chart: { kind: "profile", x: m.periods,
         y: d.volume_ratio.map(v => v != null ? +(v * 100).toFixed(2) : 0) },
       i: CHARTS.length, range: null };
@@ -1183,7 +1550,7 @@ function renderFinancials() {
     const mx = Math.max(1, ...b.items.map(i => Math.abs(i.value)));
     return `<div class="card"><div class="card-head">
         <span class="ct">${esc(b.sheet)}</span>
-        <span class="cs">top items by ${esc(b.value_col.slice(0, 26))}</span></div>
+        <span class="cs">${T.fin_top(esc(b.value_col.slice(0, 26)))}</span></div>
       ${b.items.slice(0, 6).map(i => `<div class="bar-row">
         <span class="bl">${esc(i.label.slice(0, 44))}</span>
         <span class="bv">${compact(i.value)}</span>
@@ -1191,7 +1558,7 @@ function renderFinancials() {
       </div>`).join("")}</div>`;
   }).join("");
 
-  return `<section id="sec-financials"><span class="kicker">Financials — detected from this workbook</span>
+  return `<section id="sec-financials"><span class="kicker">${T.fin_kicker}</span>
     ${tiles.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px">${tiles.join("")}</div>` : ""}
     <div class="grid2">${chartCard(traj, false)}${marginCard}</div>
     ${unitCard || convCard ? `<div class="grid2" style="margin-top:14px">${unitCard}${convCard}</div>` : ""}
@@ -1201,10 +1568,10 @@ function renderFinancials() {
 
 /* ---------- scenario analysis + monte carlo (generic over the model) ----- */
 const SCEN_DEFS = {
-  bear:   { label: "Downside", color: "#b03a2a", price: 0.7, vol: 0.85, cost: 1.2 },
-  base:   { label: "Base",     color: "#a8821f", price: 1.0, vol: 1.0,  cost: 1.0 },
-  bull:   { label: "Upside",   color: "#2c5f1a", price: 1.3, vol: 1.1,  cost: 0.9 },
-  custom: { label: "Custom",   color: "#c8a04a" },
+  bear:   { label: T.sc_bear, color: "#b03a2a", price: 0.7, vol: 0.85, cost: 1.2 },
+  base:   { label: T.sc_base, color: "#a8821f", price: 1.0, vol: 1.0,  cost: 1.0 },
+  bull:   { label: T.sc_bull, color: "#2c5f1a", price: 1.3, vol: 1.1,  cost: 0.9 },
+  custom: { label: T.sc_custom, color: "#c8a04a" },
 };
 let SCEN = { price: 1.0, vol: 1.0, cost: 1.0 };
 let MCP = { priceSd: 0.15, volSd: 0.10, costSd: 0.08, N: 2000 };
@@ -1233,10 +1600,12 @@ function renderScenario() {
   const cards = Object.entries(SCEN_DEFS).map(([k, d]) => {
     const rows = scens[k];
     const mt = rows.reduce((t, r) => t + (r.margin ?? 0), 0);
+    const f = k === "custom" ? SCEN : d;
     return `<div class="scard" style="--scolor:${d.color}">
       <div class="sn">${d.label}</div>
       <div class="sv">${compact(scenTotal(rows))}</div>
-      <div class="ss">total revenue over the horizon${hasCost ? ` · margin ${compact(mt)}` : ""}</div>
+      <div class="ss">${T.sc_total}${hasCost ? ` · ${T.sc_margin(compact(mt))}` : ""}</div>
+      <div class="ss" style="margin-top:2px">${T.sc_assume(deltaPct(f.price), deltaPct(f.vol), hasCost ? deltaPct(f.cost) : null)}</div>
     </div>`;
   }).join("");
 
@@ -1248,21 +1617,21 @@ function renderScenario() {
     chart: { kind: "timeseries", periods: m.periods, series: [], other: null, truncated: false } };
 
   const sliders = `
-    ${slider("Price factor", "price", 0.5, 1.8, 0.05, SCEN.price, v => (v*100).toFixed(0)+"%")}
-    ${slider("Volume factor", "vol", 0.5, 1.5, 0.05, SCEN.vol, v => (v*100).toFixed(0)+"%")}
-    ${hasCost ? slider("Cost factor", "cost", 0.7, 1.5, 0.05, SCEN.cost, v => (v*100).toFixed(0)+"%") : ""}
+    ${slider(T.sc_price, "price", 0.5, 1.8, 0.05, SCEN.price, deltaPct)}
+    ${slider(T.sc_vol, "vol", 0.5, 1.5, 0.05, SCEN.vol, deltaPct)}
+    ${hasCost ? slider(T.sc_cost, "cost", 0.7, 1.5, 0.05, SCEN.cost, deltaPct) : ""}
     <div style="margin-top:10px">
       ${Object.entries(SCEN_DEFS).filter(([k]) => k !== "custom").map(([k, d]) =>
         `<button class="preset" data-preset="${k}" style="background:${d.color}22;color:${d.color}">${d.label}</button>`).join("")}
     </div>`;
 
-  return `<section id="sec-scenario"><span class="kicker">Scenario analysis — what if</span>
+  return `<section id="sec-scenario"><span class="kicker">${T.sc_kicker}</span>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:14px">${cards}</div>
     <div class="scen-grid">
-      <div class="card"><div class="card-head"><span class="ct">Custom levers</span></div>
+      <div class="card"><div class="card-head"><span class="ct">${T.sc_levers}</span></div>
         <div style="margin-top:10px">${sliders}</div></div>
-      <div class="card chart-card"><div class="card-head"><span class="ct">Revenue by scenario</span>
-        <span class="cs">${esc(m.metrics.revenue.label.slice(0, 30))} · adjusted</span></div>
+      <div class="card chart-card"><div class="card-head"><span class="ct">${T.sc_chart}</span>
+        <span class="cs">${esc(m.metrics.revenue.label.slice(0, 30))} · ${T.sc_adj}</span></div>
         <div class="plot">${svgTimeseries(chart)}</div>
         <div class="legend">${lines.map(l => `<span class="lg"><span class="sw" style="background:${l.color}"></span>${l.label}</span>`).join("")}</div>
       </div>
@@ -1318,7 +1687,7 @@ const pctl = (a, p) => a[Math.min(a.length - 1, Math.floor(p / 100 * a.length))]
 function renderMC() {
   const m = REPORT.model;
   if (!m || !m.scenario_ready) return "";
-  let body = `<div class="muted" style="padding:24px 0;text-align:center">Press run to simulate.</div>`;
+  let body = `<div class="muted" style="padding:24px 0;text-align:center">${T.mc_press}</div>`;
   if (MC_RESULTS) {
     const r = MC_RESULTS, base = scenTotal(scenSeries(SCEN_DEFS.base));
     const p10 = pctl(r, 10), p50 = pctl(r, 50), p90 = pctl(r, 90);
@@ -1329,31 +1698,31 @@ function renderMC() {
       chart: { kind: "profile", x: y.map((_, i2) => compact(mn + i2 * step)), y } };
     const probs = [0.8, 1.0, 1.2].map(f2 => {
       const t = base * f2, p = r.filter(v => v >= t).length / r.length * 100;
-      return `<div class="prob-row"><span>Total revenue ≥ ${compact(t)} (${(f2*100).toFixed(0)}% of base)</span>
+      return `<div class="prob-row"><span>${T.mc_row(compact(t), (f2*100).toFixed(0))}</span>
         <span class="pv" style="color:${p >= 70 ? "var(--good)" : p >= 40 ? "var(--gold)" : "var(--critical)"}">${p.toFixed(1)}%</span></div>`;
     }).join("");
     body = `
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:12px">
-        <div class="scard" style="--scolor:#b03a2a"><div class="sn">P10 — downside</div><div class="sv">${compact(p10)}</div></div>
-        <div class="scard" style="--scolor:#a8821f"><div class="sn">P50 — median</div><div class="sv">${compact(p50)}</div></div>
-        <div class="scard" style="--scolor:#2c5f1a"><div class="sn">P90 — upside</div><div class="sv">${compact(p90)}</div></div>
+        <div class="scard" style="--scolor:#b03a2a"><div class="sn">${T.mc_p10}</div><div class="sv">${compact(p10)}</div></div>
+        <div class="scard" style="--scolor:#a8821f"><div class="sn">${T.mc_p50}</div><div class="sv">${compact(p50)}</div></div>
+        <div class="scard" style="--scolor:#2c5f1a"><div class="sn">${T.mc_p90}</div><div class="sv">${compact(p90)}</div></div>
       </div>
       <div class="grid2">
-        <div class="card chart-card"><div class="card-head"><span class="ct">Distribution of total revenue</span>
-          <span class="cs">${MCP.N.toLocaleString()} draws</span></div>
+        <div class="card chart-card"><div class="card-head"><span class="ct">${T.mc_dist}</span>
+          <span class="cs">${T.mc_draws(nf.format(MCP.N))}</span></div>
           <div class="plot">${svgProfile(hist)}</div></div>
-        <div class="card"><div class="card-head"><span class="ct">Probability of hitting targets</span></div>${probs}</div>
+        <div class="card"><div class="card-head"><span class="ct">${T.mc_prob}</span></div>${probs}</div>
       </div>`;
   }
-  return `<section id="sec-mc"><span class="kicker">Monte Carlo — how sure can we be</span>
+  return `<section id="sec-mc"><span class="kicker">${T.mc_kicker}</span>
     <div class="scen-grid">
-      <div class="card"><div class="card-head"><span class="ct">Uncertainty</span></div>
+      <div class="card"><div class="card-head"><span class="ct">${T.mc_unc}</span></div>
         <div style="margin-top:10px">
-        ${mcslider("Price volatility (σ)", "priceSd", 0.02, 0.4, 0.01, MCP.priceSd)}
-        ${mcslider("Volume volatility (σ)", "volSd", 0.02, 0.3, 0.01, MCP.volSd)}
-        ${REPORT.model.metrics.opex ? mcslider("Cost volatility (σ)", "costSd", 0.02, 0.3, 0.01, MCP.costSd) : ""}
-        ${mcslider("Simulations (N)", "N", 500, 5000, 500, MCP.N)}
-        <button class="runbtn" id="mc-run">Run ${MCP.N.toLocaleString()} simulations</button>
+        ${mcslider(T.mc_price, "priceSd", 0.02, 0.4, 0.01, MCP.priceSd)}
+        ${mcslider(T.mc_vol, "volSd", 0.02, 0.3, 0.01, MCP.volSd)}
+        ${REPORT.model.metrics.opex ? mcslider(T.mc_cost, "costSd", 0.02, 0.3, 0.01, MCP.costSd) : ""}
+        ${mcslider(T.mc_n, "N", 500, 5000, 500, MCP.N)}
+        <button class="runbtn" id="mc-run">${T.mc_run(nf.format(MCP.N))}</button>
         </div></div>
       <div id="mc-body">${body}</div>
     </div></section>`;
@@ -1391,17 +1760,14 @@ function renderInsights() {
     const cells = fixable.reduce((t, f) => t + f.safe.length, 0);
     const worth = fixable.reduce((t, f) =>
       t + f.safe.reduce((u, m) => u + Math.abs(m.delta), 0), 0);
-    out.push({ html: `<b>${cells} cell${cells === 1 ? "" : "s"}</b> can be corrected with high
-      confidence, closing <b>${compact(worth)}</b> of the ${compact(AUDIT.total_abs_delta)}
-      total discrepancy — download the Corrections CSV to work through them.` });
+    out.push({ html: T.ins_fix(cells, compact(worth), compact(AUDIT.total_abs_delta)) });
     const worst = fixable[0], m = worst.safe[0];
-    if (m) out.push({ sheet: worst.sheet, html: `Largest single correction:
-      <b>${esc(worst.sheet)}</b>${m.cell ? ` cell <b>${esc(m.cell)}</b>` : ` row ${m.row}`}
-      (${esc(m.label)}) — ${num(m.actual)} should be <b>${num(m.expected)}</b>,
-      per a rule verified on ${worst.n_matched} other rows.` });
+    if (m) out.push({ sheet: worst.sheet,
+      html: T.ins_largest(esc(worst.sheet),
+        m.cell ? T.ins_cell(esc(m.cell)) : T.ins_row(m.row),
+        esc(m.label), num(m.actual), num(m.expected), worst.n_matched) });
   } else if (AUDIT.findings.length === 0) {
-    out.push({ html: `Every discovered relation holds — this workbook's internal
-      math is <b>consistent</b>. Safe to circulate on that front.` });
+    out.push({ html: T.ins_ok });
   }
 
   // 2. trend: latest movement of the biggest time series
@@ -1413,9 +1779,10 @@ function renderInsights() {
     if (pts.length >= 2) {
       const [vLast, iLast] = pts[pts.length - 1], [vPrev] = pts[pts.length - 2];
       const p = pct(vLast, vPrev);
-      out.push({ sheet: ts.sheet, html: `<b>${esc(ts.sheet)}</b> — latest
-        ${esc(String(ts.chart.periods[iLast]))}: “${esc(s.label)}” at <b>${num(vLast)}</b>
-        ${p != null ? `(<b style="color:${p >= 0 ? "var(--good)" : "var(--critical)"}">${p >= 0 ? "+" : ""}${p.toFixed(1)}%</b> vs previous period)` : ""}.` });
+      out.push({ sheet: ts.sheet,
+        html: T.ins_latest(esc(ts.sheet), esc(String(ts.chart.periods[iLast])),
+          esc(s.label), num(vLast)) +
+          (p != null ? " " + T.ins_vs(`<span style="color:${p >= 0 ? "var(--good)" : "var(--critical)"}">${p >= 0 ? "+" : ""}${p.toFixed(1)}%</span>`) : "") + "." });
     }
   }
 
@@ -1424,9 +1791,8 @@ function renderInsights() {
     .sort((a, b) => Math.max(...b.chart.y) - Math.max(...a.chart.y))[0];
   if (pf) {
     const iMax = pf.chart.y.indexOf(Math.max(...pf.chart.y));
-    out.push({ sheet: pf.sheet, html: `<b>${esc(pf.sheet)}</b> peaks at
-      “${esc(String(pf.chart.x[iMax]))}” (<b>${compact(pf.chart.y[iMax])}</b>) —
-      plan cash and capacity around that period.` });
+    out.push({ sheet: pf.sheet, html: T.ins_peak(esc(pf.sheet),
+      esc(String(pf.chart.x[iMax])), compact(pf.chart.y[iMax])) });
   }
 
   // 4. server-side EDA: drivers, gaps, duplicates (computed on full data)
@@ -1438,13 +1804,12 @@ function renderInsights() {
 
   // 5. what still needs a human
   if (AUDIT.n_unverified_relations) {
-    out.push({ html: `${AUDIT.n_unverified_relations} totals row${AUDIT.n_unverified_relations === 1 ? "" : "s"}
-      could not be verified automatically (hierarchical sections) — worth a manual glance.` });
+    out.push({ html: T.ins_unv(AUDIT.n_unverified_relations) });
   }
 
   if (!out.length) return "";
   return `<div class="card" style="margin-top:16px"><div class="card-head">
-      <span class="ct">Insights</span><span class="cs">computed from this workbook</span></div>
+      <span class="ct">${T.ins_title}</span><span class="cs">${T.ins_sub}</span></div>
     ${out.slice(0, 5).map(i => `<div class="bar-row ${i.sheet ? "clicky" : ""}"
       ${i.sheet ? `data-sheet="${esc(i.sheet)}"` : ""}>
       <span style="font-size:13px;line-height:1.55">${i.html}</span></div>`).join("")}
@@ -1473,7 +1838,8 @@ function collectCharts(report) {
     if (c.chart.kind === "timeseries") {
       const all = c.chart.series.concat(c.chart.other ? [c.chart.other] : []);
       c.lines = all.map((s, k) => ({
-        label: s.label, values: s.values,
+        label: LANG === "fr" ? s.label.replace(/^Other \(/, "Autres (") : s.label,
+        values: s.values,
         color: k < c.chart.series.length ? SERIES_COLORS[k % SERIES_COLORS.length] : OTHER_COLOR,
         on: true,
       }));
@@ -1493,31 +1859,33 @@ function chartRange(c) {
 
 function renderChartGrid() {
   const vis = visCharts().filter(c => !c.pseudo);
-  if (!vis.length) return `<div class="card muted">No chartable series${CHARTS.length ? " for this filter" : " in this analysis (older analyses may need a rerun to compute charts)"}.</div>`;
+  if (!vis.length) return `<div class="card muted">${CHARTS.length ? T.ch_none_f : T.ch_none}</div>`;
   return `<div class="grid2">${vis.map(c => chartCard(c, false)).join("")}</div>`;
 }
 
 function chartCard(c, isPrimary) {
+  const exec = MODE === "exec";
   let span;
   if (c.chart.kind === "timeseries") {
     const [lo, hi] = chartRange(c);
-    span = `${hi - lo + 1} of ${c.chart.periods.length} periods`;
+    span = T.ch_periods(hi - lo + 1, c.chart.periods.length);
   } else {
-    span = `${c.chart.x.length} columns`;
+    span = T.ch_cols(c.chart.x.length);
   }
   const sub = [c.loc, span,
-    c.chart.truncated ? "truncated" : null].filter(Boolean).join(" · ");
+    c.chart.truncated ? T.ch_trunc : null].filter(Boolean).join(" · ");
   const legend = c.chart.kind === "timeseries" && c.lines.length > 1
     ? `<div class="legend">${c.lines.map((s, k) => `
         <span class="lg ${s.on ? "" : "off"}" data-chart="${c.i}" data-k="${k}">
           <span class="sw" style="background:${s.color}"></span>${esc(s.label)}</span>`).join("")}</div>` : "";
-  const hint = c.chart.kind === "timeseries"
-    ? `<div class="hint">drag to zoom · double-click to reset</div>` : "";
+  const hint = c.chart.kind === "timeseries" && !exec
+    ? `<div class="hint">${T.ch_hint}</div>` : "";
   const cumBtn = c.chart.kind === "profile" && !c.pseudo
-    ? `<button class="iconbtn ${c.cum ? "on" : ""}" data-cum="${c.i}">Σ cumulative</button>` : "";
+    ? `<button class="iconbtn ${c.cum ? "on" : ""}" data-cum="${c.i}">${T.ch_cum}</button>` : "";
+  const csvBtn = exec ? "" : `<button class="iconbtn" data-csv="${c.i}">⤓ csv</button>`;
   return `<div class="card chart-card" data-chart="${c.i}" data-sheet="${esc(c.sheet)}">
     <div class="card-head"><span class="ct">${esc(c.sheet)}</span><span class="cs">${esc(sub)}</span>
-      <span class="grow"></span>${cumBtn}<button class="iconbtn" data-csv="${c.i}">⤓ csv</button></div>
+      <span class="grow"></span>${cumBtn}${csvBtn}</div>
     <div class="plot">${c.chart.kind === "timeseries" ? svgTimeseries(c) : svgProfile(c)}</div>
     ${legend}${hint}<div class="tooltip"></div></div>`;
 }
@@ -1548,7 +1916,7 @@ function svgTimeseries(c) {
   const n = hi - lo + 1;
   const on = c.lines.filter(s => s.on);
   const flat = on.flatMap(s => s.values.slice(lo, hi + 1).filter(v => v != null));
-  if (!flat.length) return `<div class="muted" style="padding:30px 0;text-align:center">all series hidden</div>`;
+  if (!flat.length) return `<div class="muted" style="padding:30px 0;text-align:center">${T.ch_hidden}</div>`;
   const sy = yScale(flat);
   const sx = i => ML + (W - ML - MR) * (n === 1 ? .5 : i / (n - 1));
 
@@ -1612,7 +1980,7 @@ function svgProfile(c) {
     const mean = ys.reduce((a, b) => a + b, 0) / n, my = sy(mean);
     out += `<line x1="${ML}" x2="${W - MR}" y1="${my}" y2="${my}" stroke="#99917e" stroke-dasharray="4 3"/>
       <text x="${ML + 4}" y="${my - 5}" font-size="10" fill="#99917e"
-        font-family="ui-monospace,Menlo,monospace">avg ${compact(mean)}</text>`;
+        font-family="ui-monospace,Menlo,monospace">${T.ch_avg} ${compact(mean)}</text>`;
     let dp = "";
     cum.forEach((v, i) => { dp += `${i ? "L" : "M"}${(ML + band * i + band / 2).toFixed(1)},${sy(v).toFixed(1)}`; });
     out += `<path d="${dp}" fill="none" stroke="#2a78d6" stroke-width="2"
@@ -1668,9 +2036,9 @@ function bindHover(c, card) {
     svg.querySelectorAll(".bar").forEach(bar => {
       bar.addEventListener("mousemove", e => {
         const i = +bar.dataset.i;
-        const cumRow = c.cum ? `<div class="tv"><span>cumulative</span><b>${num(cumOf(c.chart.y)[i])}</b></div>` : "";
+        const cumRow = c.cum ? `<div class="tv"><span>${T.ch_cumt}</span><b>${num(cumOf(c.chart.y)[i])}</b></div>` : "";
         show(`<div class="tp">${esc(String(c.chart.x[i]))}</div>
-              <div class="tv"><span>sum</span><b>${num(c.chart.y[i])}</b></div>${cumRow}`, e);
+              <div class="tv"><span>${T.ch_sum}</span><b>${num(c.chart.y[i])}</b></div>${cumRow}`, e);
       });
       bar.addEventListener("mouseleave", hide);
     });
@@ -1732,8 +2100,8 @@ function redrawChart(c) {
     const cs = card.querySelector(".cs");
     if (cs) {
       const [lo, hi] = chartRange(c);
-      cs.textContent = [c.loc, `${hi - lo + 1} of ${c.chart.periods.length} periods`,
-        c.chart.truncated ? "truncated" : null].filter(Boolean).join(" · ");
+      cs.textContent = [c.loc, T.ch_periods(hi - lo + 1, c.chart.periods.length),
+        c.chart.truncated ? T.ch_trunc : null].filter(Boolean).join(" · ");
     }
   });
   bindHoverAll(c);
@@ -1763,10 +2131,10 @@ function renderHighlights() {
     <div class="track" style="background:var(--good-track)"><div class="fill"
       style="width:${f.n_checked ? f.n_matched / f.n_checked * 100 : 0}%;background:var(--good)"></div></div></div>`;
   return `<div class="grid2">
-    <div class="card"><div class="card-head"><span class="ct">Largest discrepancies</span></div>
-      ${mism.length ? mism.map(rowM).join("") : `<div class="muted" style="padding:18px 0">✓ none for this filter</div>`}</div>
-    <div class="card"><div class="card-head"><span class="ct">Verified relations</span></div>
-      ${ok.length ? ok.map(rowV).join("") : `<div class="muted" style="padding:18px 0">none for this filter</div>`}</div>
+    <div class="card"><div class="card-head"><span class="ct">${T.au_largest}</span></div>
+      ${mism.length ? mism.map(rowM).join("") : `<div class="muted" style="padding:18px 0">${T.au_none_f}</div>`}</div>
+    <div class="card"><div class="card-head"><span class="ct">${T.au_verified}</span></div>
+      ${ok.length ? ok.map(rowV).join("") : `<div class="muted" style="padding:18px 0">${T.au_none_f}</div>`}</div>
   </div>`;
 }
 
@@ -1784,21 +2152,21 @@ function renderLeaderboards() {
   const lead = (rows, fmt) => rows.map((r, i) => `<div class="lead-row">
       <span class="rank">${i + 1}</span>${fmt(r)}</div>`).join("");
   return `<div class="grid2">
-    <div class="card"><div class="card-head"><span class="ct">Most data extracted</span></div>
+    <div class="card"><div class="card-head"><span class="ct">${T.au_most}</span></div>
       ${rRows.length ? lead(rRows, ([s, n, o]) => `<div style="min-width:0"><div class="nm">${esc(s)}</div>
-        <div class="sub">${esc(o)}</div></div><span class="val">${compact(n)} <span class="muted" style="font-weight:400">rows</span></span>`)
-        : `<div class="muted" style="padding:18px 0">nothing extracted</div>`}</div>
-    <div class="card"><div class="card-head"><span class="ct">Discrepancy by sheet</span></div>
+        <div class="sub">${esc(o)}</div></div><span class="val">${compact(n)}</span>`)
+        : `<div class="muted" style="padding:18px 0">${T.au_nothing}</div>`}</div>
+    <div class="card"><div class="card-head"><span class="ct">${T.au_by_sheet}</span></div>
       ${dRows.length ? lead(dRows, ([s, d]) => `<div style="min-width:0"><div class="nm">${esc(s)}</div></div>
         <span class="val" style="color:var(--critical)">${compact(d)}</span>`)
-        : `<div class="muted" style="padding:18px 0">✓ no discrepancies</div>`}</div>
+        : `<div class="muted" style="padding:18px 0">${T.au_no_disc}</div>`}</div>
   </div>`;
 }
 
 const STATUS = {
-  ok: { ico: "✓", cls: "ok", word: "OK" },
-  mismatch: { ico: "✕", cls: "mismatch", word: "Mismatch" },
-  unverified: { ico: "?", cls: "unverified", word: "Unverified" },
+  ok: { ico: "✓", cls: "ok", word: T.st_ok },
+  mismatch: { ico: "✕", cls: "mismatch", word: T.st_mismatch },
+  unverified: { ico: "?", cls: "unverified", word: T.st_unverified },
 };
 const stBadge = s => {
   const t = STATUS[s] || STATUS.unverified;
@@ -1810,11 +2178,11 @@ function fixCell(f) {
   const safe = f.fix_confidence === "high"
     ? f.mismatches.filter(m => m.suggest !== false) : [];
   if (!safe.length)
-    return `<span class="muted">review inputs by hand</span>`;
+    return `<span class="muted">${T.fx_hand}</span>`;
   return safe.slice(0, 2).map(m =>
     m.cell ? `<div><b>${esc(m.cell)}</b>: ${num(m.actual)} → <b style="color:var(--good)">${num(m.expected)}</b></div>`
-           : `<div>row ${m.row}: → <b style="color:var(--good)">${num(m.expected)}</b></div>`
-  ).join("") + (safe.length > 2 ? `<div class="muted">+${safe.length - 2} more in CSV</div>` : "");
+           : `<div>${T.row_w} ${m.row}: → <b style="color:var(--good)">${num(m.expected)}</b></div>`
+  ).join("") + (safe.length > 2 ? `<div class="muted">${T.fx_more(safe.length - 2)}</div>` : "");
 }
 
 function renderFindingsTable() {
