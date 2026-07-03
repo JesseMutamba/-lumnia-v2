@@ -30,6 +30,7 @@ from .models import (
     FindingsResponse,
     HealthResponse,
     SheetReport,
+    StatsResponse,
 )
 from .pipeline.celltypes import grid_kinds
 from .pipeline.eda import generate_insights
@@ -199,6 +200,13 @@ async def analyze(file: UploadFile = File(...)) -> AnalyzeResponse:
 @app.get("/analyses", response_model=list[AnalysisMeta])
 def list_analyses() -> list[AnalysisMeta]:
     return [AnalysisMeta(**meta) for meta in storage.list_analyses()]
+
+
+@app.get("/stats", response_model=StatsResponse)
+def get_stats() -> StatsResponse:
+    """Usage roll-up behind the shared password — feeds the traction view
+    and the memo (uploads over time, per-client counts, active days)."""
+    return StatsResponse(**storage.stats())
 
 
 @app.get("/analyses/{analysis_id}", response_model=AnalyzeResponse)

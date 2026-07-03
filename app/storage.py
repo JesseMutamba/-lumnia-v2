@@ -130,6 +130,63 @@ def set_client(analysis_id: str, client: Optional[str]) -> bool:
     return cur.rowcount > 0
 
 
+def _week_start(day: str) -> Optional[str]:
+    """Monday of the ISO week containing ``day`` (YYYY-MM-DD), or None."""
+    try:
+        d = _dt.date.fromisoformat(day)
+    except (ValueError, TypeError):
+        return None
+    return (d - _dt.timedelta(days=d.weekday())).isoformat()
+
+
+def stats() -> Dict[str, Any]:
+    """Usage roll-up for the traction view — computed from stored metadata,
+    no report payloads parsed beyond the cheap ``n_sheets`` field."""
+    with _connect() as con:
+        rows = con.execute(
+            "SELECT uploaded_at, size_bytes, client, report FROM analyses"
+        ).fetchall()
+
+    by_day: Dict[str, int] = {}
+    by_week: Dict[str, int] = {}
+    by_client: Dict[str, int] = {}
+    total_sheets = 0
+    total_bytes = 0
+    days_active = set()
+
+    for r in rows:
+        day = (r["uploaded_at"] or "")[:10]
+        if day:
+            by_day[day] = by_day.get(day, 0) + 1
+            days_active.add(day)
+            wk = _week_start(day)
+            if wk:
+                by_week[wk] = by_week.get(wk, 0) + 1
+        label = r["client"] or "General"
+        by_client[label] = by_client.get(label, 0) + 1
+        total_bytes += int(r["size_bytes"] or 0)
+        try:
+            total_sheets += int(json.loads(r["report"]).get("n_sheets", 0) or 0)
+        except Exception:
+            pass
+
+    days = sorted(d for d in by_day)
+    return {
+        "total_analyses": len(rows),
+        "total_sheets": total_sheets,
+        "total_bytes": total_bytes,
+        "n_clients": sum(1 for c in by_client if c != "General"),
+        "days_active": len(days_active),
+        "first_upload": days[0] if days else None,
+        "last_upload": days[-1] if days else None,
+        "by_day": [{"date": d, "count": by_day[d]} for d in days],
+        "by_week": [{"week": w, "count": by_week[w]} for w in sorted(by_week)],
+        "by_client": sorted(
+            ({"client": c, "count": n} for c, n in by_client.items()),
+            key=lambda x: (-x["count"], x["client"])),
+    }
+
+
 def get_report(analysis_id: str) -> Optional[Dict[str, Any]]:
     with _connect() as con:
         row = con.execute("SELECT report FROM analyses WHERE id = ?",

@@ -87,12 +87,20 @@ businesses.
 
 ### Where the weekly numbers come from
 
-Until analytics are built in, count manually from the sidebar (each
-workspace = one client) or run on the server:
+The app reports its own usage — no SQL, no SSH. Hit the `/stats` endpoint
+(behind the shared password) on the deployed site:
 
 ```bash
-sqlite3 /data/lumnia.db "SELECT date(uploaded_at), count(*) FROM analyses GROUP BY 1 ORDER BY 1;"
-sqlite3 /data/lumnia.db "SELECT client, count(*) FROM analyses GROUP BY 1;"
+curl -s https://YOUR-APP/stats | python3 -m json.tool
 ```
 
-(`fly ssh console` first, on the deployed app.)
+It returns exactly what the table above needs:
+
+- `total_analyses`, `total_sheets`, `n_clients`, `days_active`
+- `first_upload` / `last_upload`
+- `by_week` — `[{ "week": "2026-06-29", "count": 2 }, ...]` → one row of the
+  table per entry
+- `by_client` — per-client counts (your workspaces)
+
+If the site is password-gated, log in in the browser first and open
+`/stats` there, or pass the session cookie to curl.

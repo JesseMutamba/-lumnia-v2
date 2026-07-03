@@ -87,6 +87,21 @@ class DeleteResponse(BaseModel):
     deleted: bool
 
 
+class StatsResponse(BaseModel):
+    """Usage roll-up for the traction view — the numbers the memo needs,
+    computed from stored metadata rather than run by hand in SQL."""
+    total_analyses: int
+    total_sheets: int
+    total_bytes: int
+    n_clients: int
+    days_active: int
+    first_upload: Optional[str] = None
+    last_upload: Optional[str] = None
+    by_day: List[Dict[str, Any]]
+    by_week: List[Dict[str, Any]]
+    by_client: List[Dict[str, Any]]
+
+
 class HealthResponse(BaseModel):
     status: str
     service: str
