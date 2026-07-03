@@ -225,6 +225,62 @@
   .flash { animation: flash 1.6s ease-out; }
   @keyframes flash { 0% { background: #f3e8cd; } 100% { background: var(--card); } }
 
+  /* executive mode */
+  .modes { display: inline-flex; border: 1px solid var(--border); border-radius: 8px;
+    overflow: hidden; }
+  .modes button { border: none; background: var(--card); color: var(--ink-3);
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em;
+    text-transform: uppercase; padding: 8px 14px; cursor: pointer; }
+  .modes button.on { background: var(--gold-tint); color: var(--gold); }
+  .verdict { display: flex; gap: 16px; align-items: flex-start;
+    background: var(--card); border: 1px solid var(--hairline); border-radius: 14px;
+    padding: 18px 22px; box-shadow: var(--shadow); margin-bottom: 16px;
+    border-left: 4px solid var(--vcolor, var(--ink-3)); }
+  .verdict .vic { font-size: 26px; line-height: 1; color: var(--vcolor); }
+  .verdict .vlabel { font-family: var(--mono); font-size: 11px; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--vcolor); font-weight: 600; }
+  .verdict p { margin: 6px 0 0; font-size: 14px; line-height: 1.65; max-width: 75ch; }
+  .action-card { background: var(--card); border: 1px solid var(--hairline);
+    border-radius: 14px; padding: 15px 19px; box-shadow: var(--shadow);
+    margin-bottom: 12px; border-left: 4px solid var(--acolor, var(--border)); }
+  .action-card .ahead { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .action-card .asheet { font-weight: 650; }
+  .action-card .aval { margin-left: auto; font-variant-numeric: tabular-nums;
+    font-weight: 650; color: var(--critical); }
+  .action-card .awhat { color: var(--ink-2); font-size: 13px; margin-top: 5px;
+    line-height: 1.55; }
+  .action-card .ado { margin-top: 8px; font-size: 13px; line-height: 1.5; }
+  .action-card .ado b { color: var(--gold); }
+
+  /* print report */
+  #printdoc { display: none; }
+  @media print {
+    .app { display: none !important; }
+    #printdoc { display: block; }
+    body { background: #fff; }
+  }
+  #printdoc { font: 13px/1.55 var(--sans); color: #1a1a19; }
+  #printdoc .ph { display: flex; align-items: center; gap: 14px;
+    border-bottom: 1.5px solid #1a1a19; padding-bottom: 14px; margin-bottom: 18px; }
+  #printdoc h1 { font-family: var(--serif); font-size: 24px; font-weight: 500;
+    letter-spacing: .12em; margin: 0; }
+  #printdoc .pmeta { margin-left: auto; text-align: right; font-family: var(--mono);
+    font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #777; }
+  #printdoc h2 { font-family: var(--mono); font-size: 10.5px; letter-spacing: .16em;
+    text-transform: uppercase; color: #999; font-weight: 600; margin: 22px 0 8px; }
+  #printdoc .pverdict { font-family: var(--mono); font-size: 12px; letter-spacing: .12em;
+    text-transform: uppercase; font-weight: 700; }
+  #printdoc .pkpis { display: flex; gap: 26px; flex-wrap: wrap; margin: 10px 0; }
+  #printdoc .pkpi .l { font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em;
+    text-transform: uppercase; color: #999; }
+  #printdoc .pkpi .v { font-size: 21px; font-weight: 650; }
+  #printdoc .pcharts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  #printdoc .pcharts svg { width: 100%; height: auto; }
+  #printdoc .pact { padding: 8px 0; border-bottom: 1px solid #e8e8e8; }
+  #printdoc .pfoot { margin-top: 26px; font-family: var(--mono); font-size: 9.5px;
+    letter-spacing: .1em; text-transform: uppercase; color: #999;
+    border-top: 1px solid #e8e8e8; padding-top: 10px; }
+
   /* empty / drop */
   #drop { border: 1px dashed var(--border); border-radius: 14px; padding: 60px 30px;
     text-align: center; color: var(--ink-2); cursor: pointer; background: var(--card);
@@ -258,6 +314,7 @@
     <div id="content"></div>
   </main>
 </div>
+<div id="printdoc"></div>
 
 <script>
 "use strict";
@@ -278,6 +335,8 @@ const compact = v => {
 let current = null, REPORT = null, AUDIT = null, CHARTS = [];
 let SHEET_IDX = {};
 const FILTER = { sheets: null, status: null, periods: "all" };  // sheets: Set|null
+// Executive mode: decisions in sentences. Analyst mode: the full machinery.
+let MODE = localStorage.getItem("lumnia_mode") || "exec";
 
 /* ---------- brand sun ---------- */
 (function drawSun() {
@@ -355,9 +414,12 @@ const NAV = [
   ["audit", "Audit", `<svg width="14" height="14" viewBox="0 0 14 14"><path d="M2.5 7.4l3 3L11.5 4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`],
   ["sheets", "Sheets", `<svg width="14" height="14" viewBox="0 0 14 14"><rect x="1.6" y="1.6" width="10.8" height="10.8" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M1.6 5.2h10.8M5.4 5.2V12.4" stroke="currentColor" stroke-width="1.2"/></svg>`],
 ];
-function renderNav(counts) {
+function renderNav(counts, exec) {
+  const items = NAV.filter(([id]) => !(exec && id === "sheets"))
+    .map(([id, label, icon]) =>
+      [id, exec && id === "audit" ? "Actions" : id === "charts" && exec ? "Trends" : label, icon]);
   $("#nav-analysis").innerHTML = `<span class="kicker">Analysis</span>` +
-    NAV.map(([id, label, icon], k) => `
+    items.map(([id, label, icon], k) => `
       <div class="nav-item ${k === 0 ? "active" : ""}" data-target="sec-${id}">
         ${icon}${label}${counts[id] != null ? `<span class="cnt">${counts[id]}</span>` : ""}
       </div>`).join("");
@@ -395,29 +457,47 @@ function renderAll() {
   const r = REPORT, a = AUDIT;
   SHEET_IDX = {}; r.sheets.forEach((s, i) => { SHEET_IDX[s.name] = i; });
   CHARTS = collectCharts(r);
+  const exec = MODE === "exec";
 
   renderNav({
     overview: null,
     charts: visCharts().length,
     audit: a.n_mismatched_relations,
-    sheets: r.n_sheets,
-  });
+    sheets: exec ? undefined : r.n_sheets,
+  }, exec);
   $("#topbar").innerHTML = `<div class="topbar">
     <h2>${esc(r.filename)}</h2>
     <span class="sub">${r.n_sheets} sheets analyzed</span>
     <span class="grow"></span>
+    <span class="modes">
+      <button data-mode="exec" class="${exec ? "on" : ""}">Executive</button>
+      <button data-mode="analyst" class="${exec ? "" : "on"}">Analyst</button>
+    </span>
+    <button class="btn" id="print-report">⎙&nbsp; Report</button>
     <button class="btn" id="dl-corrections">⤓&nbsp; Corrections CSV</button>
-    <button class="btn" id="dl-findings">⤓&nbsp; Findings CSV</button>
+    ${exec ? "" : `<button class="btn" id="dl-findings">⤓&nbsp; Findings CSV</button>`}
   </div>`;
-  $("#dl-findings").addEventListener("click", downloadFindings);
+  $$(".modes button").forEach(b => b.addEventListener("click", () => {
+    MODE = b.dataset.mode; localStorage.setItem("lumnia_mode", MODE); renderAll();
+  }));
+  $("#print-report").addEventListener("click", printReport);
   $("#dl-corrections").addEventListener("click", downloadCorrections);
+  const dlf = $("#dl-findings");
+  if (dlf) dlf.addEventListener("click", downloadFindings);
 
-  $("#content").innerHTML =
-    renderFilters() +
-    `<section id="sec-overview">${renderOverview()}${renderInsights()}</section>` +
-    `<section id="sec-charts"><span class="kicker">Charts</span>${renderChartGrid()}</section>` +
-    `<section id="sec-audit"><span class="kicker">Audit</span>${renderHighlights()}${renderLeaderboards()}${renderFindingsTable()}</section>` +
-    `<section id="sec-sheets"><span class="kicker">Sheets (${r.n_sheets})</span>${renderSheets()}</section>`;
+  if (exec) {
+    $("#content").innerHTML =
+      `<section id="sec-overview">${renderVerdict()}${renderOverview()}${renderInsights()}</section>` +
+      `<section id="sec-charts"><span class="kicker">Trends</span>${renderChartGrid()}</section>` +
+      `<section id="sec-audit"><span class="kicker">What to do</span>${renderActionList()}</section>`;
+  } else {
+    $("#content").innerHTML =
+      renderFilters() +
+      `<section id="sec-overview">${renderVerdict()}${renderOverview()}${renderInsights()}</section>` +
+      `<section id="sec-charts"><span class="kicker">Charts</span>${renderChartGrid()}</section>` +
+      `<section id="sec-audit"><span class="kicker">Audit</span>${renderHighlights()}${renderLeaderboards()}${renderFindingsTable()}</section>` +
+      `<section id="sec-sheets"><span class="kicker">Sheets (${r.n_sheets})</span>${renderSheets()}</section>`;
+  }
 
   attachFilters(); attachCharts(); attachFindingRows(); attachBarRows();
 }
@@ -529,6 +609,171 @@ function renderOverview() {
   const right = primary ? chartCard(primary, true)
     : `<div class="card"><div class="muted" style="padding:40px 0;text-align:center">No time series to plot${CHARTS.length ? "" : " — press rerun on this workbook to compute charts"}.</div></div>`;
   return `<div class="overview"><div class="kpis">${tiles}</div><div>${right}</div></div>`;
+}
+
+/* ---------- executive mode: verdict, plain language, actions, report ----- */
+function safeFixes(f) {
+  return f.fix_confidence === "high"
+    ? f.mismatches.filter(m => m.suggest !== false) : [];
+}
+
+function kpiData() {
+  const r = REPORT;
+  const extracted = r.sheets.filter(s => s.orientation !== "unknown" && s.orientation !== "error").length;
+  const recs = r.sheets.reduce((t, s) => {
+    let n = s.tidy ? s.tidy.n_records : 0;
+    for (const p of s.panels || []) n += p.tidy ? p.tidy.n_records : 0;
+    return t + n;
+  }, 0);
+  return { extracted, recs };
+}
+
+function verdictInfo() {
+  const m = AUDIT.n_mismatched_relations, u = AUDIT.n_unverified_relations;
+  if (m === 0 && u === 0)
+    return { label: "Consistent", color: "var(--good)", icon: "✓" };
+  if (m === 0)
+    return { label: "Review recommended", color: "var(--warning)", icon: "?" };
+  return { label: "Needs corrections", color: "var(--critical)", icon: "✕" };
+}
+
+function execSummary() {
+  const { extracted, recs } = kpiData();
+  const s = [];
+  s.push(`This workbook has ${REPORT.n_sheets} sheets; ${extracted} were read
+    successfully (${compact(recs)} records).`);
+
+  const m = AUDIT.n_mismatched_relations;
+  if (m === 0) {
+    s.push(`All ${AUDIT.n_verified_relations} automated checks passed — the
+      numbers agree with each other.`);
+  } else {
+    s.push(`The numbers disagree with each other in <b>${m}</b> place${m === 1 ? "" : "s"},
+      worth <b>${compact(AUDIT.total_abs_delta)}</b> in total.`);
+    const cells = AUDIT.findings.reduce((t, f) => t + safeFixes(f).length, 0);
+    const worth = AUDIT.findings.reduce((t, f) =>
+      t + safeFixes(f).reduce((u2, x) => u2 + Math.abs(x.delta), 0), 0);
+    if (cells) s.push(`<b>${cells}</b> of those cells can be corrected right away
+      (worth ${compact(worth)}); the rest need the file's owner to check.`);
+    else s.push(`They need the file's owner to check the underlying figures —
+      the correct values can't be determined automatically.`);
+  }
+
+  const ts = visCharts().filter(c => c.chart.kind === "timeseries")
+    .sort((a, b) => b.chart.periods.length - a.chart.periods.length)[0];
+  if (ts && ts.lines.length) {
+    const l = ts.lines[0];
+    const pts = l.values.map((v, i) => [v, i]).filter(([v]) => v != null);
+    if (pts.length >= 2) {
+      const [vL, iL] = pts[pts.length - 1], [vP] = pts[pts.length - 2];
+      const p = pct(vL, vP);
+      if (p != null) s.push(`“${esc(l.label)}” on ${esc(ts.sheet)} is
+        ${p >= 0 ? "up" : "down"} <b>${Math.abs(p).toFixed(0)}%</b> in the latest
+        period (${esc(String(ts.chart.periods[iL]))}).`);
+    }
+  }
+  return s.join(" ");
+}
+
+function renderVerdict() {
+  const v = verdictInfo();
+  return `<div class="verdict" style="--vcolor:${v.color}">
+    <span class="vic">${v.icon}</span>
+    <div><span class="vlabel">${v.label}</span><p>${execSummary()}</p></div>
+  </div>`;
+}
+
+function plainFormula(f) {
+  if (f.kind === "product")
+    return `'${esc(f.target)}' should equal '${esc(f.inputs[0])}' × '${esc(f.inputs[1])}'`;
+  if (f.kind === "row_sum")
+    return `'${esc(f.target)}' should equal the sum of ${esc(f.inputs[0])} through ${esc(f.inputs[f.inputs.length - 1])}`;
+  if (f.kind === "column_sum") {
+    const row = f.mismatches[0] ? f.mismatches[0].row : "";
+    return `the totals row${row ? " " + row : ""} should match the sum of the rows above it`;
+  }
+  return esc(f.formula);
+}
+
+function renderActionList() {
+  const cards = [];
+  for (const f of AUDIT.findings) {
+    const safe = safeFixes(f);
+    let action;
+    if (safe.length) {
+      action = `<b>Fix now:</b> ` + safe.slice(0, 3).map(m =>
+        `change <b>${esc(m.cell || "row " + m.row)}</b> from ${num(m.actual)} to <b>${num(m.expected)}</b>`).join("; ")
+        + (safe.length > 3 ? ` — plus ${safe.length - 3} more in the Corrections CSV` : "") + ".";
+    } else {
+      const rows = [...new Set(f.mismatches.map(m => m.row))].slice(0, 4);
+      action = `<b>Check with the file's owner:</b> row${rows.length > 1 ? "s" : ""}
+        ${rows.join(", ")} — the correct value can't be determined automatically
+        (other rules contest these cells).`;
+    }
+    cards.push(`<div class="action-card" style="--acolor:var(--critical)">
+      <div class="ahead"><span class="asheet">${esc(f.sheet)}</span>
+        <span class="aval">${compact(f.total_abs_delta)}</span></div>
+      <div class="awhat">In this sheet, ${plainFormula(f)} — but
+        ${f.n_mismatched} of ${f.n_checked} rows don't match.</div>
+      <div class="ado">→ ${action}</div>
+    </div>`);
+  }
+  if (AUDIT.n_unverified_relations) {
+    cards.push(`<div class="action-card" style="--acolor:var(--warning)">
+      <div class="ahead"><span class="asheet">Totals to eyeball</span></div>
+      <div class="awhat">${AUDIT.n_unverified_relations} totals row(s) couldn't be
+        verified automatically — their sections have an unusual structure.</div>
+      <div class="ado">→ <b>Quick manual check</b> next time the file is open.</div>
+    </div>`);
+  }
+  if (!cards.length) {
+    cards.push(`<div class="action-card" style="--acolor:var(--good)">
+      <div class="ahead"><span class="asheet">Nothing to fix</span></div>
+      <div class="awhat">Every automated check passed. The workbook's internal
+        math is consistent.</div></div>`);
+  }
+  return cards.join("");
+}
+
+function printReport() {
+  const v = verdictInfo();
+  const { extracted, recs } = kpiData();
+  const seen = new Set();
+  const charts = $$(".chart-card").map(c => ({
+    title: c.querySelector(".ct") ? c.querySelector(".ct").textContent : "",
+    svg: c.querySelector(".plot svg") ? c.querySelector(".plot svg").outerHTML : "",
+  })).filter(c => c.svg && !seen.has(c.title) && seen.add(c.title)).slice(0, 2);
+  const date = new Date().toISOString().slice(0, 10);
+
+  $("#printdoc").innerHTML = `
+    <div class="ph">
+      <h1>LUMNIA</h1>
+      <div class="pmeta">${esc(REPORT.filename)}<br>${date}</div>
+    </div>
+    <div class="pverdict" style="color:${v.color}">${v.icon} ${v.label}</div>
+    <p style="max-width:80ch">${execSummary()}</p>
+    <h2>Key figures</h2>
+    <div class="pkpis">
+      <div class="pkpi"><div class="l">Total discrepancy</div><div class="v">${compact(AUDIT.total_abs_delta)}</div></div>
+      <div class="pkpi"><div class="l">Issues found</div><div class="v">${AUDIT.n_mismatched_relations}</div></div>
+      <div class="pkpi"><div class="l">Checks passed</div><div class="v">${AUDIT.n_verified_relations}</div></div>
+      <div class="pkpi"><div class="l">Sheets read</div><div class="v">${extracted}/${REPORT.n_sheets}</div></div>
+      <div class="pkpi"><div class="l">Records</div><div class="v">${compact(recs)}</div></div>
+    </div>
+    ${charts.length ? `<h2>Trends</h2><div class="pcharts">${charts.map(c =>
+      `<div><div style="font-weight:650;font-size:12px;margin-bottom:4px">${esc(c.title)}</div>${c.svg}</div>`).join("")}</div>` : ""}
+    <h2>What to do</h2>
+    ${AUDIT.findings.map(f => {
+      const safe = safeFixes(f);
+      const act = safe.length
+        ? "Fix: " + safe.slice(0, 3).map(m => `${m.cell || "row " + m.row}: ${num(m.actual)} → ${num(m.expected)}`).join("; ")
+        : "Owner to verify rows " + [...new Set(f.mismatches.map(m => m.row))].slice(0, 4).join(", ");
+      return `<div class="pact"><b>${esc(f.sheet)}</b> — ${plainFormula(f)}
+        (${f.n_mismatched} of ${f.n_checked} rows off, ${compact(f.total_abs_delta)}).
+        <i>${esc(act)}</i></div>`;
+    }).join("") || `<div class="pact">✓ Every automated check passed.</div>`}
+    <div class="pfoot">Generated by Lumnia · light where there was none · ${date}</div>`;
+  window.print();
 }
 
 /* ---------- insights: decision-support bullets from the data ---------- */
