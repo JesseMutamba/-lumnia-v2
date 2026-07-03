@@ -1,7 +1,42 @@
-# Deploying Lumnia to Fly.io
+# Deploying Lumnia
 
-One small always-on-capable container + a persistent disk for the SQLite
-database and stored uploads. Access is gated by a single shared password.
+One small container + a persistent disk for the SQLite database and stored
+uploads. Access is gated by a single shared password. Two supported hosts:
+**Render** (below — simplest, deploys on every merge) and **Fly.io**
+(further down).
+
+## Render (render.yaml blueprint)
+
+Everything is defined in `render.yaml`; you only click through once.
+
+1. Sign in at https://render.com (log in with GitHub).
+2. **New → Blueprint** → connect the `-lumnia-v2` repository. Render reads
+   `render.yaml` and shows the `lumnia` web service.
+3. It will prompt for the two secrets:
+   - `LUMNIA_PASSWORD` — the shared password that gates the site;
+   - `ANTHROPIC_API_KEY` — optional, enables the AI narrative (leave blank
+     to skip; everything else works).
+4. Click **Apply**. First build takes a few minutes; you get a URL like
+   `https://lumnia.onrender.com`.
+
+After that, **every merge to `main` redeploys automatically**
+(`autoDeploy: true`) — no CLI needed.
+
+Notes:
+- **Paid instance required for real use.** The persistent disk at `/data`
+  (your database + uploaded files) needs the `starter` plan (~$7/mo +
+  ~$0.25/GB). On the free plan there is no disk: every restart wipes all
+  analyses. Free is fine only for a throwaway demo.
+- Region is `frankfurt` (closest to francophone Africa/Europe); change it
+  in `render.yaml` before the first deploy if you prefer.
+- To change the password later: service → Environment → edit
+  `LUMNIA_PASSWORD` → save (it redeploys and logs everyone out).
+- The weekly usage numbers for the traction memo: service → Shell, then
+  `sqlite3 /data/lumnia.db "SELECT date(uploaded_at), count(*) FROM analyses GROUP BY 1;"`
+
+---
+
+# Deploying to Fly.io
 
 ## One-time setup
 
