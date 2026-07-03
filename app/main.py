@@ -30,6 +30,7 @@ from .models import (
     FindingsResponse,
     HealthResponse,
     SheetReport,
+    StatsResponse,
 )
 from .pipeline.celltypes import grid_kinds
 from .pipeline.eda import generate_insights
@@ -148,7 +149,31 @@ def run_pipeline(content: bytes, filename: str) -> AnalyzeResponse:
         sheets=reports,
         insights=generate_insights(eda_results) or None,
         model=build_model(reports),
+        story=_pick_story(reports),
     )
+
+
+def _pick_story(reports) -> Optional[dict]:
+    """The workbook's storytelling table: the semantics candidate with the
+    richest grounding (rows x groupability, time is a strong bonus)."""
+    best, best_score = None, 0.0
+    for r in reports:
+        candidates = []
+        if r.tidy and r.tidy.semantics:
+            candidates.append((r.tidy.n_records, r.tidy.semantics))
+        for p in r.panels or []:
+            t = p.get("tidy")
+            if t and t.get("semantics"):
+                candidates.append((t.get("n_records", 0), t["semantics"]))
+        for n_rows, sem in candidates:
+            schema = sem["schema"]
+            score = n_rows * (1 + len(schema["dimensions"])) \
+                * (2 if schema["time"] else 1)
+            if score > best_score:
+                best_score = score
+                best = {"sheet": r.name, "schema": sem["schema"],
+                        **sem["story"]}
+    return best
 
 
 _INDEX = Path(__file__).parent / "static" / "index.html"
@@ -199,6 +224,13 @@ async def analyze(file: UploadFile = File(...)) -> AnalyzeResponse:
 @app.get("/analyses", response_model=list[AnalysisMeta])
 def list_analyses() -> list[AnalysisMeta]:
     return [AnalysisMeta(**meta) for meta in storage.list_analyses()]
+
+
+@app.get("/stats", response_model=StatsResponse)
+def get_stats() -> StatsResponse:
+    """Usage roll-up behind the shared password — feeds the traction view
+    and the memo (uploads over time, per-client counts, active days)."""
+    return StatsResponse(**storage.stats())
 
 
 @app.get("/analyses/{analysis_id}", response_model=AnalyzeResponse)
