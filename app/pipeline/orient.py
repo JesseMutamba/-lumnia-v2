@@ -23,7 +23,7 @@ from .celltypes import cell_kind, grid_kinds, is_blank, BLANK, DATE, NUMBER, TEX
 from .charts import profile_chart, timeseries_chart
 from .checks import detect_total_rows, run_checks
 from .eda import run_eda_df
-from .semantics import build_semantics
+from .semantics import build_matrix_semantics, build_semantics
 from .coerce import coerce_value
 from .jsonsafe import jsonify
 from .metrics import ColumnAcc, table_summary
@@ -337,11 +337,13 @@ def _ffill_label_cols(df: pd.DataFrame, kinds, cols, r_start, r_end) -> Dict[Tup
 
 
 def extract_tidy(df: pd.DataFrame, result: dict, max_rows: int = 8,
-                 kinds: Optional[List[List[str]]] = None) -> Optional[dict]:
+                 kinds: Optional[List[List[str]]] = None,
+                 name: str = "") -> Optional[dict]:
     """Build a normalized table for a tidy or matrix sheet.
 
     Returns ``{columns, records, n_records, n_columns}`` or ``None`` when the
-    orientation is not extractable.
+    orientation is not extractable. ``name`` (the sheet name) labels the
+    measure of a matrix's long form — it is what the numbers are.
     """
     orient = result["orientation"]
     meta = result["meta"]
@@ -351,7 +353,7 @@ def extract_tidy(df: pd.DataFrame, result: dict, max_rows: int = 8,
     if orient == "tidy":
         return _extract_tidy_table(df, kinds, meta, max_rows)
     if orient == "matrix":
-        return _extract_matrix(df, kinds, meta, max_rows)
+        return _extract_matrix(df, kinds, meta, max_rows, name)
     return None
 
 
@@ -558,7 +560,7 @@ def _extract_tidy_table(df, kinds, meta, max_rows) -> dict:
             "total_rows": [row_numbers[t["i"]] for t in totals] or None}
 
 
-def _extract_matrix(df, kinds, meta, max_rows) -> dict:
+def _extract_matrix(df, kinds, meta, max_rows, name: str = "") -> dict:
     r0, r1, c0, c1 = meta["box"]
     dr = meta["date_row"]
     period_cols = meta["period_cols"]
@@ -634,11 +636,19 @@ def _extract_matrix(df, kinds, meta, max_rows) -> dict:
     if chart:
         summary["chart"] = chart
 
+    # Step 8: date-axis matrices drive the storytelling engine through their
+    # long form. (Year-axis cross-tabs feed the business model instead.)
+    semantics = None
+    if meta.get("axis", "date") == "date":
+        semantics = build_matrix_semantics(
+            name, [periods[p] for p in period_cols], series_values)
+
     return {"columns": columns, "records": records, "n_records": total,
             "n_columns": len(columns),
             "column_types": [a.profile() for a in accs],
             "header_rows": [dr],
-            "summary": summary}
+            "summary": summary,
+            "semantics": semantics}
 
 
 # --------------------------------------------------------------------------- #
@@ -708,7 +718,8 @@ def _finalize_cells(res: dict, row_off: int = 0, col_off: int = 0) -> None:
 
 
 def _orient_single(df: pd.DataFrame, max_rows: int,
-                   kinds: Optional[List[List[str]]] = None) -> dict:
+                   kinds: Optional[List[List[str]]] = None,
+                   name: str = "") -> dict:
     if kinds is None:
         kinds = _kinds(df)
     result = classify(df, kinds)
@@ -716,12 +727,13 @@ def _orient_single(df: pd.DataFrame, max_rows: int,
         "orientation": result["orientation"],
         "confidence": result["confidence"],
         "reason": result["reason"],
-        "tidy": extract_tidy(df, result, max_rows, kinds),
+        "tidy": extract_tidy(df, result, max_rows, kinds, name),
     }
 
 
 def orient_sheet(df: pd.DataFrame, max_rows: int = 8,
-                 kinds: Optional[List[List[str]]] = None) -> dict:
+                 kinds: Optional[List[List[str]]] = None,
+                 name: str = "") -> dict:
     """Classify + extract. Sheets holding several side-by-side tables
     (separated by blank columns) are split and each panel handled on its own;
     the sheet then reports orientation ``multi`` with per-panel results.
@@ -736,7 +748,7 @@ def orient_sheet(df: pd.DataFrame, max_rows: int = 8,
             sub = []
             for lo, hi in panels:
                 pk = [row[lo:hi + 1] for row in kinds]
-                res = _orient_single(df.iloc[:, lo:hi + 1], max_rows, pk)
+                res = _orient_single(df.iloc[:, lo:hi + 1], max_rows, pk, name)
                 _finalize_cells(res, 0, lo)
                 res["col_start"], res["col_end"] = lo, hi
                 sub.append(res)
@@ -754,7 +766,7 @@ def orient_sheet(df: pd.DataFrame, max_rows: int = 8,
                     "panels": sub,
                 }
 
-    out = _orient_single(df, max_rows, kinds)
+    out = _orient_single(df, max_rows, kinds, name)
     _finalize_cells(out)
     out["panels"] = None
 
@@ -767,7 +779,7 @@ def orient_sheet(df: pd.DataFrame, max_rows: int = 8,
             sub = []
             for lo, hi in bands:
                 res = _orient_single(df.iloc[lo:hi + 1], max_rows,
-                                     kinds[lo:hi + 1])
+                                     kinds[lo:hi + 1], name)
                 _finalize_cells(res, lo, 0)
                 res["row_start"], res["row_end"] = lo, hi
                 sub.append(res)

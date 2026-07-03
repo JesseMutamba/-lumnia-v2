@@ -296,6 +296,8 @@
   .mchip { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px;
     padding: 4px 10px; border: 1px solid var(--line); border-radius: 8px;
     background: var(--card-2); cursor: pointer; }
+  .msheet { font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--gold-strong); }
   .qrow { padding: 12px 0; border-bottom: 1px solid var(--hairline);
     font-size: 13.5px; line-height: 1.5; }
   .qrow:last-of-type { border-bottom: none; }
@@ -1752,6 +1754,18 @@ function renderStory() {
   return renderStoryDash();
 }
 
+/* Metric ids are qualified s{story}:{id} — a question may be answered by
+   any sheet's story, not just the workbook's spine. */
+function storyMetricMap() {
+  const map = {};
+  (REPORT.stories || (REPORT.story ? [REPORT.story] : [])).forEach((st, si) => {
+    (st.metrics || []).forEach(m => {
+      map[`s${si}:${m.id}`] = { ...m, _sid: si, _sheet: (st.sheet || "").trim() };
+    });
+  });
+  return map;
+}
+
 /* Step 6: titles become the story — each card's title is a sentence that
    walks the reader through the page. */
 function storySentence(m) {
@@ -1767,8 +1781,10 @@ function storySentence(m) {
 
 /* Step 6: key takeaways — one-liners computed from the page's own figures. */
 function storyTakeaways(metricById, approved) {
+  const sel = approved.map(k => metricById[k]).filter(Boolean);
+  const first = id => sel.find(m => m.id === id);
   const out = [];
-  const t = approved.includes("trend") && metricById.trend;
+  const t = first("trend");
   if (t && t.rows.length >= 2) {
     const a = t.rows.find(r => r.value != null), b = [...t.rows].reverse().find(r => r.value != null);
     if (a && b && a !== b && a.value) {
@@ -1776,8 +1792,8 @@ function storyTakeaways(metricById, approved) {
       out.push(T.tk_trend(t.measure, p >= 0, pctFmt(Math.abs(p)), a.period, b.period));
     }
   }
-  const by = approved.map(id => metricById[id])
-    .find(m => m && m.id && m.id.startsWith("by_") && m.rows && m.rows.length >= 2);
+  const by = sel.find(m => m.id && m.id.startsWith("by_")
+    && m.rows && m.rows.length >= 2);
   if (by) {
     const total = by.rows.reduce((s, r) => s + Math.abs(r.value ?? 0), 0);
     if (total > 0) {
@@ -1786,12 +1802,12 @@ function storyTakeaways(metricById, approved) {
         by.measure, by.grain));
     }
   }
-  const mv = approved.includes("movers") && metricById.movers;
+  const mv = first("movers");
   if (mv && mv.top.length && mv.bottom.length && mv.bottom[0].value < 0) {
     out.push(T.tk_movers(mv.top[0].entity, "+" + num(mv.top[0].value),
       mv.bottom[0].entity, num(mv.bottom[0].value)));
   }
-  const ls = approved.includes("low_stock") && metricById.low_stock;
+  const ls = first("low_stock");
   if (ls && ls.rows.length) {
     out.push(T.tk_stock(ls.rows[0].entity, ls.measure, num(ls.rows[0].value)));
   }
@@ -1801,8 +1817,10 @@ function storyTakeaways(metricById, approved) {
 /* Step 6: recommendations — every one carries its because-clause, tracing
    back to a figure that is on this page. Rules, not imagination. */
 function storyRecs(metricById, approved) {
+  const sel = approved.map(k => metricById[k]).filter(Boolean);
+  const first = id => sel.find(m => m.id === id);
   const recs = [];
-  const mv = approved.includes("movers") && metricById.movers;
+  const mv = first("movers");
   if (mv && mv.top.length && mv.top[0].value > 0) {
     const r = mv.top[0];
     recs.push({ text: T.rc_top(r.entity, "+" + num(r.value)),
@@ -1813,13 +1831,13 @@ function storyRecs(metricById, approved) {
     recs.push({ text: T.rc_bottom(r.entity),
                 because: T.rc_bottom_b(r.entity, num(r.value), mv.measure) });
   }
-  const ls = approved.includes("low_stock") && metricById.low_stock;
+  const ls = first("low_stock");
   if (ls && ls.rows.length) {
     const r = ls.rows[0];
     recs.push({ text: T.rc_stock(r.entity),
                 because: T.rc_stock_b(r.entity, ls.measure, num(r.value)) });
   }
-  const mom = approved.includes("mom") && metricById.mom;
+  const mom = first("mom");
   if (mom && mom.pct != null && mom.pct <= -10) {
     recs.push({ text: T.rc_mom(), because: T.rc_mom_b(pctFmt(Math.abs(mom.pct), 1)) });
   }
@@ -1854,14 +1872,19 @@ function renderBriefWizard() {
 }
 
 function renderPlanApproval() {
-  const plan = REPORT.plan, story = REPORT.story;
-  const metricById = {}; story.metrics.forEach(m => { metricById[m.id] = m; });
+  const plan = REPORT.plan;
+  const metricById = storyMetricMap();
   const ICO = { answerable: ["✓", "var(--good)"], partial: ["~", "var(--warning)"],
     unanswerable: ["✕", "var(--critical)"], unmatched: ["?", "var(--ink-3)"] };
+  const chipFor = id => {
+    const m = metricById[id];
+    if (!m) return "";
+    return `<label class="mchip"><input type="checkbox" data-mid="${esc(id)}" checked>
+      ${esc(mlabel(m))}${m._sid ? ` <span class="msheet">${esc(m._sheet)}</span>` : ""}</label>`;
+  };
   const qs = plan.questions.map(q => {
     const [ico, color] = ICO[q.status] || ICO.unmatched;
-    const chips = q.metrics.map(id =>
-      `<label class="mchip"><input type="checkbox" data-mid="${esc(id)}" checked> ${esc(mlabel(metricById[id]))}</label>`).join("");
+    const chips = q.metrics.map(chipFor).join("");
     const miss = q.missing.map(g =>
       `<div class="qmiss">→ ${T.st_needs(esc(g.requires))}</div>`).join("");
     return `<div class="qrow">
@@ -1872,7 +1895,7 @@ function renderPlanApproval() {
       <div style="margin-left:22px">${miss}</div>
     </div>`;
   }).join("");
-  const also = plan.also_available.map(id =>
+  const also = plan.also_available.filter(id => metricById[id]).map(id =>
     `<label class="mchip"><input type="checkbox" data-mid="${esc(id)}"> ${esc(mlabel(metricById[id]))}</label>`).join("");
   return `<section id="sec-story"><span class="kicker">${T.tab_story}</span>
     <div class="card" style="max-width:860px">
@@ -1898,7 +1921,8 @@ const fillFor = (v, mx) => v == null || mx === 0 ? "transparent"
   : `color-mix(in srgb, ${v >= 0 ? "#1baf7a" : "#d24a35"} ${Math.min(85, Math.abs(v) / mx * 55 + 8).toFixed(0)}%, transparent)`;
 
 function storyChartCard(m, opts = {}) {
-  const c = { pseudo: true, sheet: storySentence(m), loc: opts.loc || null,
+  const c = { pseudo: true, sheet: storySentence(m),
+    loc: opts.loc || (m._sid ? m._sheet : null),
     chart: opts.kindTime
       ? { kind: "timeseries", periods: m.rows.map(r => r.period),
           series: [], other: null, truncated: !!m.truncated }
@@ -1923,7 +1947,7 @@ function storyVisual(m) {
        <td class="num" style="background:${fillFor(r.value, mx)}">${r.value >= 0 ? "+" : ""}${num(r.value)}</td>
        <td class="num muted">${r.headline != null ? compact(r.headline) : ""}</td></tr>`).join("")}</table>`;
     return `<div class="card"><div class="card-head"><span class="ct">${esc(storySentence(m))}</span>
-        <span class="cs">${esc(m.measure)}</span></div>
+        <span class="cs">${esc(m.measure)}${m._sid ? " · " + esc(m._sheet) : ""}</span></div>
       <div class="grid2" style="gap:16px;margin-top:8px">
         <div><div class="psub">${T.st_top}</div>${tbl(m.top)}</div>
         <div><div class="psub">${T.st_bottom}</div>${tbl(m.bottom)}</div>
@@ -1931,7 +1955,7 @@ function storyVisual(m) {
   }
   if (id === "low_stock")
     return `<div class="card"><div class="card-head"><span class="ct">${esc(storySentence(m))}</span>
-        <span class="cs">${esc(m.measure)}</span></div>
+        <span class="cs">${esc(m.measure)}${m._sid ? " · " + esc(m._sheet) : ""}</span></div>
       <table class="mtable" style="margin-top:8px">${m.rows.map(r =>
         `<tr><td>${esc(String(r.entity).slice(0, 34))}</td>
          <td class="num" style="color:var(--warning)">${num(r.value)}</td></tr>`).join("")}</table></div>`;
@@ -1976,51 +2000,57 @@ function pairCard(mAmt, mChg) {
 
 function renderStoryDash() {
   const story = REPORT.story, plan = REPORT.plan, brief = REPORT.brief || {};
-  const metricById = {}; story.metrics.forEach(m => { metricById[m.id] = m; });
+  const metricById = storyMetricMap();
   const approved = plan.approved.filter(id => metricById[id]);
   const done = new Set();
 
   // Step 5a: the headline absorbs its own deltas (MoM/YoY beside the number)
   let hero = "";
-  if (approved.includes("headline")) {
-    const h = metricById.headline;
-    const kds = ["mom", "yoy"].filter(id => approved.includes(id)).map(id => {
-      const m = metricById[id]; done.add(id);
+  const headKey = approved.find(k => metricById[k].id === "headline");
+  if (headKey) {
+    const h = metricById[headKey];
+    const kds = approved.filter(k => {
+      const m = metricById[k];
+      return (m.id === "mom" || m.id === "yoy") && m._sid === h._sid;
+    }).map(k => {
+      const m = metricById[k]; done.add(k);
       const p = m.pct;
       return `<div class="kd" style="color:${p == null ? "var(--ink-3)" : p >= 0 ? "var(--good)" : "var(--critical)"}">
         ${p == null ? "—" : (p >= 0 ? "+" : "") + pctFmt(p, 1)} <span>${esc(mlabel(m))}</span></div>`;
     }).join("");
-    done.add("headline");
+    done.add(headKey);
     hero = `<div class="hero"><div class="hero-tile"><div class="hl">${esc(storySentence(h))}</div>
       <div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap">
         <div class="hv">${compact(h.value)}</div>
         ${kds ? `<div class="kds">${kds}</div>` : ""}</div></div></div>`;
   }
 
-  // Step 5b: amount + change on the same grain merge into one pair card
-  const paired = {};                   // by_X id -> {html, partner avg_ id}
+  // Step 5b: amount + change on the same grain AND sheet merge into a pair
+  const paired = {};                   // by_ key -> {html, partner avg_ key}
   const claimed = new Set();
-  for (const id of approved) {
-    if (!id.startsWith("by_") || done.has(id)) continue;
-    const chgId = approved.find(o => o.startsWith("avg_") && !claimed.has(o)
-      && metricById[o].grain === metricById[id].grain);
-    if (chgId) {
-      paired[id] = { html: pairCard(metricById[id], metricById[chgId]),
-                     partner: chgId };
-      claimed.add(chgId);
+  for (const key of approved) {
+    const m = metricById[key];
+    if (!m.id.startsWith("by_") || done.has(key)) continue;
+    const chgKey = approved.find(o => {
+      const c = metricById[o];
+      return c.id.startsWith("avg_") && !claimed.has(o)
+        && c._sid === m._sid && c.grain === m.grain;
+    });
+    if (chgKey) {
+      paired[key] = { html: pairCard(m, metricById[chgKey]), partner: chgKey };
+      claimed.add(chgKey);
     }
   }
 
   // Step 5c: zones follow the brief's question order; first claim wins
   const zones = [];
-  const emit = id => {
-    if (done.has(id)) return "";
-    done.add(id);
-    if (paired[id]) { done.add(paired[id].partner); return paired[id].html; }
+  const emit = key => {
+    if (done.has(key) || !metricById[key]) return "";
+    done.add(key);
+    if (paired[key]) { done.add(paired[key].partner); return paired[key].html; }
     // an avg_ that was absorbed into a pair never renders alone
-    if (id.startsWith("avg_") && Object.values(paired).some(p => p.partner === id))
-      return "";
-    return storyVisual(metricById[id]);
+    if (Object.values(paired).some(p => p.partner === key)) return "";
+    return storyVisual(metricById[key]);
   };
   for (const q of plan.questions) {
     const vis = q.metrics.filter(id => approved.includes(id))
