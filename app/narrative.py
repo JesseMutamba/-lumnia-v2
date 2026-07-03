@@ -108,6 +108,36 @@ def build_facts(report: Dict[str, Any],
               if s.get("orientation") == "error"]
     if errors:
         lines.append(f"SHEETS THAT FAILED ANALYSIS: {', '.join(errors)}")
+
+    # the storytelling brief + computed story: the narrative should speak to
+    # the reader's actual questions when they exist
+    brief = report.get("brief")
+    if brief:
+        lines.append(f"READER: {brief.get('role') or 'unknown role'}, reviews "
+                     f"{brief.get('cadence') or 'regularly'}; goals: "
+                     + "; ".join(brief.get("goals") or []) )
+        lines.append("READER'S QUESTIONS: "
+                     + " | ".join(brief.get("questions") or []))
+    story = report.get("story")
+    if story:
+        for m in story.get("metrics", [])[:8]:
+            mid = m.get("id", "")
+            if mid == "headline":
+                lines.append(f"STORY total {m['measure']} = {_fmt(m['value'])} "
+                             f"over {m['n']} rows")
+            elif mid in ("mom", "yoy") and m.get("pct") is not None:
+                lines.append(f"STORY {mid} change: {m['pct']}% ({m.get('period')})")
+            elif mid == "movers" and m.get("top") and m.get("bottom"):
+                t0, b0 = m["top"][0], m["bottom"][0]
+                lines.append(f"STORY movers by {m['measure']}: best "
+                             f"{t0['entity']} {_fmt(t0['value'])}, worst "
+                             f"{b0['entity']} {_fmt(b0['value'])}")
+            elif mid.startswith("by_") and m.get("rows"):
+                tops = ", ".join(f"{r['member']}={_fmt(r['value'])}"
+                                 for r in m["rows"][:4])
+                lines.append(f"STORY {m['measure']} by {m['grain']}: {tops}")
+        for g in story.get("gaps", [])[:4]:
+            lines.append(f"STORY gap: {g['metric']} — {g['reason']}")
     return "\n".join(lines)
 
 
