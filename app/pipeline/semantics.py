@@ -22,6 +22,7 @@ Everything here is deterministic; no AI is involved at this layer.
 from __future__ import annotations
 
 import re
+import unicodedata
 import warnings
 from typing import Any, Dict, List, Optional
 
@@ -161,9 +162,9 @@ def _headline_measure(schema: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         if m["kind"] == "amount" and TARGET_NAME_PATTERNS.search(m["name"]) \
                 and not unitish.search(m["name"]):
             return m                  # ...but a unit price never headlines
-    for m in ms:
-        if m["kind"] == "amount" and TARGET_NAME_PATTERNS.search(m["name"]):
-            return m
+    for m in ms:                      # any plain amount beats a unit price:
+        if m["kind"] == "amount" and not unitish.search(m["name"]):
+            return m                  # summing unit costs means nothing
     for m in ms:
         if m["kind"] == "amount":
             return m
@@ -355,6 +356,46 @@ _INTENTS = [
 ]
 
 
+# Generic intents ("split by…", "how much…") may only claim metrics from a
+# story whose OWN vocabulary overlaps the question — a harvest question must
+# never be "answered" with salary charts just because both can be split.
+_GENERIC_INTENTS = {"breakdown", "amount"}
+_STOPWORDS = set("""
+les des une dans pour avec sont est nos vos votre notre nous vous elle ils
+par sur vers jour jours mois annee annees comment quel quelle quels quelles
+lequel laquelle plus moins tres bien peut evolue evoluent descend rupture
+the and for our are is how which what who does most least best worst much
+many per day days month months year years trending down toward out are
+""".split())
+
+
+def _norm_tokens(text: Any) -> set:
+    t = unicodedata.normalize("NFD", str(text or "").lower())
+    t = "".join(ch for ch in t if not unicodedata.combining(ch))
+    return {w for w in re.findall(r"[a-z0-9]{3,}", t) if w not in _STOPWORDS}
+
+
+def _story_vocab(st: Dict[str, Any]) -> set:
+    toks = _norm_tokens(st.get("sheet")) | _norm_tokens(st.get("headline_measure"))
+    for m in st.get("metrics", []):
+        toks |= _norm_tokens(m.get("measure")) | _norm_tokens(m.get("grain"))
+        for r in (m.get("rows") or [])[:15]:
+            toks |= _norm_tokens(r.get("member") or r.get("entity"))
+        for r in (m.get("top") or [])[:5]:
+            toks |= _norm_tokens(r.get("entity"))
+    return toks
+
+
+def _affinity(qtoks: set, vocab: set) -> int:
+    """Word overlap with a light prefix stem ('produits' ~ 'production')."""
+    n = 0
+    for q in qtoks:
+        if q in vocab or any(len(q) >= 5 and len(v) >= 5 and q[:5] == v[:5]
+                             for v in vocab):
+            n += 1
+    return n
+
+
 def plan_from_brief(brief: Dict[str, Any],
                     stories: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Match every brief question against ALL of the workbook's stories.
@@ -370,28 +411,34 @@ def plan_from_brief(brief: Dict[str, Any],
     if isinstance(stories, dict):                 # tolerate a single story
         stories = [stories]
 
+    vocabs = [_story_vocab(st) for st in stories]
     questions = []
     claimed: set = set()
     for q in brief.get("questions", []):
-        selectors = [(sel, gap_names) for _n, rx, sel, gap_names in _INTENTS
-                     if rx.search(q)]
-        best_si, best_ids = None, []
+        selectors = [(name, sel, gap_names)
+                     for name, rx, sel, gap_names in _INTENTS if rx.search(q)]
+        qtoks = _norm_tokens(q)
+        best_si, best_ids, best_aff = None, [], -1
         for si, st in enumerate(stories):
             present = {m["id"] for m in st.get("metrics", [])}
-            ids = sorted({mid for sel, _g in selectors
-                          for mid in present if sel(mid)})
-            if len(ids) > len(best_ids):
-                best_si, best_ids = si, ids
+            aff = _affinity(qtoks, vocabs[si])
+            ids = sorted({mid for name, sel, _g in selectors
+                          for mid in present if sel(mid)
+                          and (aff > 0 or name not in _GENERIC_INTENTS)})
+            if (len(ids), aff) > (len(best_ids), best_aff) and ids:
+                best_si, best_ids, best_aff = si, ids, aff
         hit_ids = [f"s{best_si}:{i}" for i in best_ids] if best_si is not None else []
         claimed.update(hit_ids)
 
-        # missing pieces are reported from the answering sheet (or the spine)
+        # missing pieces are reported from the answering sheet (or the spine),
+        # deduped by requirement — three time-gaps need one dates column, once
         gap_src = stories[best_si if best_si is not None else 0] if stories else {}
         gaps = {g["metric"]: g for g in gap_src.get("gaps", [])}
         seen: set = set()
-        missing = [gaps[g] for _sel, gap_names in selectors
+        missing = [gaps[g] for _n, _sel, gap_names in selectors
                    for g in gap_names if g in gaps
-                   and not (g in seen or seen.add(g))]
+                   and not (gaps[g]["requires"] in seen
+                            or seen.add(gaps[g]["requires"]))]
 
         if hit_ids and missing:
             status = "partial"

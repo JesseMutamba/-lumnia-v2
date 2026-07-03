@@ -215,3 +215,30 @@ def test_questions_can_land_on_different_sheets():
     q = r.json()["plan"]["questions"][0]
     assert q["status"] == "answerable"
     assert q["sheet"].strip() == "CARBURANT"
+
+
+def test_unrelated_questions_never_claim_generic_metrics():
+    """A harvest question asked of a salary/finance workbook must NOT be
+    'answered' with salary breakdowns — generic intents require the
+    answering sheet's vocabulary to overlap the question."""
+    df = pd.DataFrame({
+        "CAT": ["MO", "HQ", "MS"] * 4,
+        "EFFECTIF": [3, 1, 2] * 4,
+        "SALAIRES": [100 + i for i in range(12)],
+    })
+    buf = io.BytesIO()
+    df.to_excel(buf, sheet_name="SALAIRES 2026", index=False, engine="openpyxl")
+    an = _an(buf.getvalue(), "sal.xlsx")
+    r = client.post(f"/analyses/{an['id']}/brief", json={
+        "questions": [
+            "Comment évolue la récolte de régimes jour par jour et mois par mois ?",
+            "Quelle est la répartition des salaires par catégorie ?",   # related!
+        ], "lang": "fr"})
+    qs = r.json()["plan"]["questions"]
+    harvest, salary = qs[0], qs[1]
+    # harvest: nothing claimed, only honest time gaps — deduped to ONE line
+    assert harvest["metrics"] == []
+    assert harvest["status"] in ("unanswerable", "unmatched")
+    assert len(harvest["missing"]) <= 1
+    # salary question keeps its rightful breakdown ('salaires' overlaps)
+    assert any(m.endswith(":by_CAT") for m in salary["metrics"])
