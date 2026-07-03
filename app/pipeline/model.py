@@ -138,6 +138,7 @@ def build_model(report_sheets) -> Optional[Dict[str, Any]]:
         "metrics": metrics,
         "derived": derived,
         "breakdowns": breakdowns[:MAX_BREAKDOWNS],
-        # scenario/simulation math needs at least revenue + a cost line
-        "scenario_ready": bool(rev and opx),
+        # scenario/simulation math needs a revenue line; cost levers appear
+        # only when a cost series was actually found
+        "scenario_ready": bool(rev),
     }
