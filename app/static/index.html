@@ -141,6 +141,16 @@
     font-family: var(--mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
     padding: 2px 4px; }
   .iconbtn:hover { color: var(--gold); }
+  .iconbtn.on { color: #fff; background: var(--gold); border-radius: 6px;
+    padding: 2px 8px; }
+  .iconbtn.on:hover { color: #fff; background: var(--gold-strong); }
+  .narr { margin-top: 14px; }
+  .narr p { margin: 10px 0 0; font-size: 14px; line-height: 1.65; max-width: 80ch; }
+  .nwatch { margin: 10px 0 0; padding-left: 18px; font-size: 13.5px;
+    line-height: 1.6; color: var(--ink-2); }
+  .nfoot { margin-top: 12px; font-family: var(--mono); font-size: 10.5px;
+    letter-spacing: .05em; color: var(--ink-3); }
+  .nerr { color: var(--critical); font-size: 12.5px; margin-top: 8px; }
 
   section > .kicker { display: block; margin: 30px 0 12px; }
   .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; }
@@ -518,14 +528,14 @@ function renderAll() {
 
   if (exec) {
     $("#content").innerHTML =
-      `<section id="sec-overview">${renderVerdict()}${renderOverview()}${renderInsights()}</section>` +
+      `<section id="sec-overview">${renderVerdict()}${renderNarrative()}${renderOverview()}${renderInsights()}</section>` +
       renderFinancials() + renderScenario() + renderMC() +
       `<section id="sec-charts"><span class="kicker">Trends</span>${renderChartGrid()}</section>` +
       `<section id="sec-audit"><span class="kicker">What to do</span>${renderActionList()}</section>`;
   } else {
     $("#content").innerHTML =
       renderFilters() +
-      `<section id="sec-overview">${renderVerdict()}${renderOverview()}${renderInsights()}</section>` +
+      `<section id="sec-overview">${renderVerdict()}${renderNarrative()}${renderOverview()}${renderInsights()}</section>` +
       renderFinancials() + renderScenario() + renderMC() +
       `<section id="sec-charts"><span class="kicker">Charts</span>${renderChartGrid()}</section>` +
       `<section id="sec-audit"><span class="kicker">Audit</span>${renderHighlights()}${renderLeaderboards()}${renderFindingsTable()}</section>` +
@@ -533,7 +543,7 @@ function renderAll() {
   }
 
   attachFilters(); attachCharts(); attachFindingRows(); attachBarRows();
-  attachScenario(); attachMC();
+  attachScenario(); attachMC(); attachNarrative();
 }
 
 /* ---------- filters ---------- */
@@ -717,6 +727,48 @@ function renderVerdict() {
   </div>`;
 }
 
+/* ---------- Layer 3: the AI narrative (phrases verified numbers only) ---- */
+let NARR_READY = false;
+
+function renderNarrative() {
+  const n = REPORT.narrative;
+  if (n) {
+    const paras = n.narrative.split(/\n+/).filter(p => p.trim())
+      .map(p => `<p>${esc(p)}</p>`).join("");
+    return `<div class="card narr"><div class="card-head">
+        <span class="ct">✦ ${esc(n.headline)}</span>
+        <span class="grow"></span><button class="iconbtn" id="gen-narr">↻ rewrite</button></div>
+      ${paras}
+      ${(n.watchouts || []).length ? `<ul class="nwatch">${n.watchouts.map(w => `<li>${esc(w)}</li>`).join("")}</ul>` : ""}
+      <div class="nfoot">AI-written from the pipeline's verified figures — it phrases, never computes.</div></div>`;
+  }
+  if (!NARR_READY || !REPORT.id) return "";
+  return `<div class="card narr">
+    <div class="card-head"><span class="ct">Executive narrative</span>
+      <span class="grow"></span><button class="iconbtn on" id="gen-narr">✦ write it</button></div>
+    <p class="muted" style="margin:8px 0 0">One click and Claude writes the story of this workbook —
+      from the verified numbers only.</p>
+    <div class="nerr" id="narr-err"></div></div>`;
+}
+
+function attachNarrative() {
+  const b = $("#gen-narr");
+  if (!b) return;
+  b.addEventListener("click", async () => {
+    b.disabled = true; b.textContent = "writing…";
+    const resp = await fetch(`/analyses/${current}/narrative`, { method: "POST" });
+    if (resp.ok) {
+      REPORT.narrative = await resp.json();
+      renderAll();
+    } else {
+      const detail = (await resp.json().catch(() => ({}))).detail || "The narrative call failed.";
+      b.disabled = false; b.textContent = "✦ write it";
+      const e = $("#narr-err");
+      if (e) e.textContent = detail;
+    }
+  });
+}
+
 function plainFormula(f) {
   if (f.kind === "product")
     return `'${esc(f.target)}' should equal '${esc(f.inputs[0])}' × '${esc(f.inputs[1])}'`;
@@ -786,6 +838,8 @@ function printReport() {
     </div>
     <div class="pverdict" style="color:${v.color}">${v.icon} ${v.label}</div>
     <p style="max-width:80ch">${execSummary()}</p>
+    ${REPORT.narrative ? `<h2>${esc(REPORT.narrative.headline)}</h2>
+      <p style="max-width:80ch">${REPORT.narrative.narrative.split(/\n+/).filter(p => p.trim()).map(esc).join("<br><br>")}</p>` : ""}
     <h2>Key figures</h2>
     <div class="pkpis">
       <div class="pkpi"><div class="l">Total discrepancy</div><div class="v">${compact(AUDIT.total_abs_delta)}</div></div>
@@ -812,7 +866,8 @@ function printReport() {
 
 /* ---------- financials: generated from the semantic business model ------- */
 const ROLE_LABELS = { revenue: "Revenue", opex: "OPEX", capex: "CAPEX",
-  volume: "Volume", area: "Area" };
+  volume: "Volume", volume_secondary: "Volume (out)", area: "Area",
+  headcount: "Headcount", price: "Price" };
 
 function renderFinancials() {
   const m = REPORT.model;
@@ -851,6 +906,16 @@ function renderFinancials() {
     if (li >= 0) tiles.push(`<div class="tile"><div class="label">Margin · ${esc(m.periods[li])}</div>
       <div class="value">${mp[li].toFixed(0)}%</div></div>`);
   }
+  const upv = m.derived.opex_per_volume;
+  if (upv) {
+    const li = lastIdx(upv), fi = upv.findIndex(x => x != null);
+    if (li >= 0) {
+      const chg = fi >= 0 && li > fi && upv[fi] ? ((upv[li] / upv[fi] - 1) * 100) : null;
+      tiles.push(`<div class="tile"><div class="label">Cost per unit · ${esc(m.periods[li])}</div>
+        <div class="value">${compact(upv[li])}</div>
+        ${chg != null ? `<div class="label" style="margin-top:4px;color:${chg <= 0 ? "var(--good)" : "var(--critical)"}">${chg <= 0 ? "▼" : "▲"} ${Math.abs(chg).toFixed(0)}% since ${esc(m.periods[fi])}</div>` : ""}</div>`);
+    }
+  }
 
   // trajectory chart: the role series as a pseudo-timeseries (reuses hover/legend)
   const lines = Object.entries(met).map(([role, s], k) => ({
@@ -871,6 +936,32 @@ function renderFinancials() {
     marginCard = chartCard(bars, false);
   }
 
+  // unit economics: the efficiency curve — cost & revenue per unit of volume
+  let unitCard = "", convCard = "";
+  const d = m.derived;
+  if (met.volume && (d.opex_per_volume || d.revenue_per_volume)) {
+    const ulines = [];
+    if (d.revenue_per_volume) ulines.push({ label: "Revenue per unit",
+      values: d.revenue_per_volume, color: SERIES_COLORS[0], on: true });
+    if (d.opex_per_volume) ulines.push({ label: "Cost per unit (OPEX)",
+      values: d.opex_per_volume, color: SERIES_COLORS[2], on: true });
+    const uc = { pseudo: true, sheet: "Unit economics — efficiency curve",
+      loc: `per ${met.volume.label.slice(0, 24)}`,
+      chart: { kind: "timeseries", periods: m.periods, series: [], other: null,
+               truncated: false }, lines: ulines, i: CHARTS.length, range: null };
+    CHARTS.push(uc);
+    unitCard = chartCard(uc, false);
+  }
+  if (d.volume_ratio && met.volume_secondary) {
+    const conv = { pseudo: true,
+      sheet: `Conversion rate — ${met.volume_secondary.label.slice(0, 20)} / ${met.volume.label.slice(0, 20)}`,
+      loc: null, chart: { kind: "profile", x: m.periods,
+        y: d.volume_ratio.map(v => v != null ? +(v * 100).toFixed(2) : 0) },
+      i: CHARTS.length, range: null };
+    CHARTS.push(conv);
+    convCard = chartCard(conv, false);
+  }
+
   // breakdown panels: top line items per sheet (tracks, like the audit bars)
   const bds = (m.breakdowns || []).slice(0, 4).map(b => {
     const mx = Math.max(1, ...b.items.map(i => Math.abs(i.value)));
@@ -887,6 +978,7 @@ function renderFinancials() {
   return `<section id="sec-financials"><span class="kicker">Financials — detected from this workbook</span>
     ${tiles.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px">${tiles.join("")}</div>` : ""}
     <div class="grid2">${chartCard(traj, false)}${marginCard}</div>
+    ${unitCard || convCard ? `<div class="grid2" style="margin-top:14px">${unitCard}${convCard}</div>` : ""}
     ${bds ? `<div class="grid2" style="margin-top:14px">${bds}</div>` : ""}
   </section>`;
 }
@@ -1205,9 +1297,11 @@ function chartCard(c, isPrimary) {
           <span class="sw" style="background:${s.color}"></span>${esc(s.label)}</span>`).join("")}</div>` : "";
   const hint = c.chart.kind === "timeseries"
     ? `<div class="hint">drag to zoom · double-click to reset</div>` : "";
+  const cumBtn = c.chart.kind === "profile" && !c.pseudo
+    ? `<button class="iconbtn ${c.cum ? "on" : ""}" data-cum="${c.i}">Σ cumulative</button>` : "";
   return `<div class="card chart-card" data-chart="${c.i}" data-sheet="${esc(c.sheet)}">
     <div class="card-head"><span class="ct">${esc(c.sheet)}</span><span class="cs">${esc(sub)}</span>
-      <span class="grow"></span><button class="iconbtn" data-csv="${c.i}">⤓ csv</button></div>
+      <span class="grow"></span>${cumBtn}<button class="iconbtn" data-csv="${c.i}">⤓ csv</button></div>
     <div class="plot">${c.chart.kind === "timeseries" ? svgTimeseries(c) : svgProfile(c)}</div>
     ${legend}${hint}<div class="tooltip"></div></div>`;
 }
@@ -1272,16 +1366,23 @@ function svgTimeseries(c) {
   return `<svg viewBox="0 0 ${W} ${H}" data-kind="timeseries">${out}</svg>`;
 }
 
-/* Figma-style capsule bars on light tracks, in brand gold */
+/* Figma-style capsule bars on light tracks, in brand gold.
+   c.cum adds the running-total line (shared axis, honestly extended) plus a
+   dashed per-column average as the reference line. */
+function cumOf(y) { let t = 0; return y.map(v => +(t += v).toFixed(4)); }
+
 function svgProfile(c) {
-  const sy = yScale(c.chart.y);
+  const ys = c.chart.y;
+  const cum = c.cum ? cumOf(ys) : null;
+  const domain = cum ? ys.concat(cum) : ys;
+  const sy = yScale(domain);
   const y0 = sy(0), yTop = MT, yBot = H - MB;
   const n = c.chart.x.length;
   const band = (W - ML - MR) / n;
   const bw = Math.min(20, Math.max(7, band * .38));
-  let out = gridAndTicks(c.chart.y);
+  let out = gridAndTicks(domain);
   const step = Math.max(1, Math.ceil(n / 8));
-  c.chart.y.forEach((v, i) => {
+  ys.forEach((v, i) => {
     const x = ML + band * i + (band - bw) / 2;
     out += `<rect x="${x}" y="${yTop}" width="${bw}" height="${yBot - yTop}" rx="${bw/2}" fill="#eee3c4"/>`;
     const yv = sy(v);
@@ -1291,6 +1392,18 @@ function svgProfile(c) {
     if (i % step === 0) out += `<text x="${x + bw/2}" y="${H - 8}" text-anchor="middle" font-size="10"
       fill="#99917e" font-family="ui-monospace,Menlo,monospace">${esc(String(c.chart.x[i]).slice(0, 12))}</text>`;
   });
+  if (cum) {
+    const mean = ys.reduce((a, b) => a + b, 0) / n, my = sy(mean);
+    out += `<line x1="${ML}" x2="${W - MR}" y1="${my}" y2="${my}" stroke="#99917e" stroke-dasharray="4 3"/>
+      <text x="${ML + 4}" y="${my - 5}" font-size="10" fill="#99917e"
+        font-family="ui-monospace,Menlo,monospace">avg ${compact(mean)}</text>`;
+    let dp = "";
+    cum.forEach((v, i) => { dp += `${i ? "L" : "M"}${(ML + band * i + band / 2).toFixed(1)},${sy(v).toFixed(1)}`; });
+    out += `<path d="${dp}" fill="none" stroke="#2a78d6" stroke-width="2"
+        stroke-linejoin="round" stroke-linecap="round"/>
+      <text x="${W - MR - 4}" y="${sy(cum[n - 1]) - 7}" text-anchor="end" font-size="10.5"
+        fill="#2a78d6">Σ ${compact(cum[n - 1])}</text>`;
+  }
   return `<svg viewBox="0 0 ${W} ${H}" data-kind="profile">${out}</svg>`;
 }
 
@@ -1306,6 +1419,16 @@ function attachCharts() {
   }));
   $$(".iconbtn[data-csv]").forEach(b => b.addEventListener("click",
     () => downloadChartCSV(CHARTS[+b.dataset.csv])));
+  $$(".iconbtn[data-cum]").forEach(b => b.addEventListener("click", () => {
+    const c = CHARTS[+b.dataset.cum];
+    c.cum = !c.cum;
+    $$(`.chart-card[data-chart="${c.i}"]`).forEach(card => {
+      card.querySelector(".plot").innerHTML = svgProfile(c);
+      const btn = card.querySelector(`[data-cum="${c.i}"]`);
+      if (btn) btn.classList.toggle("on", c.cum);
+    });
+    bindHoverAll(c);
+  }));
   CHARTS.forEach(bindHoverAll);
 }
 
@@ -1329,8 +1452,9 @@ function bindHover(c, card) {
     svg.querySelectorAll(".bar").forEach(bar => {
       bar.addEventListener("mousemove", e => {
         const i = +bar.dataset.i;
+        const cumRow = c.cum ? `<div class="tv"><span>cumulative</span><b>${num(cumOf(c.chart.y)[i])}</b></div>` : "";
         show(`<div class="tp">${esc(String(c.chart.x[i]))}</div>
-              <div class="tv"><span>sum</span><b>${num(c.chart.y[i])}</b></div>`, e);
+              <div class="tv"><span>sum</span><b>${num(c.chart.y[i])}</b></div>${cumRow}`, e);
       });
       bar.addEventListener("mouseleave", hide);
     });
@@ -1608,6 +1732,9 @@ function downloadFindings() {
 /* ---------- boot ---------- */
 (async function boot() {
   renderEmpty();
+  fetch("/health").then(r => r.json())
+    .then(h => { NARR_READY = !!h.narrative_ready; })
+    .catch(() => {});
   await loadWorkbooks();
   const first = $("#wb-list .wb");
   if (first) select(first.dataset.id);

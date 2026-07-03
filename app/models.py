@@ -50,6 +50,9 @@ class AnalyzeResponse(BaseModel):
     insights: Optional[List[Dict[str, Any]]] = None
     # Step 7 — the semantic business model (role-tagged series + breakdowns)
     model: Optional[Dict[str, Any]] = None
+    # Layer 3 — AI-written narrative (generated on demand, cached with the
+    # report; every figure in it comes from the deterministic pipeline)
+    narrative: Optional[Dict[str, Any]] = None
 
 
 class AnalysisMeta(BaseModel):
@@ -85,3 +88,5 @@ class DeleteResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     service: str
+    # whether the AI narrative layer is configured (ANTHROPIC_API_KEY set)
+    narrative_ready: bool = False

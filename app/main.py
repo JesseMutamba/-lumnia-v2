@@ -21,7 +21,7 @@ from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
-from . import auth, storage
+from . import auth, narrative, storage
 from .findings import aggregate_findings
 from .models import (
     AnalysisMeta,
@@ -164,7 +164,8 @@ def index() -> FileResponse:
 
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
-    return HealthResponse(status="ok", service="lumnia-v2")
+    return HealthResponse(status="ok", service="lumnia-v2",
+                          narrative_ready=narrative.available())
 
 
 @app.post("/analyze", response_model=AnalyzeResponse)
@@ -216,6 +217,33 @@ def get_findings(analysis_id: str) -> FindingsResponse:
                             detail=f"No analysis '{analysis_id}'.")
     agg = aggregate_findings(report)
     return FindingsResponse(id=analysis_id, filename=report["filename"], **agg)
+
+
+@app.post("/analyses/{analysis_id}/narrative")
+def make_narrative(analysis_id: str) -> dict:
+    """Layer 3: generate (and cache) the AI-written executive narrative.
+
+    The pipeline computes every figure; Claude only phrases them. Without an
+    ANTHROPIC_API_KEY the feature is honestly unavailable — 503, no fallback
+    prose pretending to be AI.
+    """
+    if not narrative.available():
+        raise HTTPException(
+            status_code=503,
+            detail="AI narrative is not configured on this server "
+                   "(set the ANTHROPIC_API_KEY secret).")
+    report = storage.get_report(analysis_id)
+    if report is None:
+        raise HTTPException(status_code=404,
+                            detail=f"No analysis '{analysis_id}'.")
+    audit = aggregate_findings(report)
+    try:
+        result = narrative.generate_narrative(report, audit)
+    except narrative.NarrativeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    report["narrative"] = result
+    storage.update_report(analysis_id, report)
+    return result
 
 
 @app.post("/analyses/{analysis_id}/rerun", response_model=AnalyzeResponse)
