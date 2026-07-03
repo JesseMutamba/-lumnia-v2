@@ -61,7 +61,7 @@ def test_list_analyses_newest_first_metadata_only():
     assert {i["id"] for i in items} >= {a["id"], b["id"]}
     meta = items[0]
     assert set(meta) == {"id", "filename", "uploaded_at", "reran_at",
-                         "size_bytes", "n_sheets"}
+                         "size_bytes", "n_sheets", "client"}
     assert meta["n_sheets"] == 2
     assert meta["size_bytes"] > 0
 

@@ -60,10 +60,14 @@ def _connect() -> sqlite3.Connection:
     con.row_factory = sqlite3.Row
     con.execute(_SCHEMA)
     con.execute(_SCHEMA_SHARES)
-    try:                              # migrate DBs created before the column
-        con.execute("ALTER TABLE analyses ADD COLUMN sha256 TEXT")
-    except sqlite3.OperationalError:
-        pass
+    for migration in (                # migrate DBs created before the column
+        "ALTER TABLE analyses ADD COLUMN sha256 TEXT",
+        "ALTER TABLE analyses ADD COLUMN client TEXT",
+    ):
+        try:
+            con.execute(migration)
+        except sqlite3.OperationalError:
+            pass
     return con
 
 
@@ -99,7 +103,7 @@ def list_analyses() -> List[Dict[str, Any]]:
     """Newest-first metadata for every stored analysis (no blobs)."""
     with _connect() as con:
         rows = con.execute(
-            "SELECT id, filename, uploaded_at, reran_at, size_bytes, report "
+            "SELECT id, filename, uploaded_at, reran_at, size_bytes, client, report "
             "FROM analyses ORDER BY uploaded_at DESC, id"
         ).fetchall()
     out = []
@@ -111,9 +115,19 @@ def list_analyses() -> List[Dict[str, Any]]:
             "uploaded_at": r["uploaded_at"],
             "reran_at": r["reran_at"],
             "size_bytes": r["size_bytes"],
+            "client": r["client"],
             "n_sheets": report.get("n_sheets", 0),
         })
     return out
+
+
+def set_client(analysis_id: str, client: Optional[str]) -> bool:
+    """Assign an analysis to a client workspace (None/empty clears it)."""
+    client = (client or "").strip() or None
+    with _connect() as con:
+        cur = con.execute("UPDATE analyses SET client = ? WHERE id = ?",
+                          (client, analysis_id))
+    return cur.rowcount > 0
 
 
 def get_report(analysis_id: str) -> Optional[Dict[str, Any]]:

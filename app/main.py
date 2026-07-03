@@ -222,6 +222,18 @@ def get_findings(analysis_id: str) -> FindingsResponse:
     return FindingsResponse(id=analysis_id, filename=report["filename"], **agg)
 
 
+@app.post("/analyses/{analysis_id}/client")
+async def assign_client(analysis_id: str, request: Request) -> dict:
+    """Assign the analysis to a client workspace ({"client": "PVAK"};
+    empty string clears the assignment)."""
+    body = await request.json()
+    client = (body.get("client") or "").strip()[:60]
+    if not storage.set_client(analysis_id, client):
+        raise HTTPException(status_code=404,
+                            detail=f"No analysis '{analysis_id}'.")
+    return {"id": analysis_id, "client": client or None}
+
+
 @app.post("/analyses/{analysis_id}/share")
 def create_share(analysis_id: str) -> dict:
     """Mint (or return) the read-only share link for an analysis."""
@@ -268,7 +280,7 @@ def share_findings(token: str) -> FindingsResponse:
 
 
 @app.post("/analyses/{analysis_id}/narrative")
-def make_narrative(analysis_id: str) -> dict:
+def make_narrative(analysis_id: str, lang: str = "en") -> dict:
     """Layer 3: generate (and cache) the AI-written executive narrative.
 
     The pipeline computes every figure; Claude only phrases them. Without an
@@ -286,7 +298,8 @@ def make_narrative(analysis_id: str) -> dict:
                             detail=f"No analysis '{analysis_id}'.")
     audit = aggregate_findings(report)
     try:
-        result = narrative.generate_narrative(report, audit)
+        result = narrative.generate_narrative(
+            report, audit, lang="fr" if lang == "fr" else "en")
     except narrative.NarrativeError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
     report["narrative"] = result

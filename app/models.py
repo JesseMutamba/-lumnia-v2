@@ -63,6 +63,8 @@ class AnalysisMeta(BaseModel):
     reran_at: Optional[str] = None
     size_bytes: int
     n_sheets: int
+    # client workspace this analysis belongs to (None = unassigned)
+    client: Optional[str] = None
 
 
 class FindingsResponse(BaseModel):

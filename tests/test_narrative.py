@@ -56,7 +56,7 @@ def test_narrative_unavailable_without_key(monkeypatch):
 
 def test_narrative_generated_and_cached(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    monkeypatch.setattr(narrative, "_call_claude", lambda facts: json.dumps({
+    monkeypatch.setattr(narrative, "_call_claude", lambda facts, lang="en": json.dumps({
         "headline": "Revenue tripled from 100 to 300.",
         "narrative": "Two paragraphs of honest prose.",
         "watchouts": ["OPEX doubled.", "x", "y", "z-too-many"],
@@ -78,7 +78,7 @@ def test_narrative_generated_and_cached(monkeypatch):
 def test_narrative_bad_model_output_is_502(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     monkeypatch.setattr(narrative, "_call_claude",
-                        lambda facts: "sorry, no json here")
+                        lambda facts, lang="en": "sorry, no json here")
     resp = client.post(f"/analyses/{_analyzed_id()}/narrative")
     assert resp.status_code == 502
     assert "not valid JSON" in resp.json()["detail"]
