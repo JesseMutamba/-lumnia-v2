@@ -53,7 +53,10 @@ async def require_password(request: Request, call_next):
     a valid session cookie is required; browsers hitting the app get the login
     page, API calls get 401.
     """
-    if auth.password() is None or request.url.path in auth.PUBLIC_PATHS:
+    if auth.password() is None or request.url.path in auth.PUBLIC_PATHS \
+            or request.url.path.startswith("/share/"):
+        # /share/{token} is deliberately public: the unguessable token IS the
+        # credential, and the routes behind it are read-only.
         return await call_next(request)
     if auth.valid_token(request.cookies.get(auth.COOKIE)):
         return await call_next(request)
@@ -217,6 +220,51 @@ def get_findings(analysis_id: str) -> FindingsResponse:
                             detail=f"No analysis '{analysis_id}'.")
     agg = aggregate_findings(report)
     return FindingsResponse(id=analysis_id, filename=report["filename"], **agg)
+
+
+@app.post("/analyses/{analysis_id}/share")
+def create_share(analysis_id: str) -> dict:
+    """Mint (or return) the read-only share link for an analysis."""
+    token = storage.create_share(analysis_id)
+    if token is None:
+        raise HTTPException(status_code=404,
+                            detail=f"No analysis '{analysis_id}'.")
+    return {"token": token, "url": f"/share/{token}"}
+
+
+@app.delete("/analyses/{analysis_id}/share")
+def revoke_share(analysis_id: str) -> dict:
+    """Revoke the share link; the URL stops working immediately."""
+    return {"revoked": storage.revoke_share(analysis_id)}
+
+
+def _shared_report(token: str) -> dict:
+    analysis_id = storage.resolve_share(token)
+    report = storage.get_report(analysis_id) if analysis_id else None
+    if report is None:
+        raise HTTPException(status_code=404, detail="This link is no longer active.")
+    return report
+
+
+@app.get("/share/{token}", include_in_schema=False)
+def share_page(token: str) -> FileResponse:
+    """The read-only client view (same SPA; it detects /share/ and hides
+    upload, library, rerun and delete). 404 for dead tokens."""
+    _shared_report(token)
+    return FileResponse(_INDEX, media_type="text/html",
+                        headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/share/{token}/report", response_model=AnalyzeResponse)
+def share_report(token: str) -> AnalyzeResponse:
+    return AnalyzeResponse(**_shared_report(token))
+
+
+@app.get("/share/{token}/findings", response_model=FindingsResponse)
+def share_findings(token: str) -> FindingsResponse:
+    report = _shared_report(token)
+    agg = aggregate_findings(report)
+    return FindingsResponse(id="shared", filename=report["filename"], **agg)
 
 
 @app.post("/analyses/{analysis_id}/narrative")
