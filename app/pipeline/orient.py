@@ -23,6 +23,7 @@ from .celltypes import cell_kind, grid_kinds, is_blank, BLANK, DATE, NUMBER, TEX
 from .charts import profile_chart, timeseries_chart
 from .checks import detect_total_rows, run_checks
 from .eda import run_eda_df
+from .semantics import build_semantics
 from .coerce import coerce_value
 from .jsonsafe import jsonify
 from .metrics import ColumnAcc, table_summary
@@ -511,13 +512,22 @@ def _extract_tidy_table(df, kinds, meta, max_rows) -> dict:
         summary["chart"] = chart
 
     # Step 6: EDA over the FULL columns (col_values), never the record preview.
-    eda = run_eda_df(
-        pd.DataFrame({name: vals for name, vals in zip(names, col_values)})
-    ) if total else None
+    df_full = pd.DataFrame({name: vals for name, vals in zip(names, col_values)}) \
+        if total else None
+    eda = run_eda_df(df_full) if total else None
+
+    # Step 8: semantic schema + metric engine for the storytelling layer.
+    # Totals rows are derived, not data — summing them would double-count.
+    semantics = None
+    if df_full is not None:
+        data_rows = df_full.drop(index=[t["i"] for t in totals], errors="ignore")
+        semantics = build_semantics(data_rows.reset_index(drop=True))
 
     # Step 7 raw material: top line items by the detected target column
     # (label x value), data rows only — feeds the business-model breakdowns.
-    if eda and eda.get("target_column") and label_idx is not None:
+    # EDA's numeric test (>=5% parseable) is looser than the streaming dtype;
+    # its target can be a mostly-text column we did not keep — guard for it.
+    if eda and eda.get("target_column") in numeric_cols and label_idx is not None:
         tcol = names.index(eda["target_column"])
         skip = {t["i"] for t in totals}
         items = [
@@ -543,6 +553,7 @@ def _extract_tidy_table(df, kinds, meta, max_rows) -> dict:
             "summary": summary,
             "checks": checks,
             "eda": eda,
+            "semantics": semantics,
             # 1-based sheet rows detected as summary/totals rows
             "total_rows": [row_numbers[t["i"]] for t in totals] or None}
 

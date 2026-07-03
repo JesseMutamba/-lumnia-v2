@@ -17,6 +17,8 @@ class TidyTable(BaseModel):
     checks: Optional[List[Dict[str, Any]]] = None
     # Step 6 — bounded EDA facts computed on the full extracted columns
     eda: Optional[Dict[str, Any]] = None
+    # Step 8 — semantic schema + computed story metrics (storytelling engine)
+    semantics: Optional[Dict[str, Any]] = None
     # 1-based sheet rows detected as summary/totals rows (derived, not data)
     total_rows: Optional[List[int]] = None
 
@@ -53,6 +55,9 @@ class AnalyzeResponse(BaseModel):
     # Layer 3 — AI-written narrative (generated on demand, cached with the
     # report; every figure in it comes from the deterministic pipeline)
     narrative: Optional[Dict[str, Any]] = None
+    # Step 8 — the workbook's best storytelling table: schema + computed
+    # metrics + honest gaps (what the brief's staples would need)
+    story: Optional[Dict[str, Any]] = None
 
 
 class AnalysisMeta(BaseModel):
