@@ -207,6 +207,77 @@
   .seeall { font-size: 12.5px; font-weight: 600; color: var(--gold-strong); cursor: pointer; }
   .langs { margin-right: 4px; }
   .glead { font-size: 14px; line-height: 1.65; max-width: 90ch; margin: 0 0 14px; }
+
+  /* ============ motion system ============
+     Discipline: 150-450ms, ease-out, no bounce. Everything below is gated
+     by prefers-reduced-motion; the app is fully usable with zero motion. */
+  .btn, .iconbtn, .tabbtn, .chip, .mchip, .nav-item, .wb, .opt, .preset,
+  .modes button, .lg, .runbtn, .seeall {
+    transition: background-color .15s ease, color .15s ease,
+      border-color .15s ease, box-shadow .2s ease, transform .15s ease; }
+  .btn:hover, .runbtn:hover { transform: translateY(-1px); }
+  .btn:active, .runbtn:active, .tabbtn:active, .chip:active { transform: translateY(0); }
+  :is(.btn, .iconbtn, .tabbtn, .chip, .runbtn, .modes button):focus-visible {
+    outline: 2px solid var(--gold-strong); outline-offset: 2px; border-radius: 8px; }
+
+  /* sticky tab bar: the wayfinding stays put while the page scrolls */
+  .tabs { position: sticky; top: 0; z-index: 40;
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+
+  /* popovers ease in instead of popping */
+  @keyframes popin { from { opacity: 0; transform: translateY(-4px); } }
+  .pill.open .pop { animation: popin .16s ease; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    /* view-transition crossfade between tabs/modes */
+    ::view-transition-old(root), ::view-transition-new(root) {
+      animation-duration: .22s; }
+
+    /* content enters with a quiet rise; sliders' live re-renders excluded */
+    @keyframes rise { from { opacity: 0; transform: translateY(9px); } }
+    #content section:not(#sec-scenario):not(#sec-mc)
+      :is(.card, .hero-tile, .tile, .scard, .action-card, .greet) {
+      animation: rise .38s cubic-bezier(.2, .7, .3, 1) backwards; }
+    :is(.grid2, .hero, .kpis, .overview, .home-grid) >
+      :is(.card, .hero-tile, .tile):nth-child(2) { animation-delay: .05s; }
+    :is(.grid2, .hero, .kpis, .overview, .home-grid) >
+      :is(.card, .hero-tile, .tile):nth-child(3) { animation-delay: .1s; }
+    :is(.grid2, .hero, .kpis, .overview, .home-grid) >
+      :is(.card, .hero-tile, .tile):nth-child(n+4) { animation-delay: .14s; }
+
+    /* charts draw themselves: lines trace, bars grow from the baseline */
+    @keyframes drawln { to { stroke-dashoffset: 0; } }
+    .plot path.ln { stroke-dasharray: 1; stroke-dashoffset: 1;
+      animation: drawln .8s cubic-bezier(.4, 0, .2, 1) .15s forwards; }
+    #sec-scenario .plot path.ln, #sec-mc .plot path.ln {
+      animation: none; stroke-dasharray: none; stroke-dashoffset: 0; }
+    @keyframes grow { from { transform: scaleY(0); } }
+    .plot rect.bar { transform-box: fill-box; transform-origin: 50% 100%;
+      animation: grow .45s cubic-bezier(.2, .7, .3, 1) backwards; }
+    .plot rect.bar:nth-of-type(odd) { animation-delay: .05s; }
+    #sec-mc .plot rect.bar, #sec-scenario .plot rect.bar { animation: none; }
+
+    /* cards lift a breath on hover; charts and interactive rows only */
+    .chart-card, .scard, .wb, .trow.clicky, .bar-row.clicky {
+      transition: transform .18s ease, box-shadow .18s ease; }
+    .chart-card:hover, .scard:hover { transform: translateY(-2px);
+      box-shadow: 0 2px 4px rgba(70,58,25,.06), 0 12px 32px rgba(70,58,25,.1); }
+    /* pair-card bars settle into place */
+    .prow .pbar span { transition: width .45s cubic-bezier(.2, .7, .3, 1); }
+  }
+
+  /* analyzing skeleton: shimmer while the pipeline runs */
+  .skel { display: grid; gap: 14px; }
+  .skel .sk { border-radius: 14px; background:
+    linear-gradient(100deg, var(--card) 40%, #f2eddf 50%, var(--card) 60%);
+    background-size: 200% 100%; animation: shimmer 1.2s linear infinite; }
+  @keyframes shimmer { to { background-position: -200% 0; } }
+  .skel .sk-kicker { height: 14px; width: 220px; }
+  .skel .sk-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .skel .sk-tile { height: 108px; }
+  .skel .sk-card { height: 300px; }
+  @media (prefers-reduced-motion: reduce) { .skel .sk { animation: none; } }
   .wb-group { font-family: var(--mono); font-size: 10px; letter-spacing: .14em;
     text-transform: uppercase; color: var(--gold-strong); margin: 12px 10px 4px; }
   /* storytelling: brief wizard + plan approval + built dashboard */
@@ -899,8 +970,20 @@ if (!SHARE) {
   document.body.classList.add("share");
 }
 
+function showSkeleton() {
+  $("#content").innerHTML = `<div class="skel">
+    <div class="sk sk-kicker"></div>
+    <div class="sk-row"><div class="sk sk-tile"></div><div class="sk sk-tile"></div>
+      <div class="sk sk-tile"></div><div class="sk sk-tile"></div></div>
+    <div class="sk sk-card"></div>
+    <div class="sk-row" style="grid-template-columns:1fr 1fr">
+      <div class="sk sk-card"></div><div class="sk sk-card"></div></div>
+  </div>`;
+}
+
 async function upload(file) {
   setStatus(T.analyzing(file.name));
+  showSkeleton();
   const fd = new FormData(); fd.append("file", file);
   try {
     const r = await fetch("/analyze", { method: "POST", body: fd });
@@ -909,7 +992,10 @@ async function upload(file) {
     setStatus("");
     await loadWorkbooks();
     select(body.id);
-  } catch (err) { setStatus(T.analysis_failed(err.message), true); }
+  } catch (err) {
+    setStatus(T.analysis_failed(err.message), true);
+    if (REPORT) renderAll(); else renderEmpty();   // never strand the skeleton
+  }
   fileInput.value = "";
 }
 function setStatus(msg, isErr) { statusEl.textContent = msg; statusEl.className = isErr ? "err" : ""; }
@@ -954,6 +1040,7 @@ async function loadWorkbooks() {
     } else if (act === "rerun") { e.stopPropagation();
       const prev = (current === id && AUDIT) ? AUDIT.total_abs_delta : null;
       setStatus(T.reanalyzing);
+      if (current === id) showSkeleton();
       await fetch(`/analyses/${id}/rerun`, { method: "POST" });
       await select(id);
       if (prev != null) {
@@ -996,7 +1083,16 @@ function tabCounts() {
            data: CHARTS.filter(c => !c.pseudo).length || null };
 }
 
-function setTab(id) { TAB = id; renderAll(); window.scrollTo(0, 0); }
+/* Smooth state changes: crossfade via the View Transitions API where the
+   browser supports it (and the user hasn't asked for reduced motion). */
+function rerender(fn) {
+  if (document.startViewTransition
+      && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    document.startViewTransition(fn);
+  } else fn();
+}
+
+function setTab(id) { TAB = id; rerender(renderAll); window.scrollTo(0, 0); }
 
 function renderNav() {
   const counts = tabCounts();
@@ -1088,7 +1184,8 @@ function renderAll() {
   </div>`;
   attachLang();
   $$(".modes:not(.langs) button").forEach(b => b.addEventListener("click", () => {
-    MODE = b.dataset.mode; localStorage.setItem("lumnia_mode", MODE); renderAll();
+    MODE = b.dataset.mode; localStorage.setItem("lumnia_mode", MODE);
+    rerender(renderAll);
   }));
   $("#print-report").addEventListener("click", printReport);
   const dlc = $("#dl-corrections");
@@ -2000,7 +2097,7 @@ function attachStory() {
       $("#bf-err").textContent = (await r.json().catch(() => ({}))).detail || "!"; return; }
     const body = await r.json();
     REPORT.brief = body.brief; REPORT.plan = body.plan;
-    renderAll();
+    rerender(renderAll);
   });
   const approve = $("#plan-approve");
   if (approve) approve.addEventListener("click", async () => {
@@ -2009,17 +2106,17 @@ function attachStory() {
     const r = await fetch(`/analyses/${current}/plan`, { method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ approved: ids }) });
-    if (r.ok) { REPORT.plan.approved = (await r.json()).approved; renderAll(); }
+    if (r.ok) { REPORT.plan.approved = (await r.json()).approved; rerender(renderAll); }
     else approve.disabled = false;
   });
   const edit = $("#bf-edit");
   if (edit) edit.addEventListener("click", () => {
     CADENCE = (REPORT.brief && REPORT.brief.cadence) || "monthly";
-    REPORT.plan = null; renderAll();       // wizard prefills from REPORT.brief
+    REPORT.plan = null; rerender(renderAll);   // wizard prefills from REPORT.brief
   });
   const reopen = $("#plan-reopen");
   if (reopen) reopen.addEventListener("click", () => {
-    REPORT.plan.approved = null; renderAll();
+    REPORT.plan.approved = null; rerender(renderAll);
   });
   // "same brief as last month?" — offered when the workspace has one
   const sugBox = $("#brief-suggestion");
@@ -2522,7 +2619,7 @@ function svgTimeseries(c) {
       if (v == null) { pen = false; continue; }
       d += `${pen ? "L" : "M"}${sx(i).toFixed(1)},${sy(v).toFixed(1)}`; pen = true;
     }
-    out += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2"
+    out += `<path class="ln" pathLength="1" d="${d}" fill="none" stroke="${s.color}" stroke-width="2"
       stroke-linejoin="round" stroke-linecap="round"/>`;
   }
   if (on.length <= 4) {
