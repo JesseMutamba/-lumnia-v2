@@ -235,6 +235,21 @@
   .mtable tr:last-child td { border-bottom: none; }
   .mtable .num { text-align: right; font-variant-numeric: tabular-nums;
     font-family: var(--mono); font-size: 12px; }
+  /* Phase 3: zoned layout, KPI-with-deltas, shared-axis pair rows */
+  .zq { font-family: var(--serif); font-size: 18px; font-weight: 650;
+    margin: 22px 0 10px; }
+  .kds { display: flex; flex-direction: column; gap: 4px; padding-left: 16px;
+    border-left: 1px solid var(--line); }
+  .kd { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .kd span { display: block; font-size: 11px; font-weight: 500; color: var(--ink-3); }
+  .prow { display: grid; grid-template-columns: minmax(70px, 1fr) 2fr 62px 1.4fr 70px;
+    gap: 10px; align-items: center; padding: 6px 0; font-size: 12.5px; }
+  .prow .pl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .prow .pbar { height: 12px; background: var(--card-2); border-radius: 6px;
+    overflow: hidden; display: block; }
+  .prow .pbar span { display: block; height: 100%; border-radius: 6px; }
+  .prow .pv { font-family: var(--mono); font-size: 11.5px; text-align: right;
+    font-variant-numeric: tabular-nums; }
 
   section > .kicker { display: block; margin: 30px 0 12px; }
   .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; }
@@ -1649,60 +1664,158 @@ function renderPlanApproval() {
     </div></section>`;
 }
 
+/* Step 4: color is language — signed values get red/green ONLY when the
+   move is significant relative to the biggest one; the rest stay gray. */
+const GRAY_BAR = "#b9b19f";
+function semanticColors(vals) {
+  const mx = Math.max(...vals.map(v => Math.abs(v ?? 0)), 1e-9);
+  return vals.map(v => v == null ? GRAY_BAR
+    : Math.abs(v) < 0.35 * mx ? GRAY_BAR
+    : v >= 0 ? "var(--good)" : "var(--critical)");
+}
+const fillFor = (v, mx) => v == null || mx === 0 ? "transparent"
+  : `color-mix(in srgb, ${v >= 0 ? "#1baf7a" : "#d24a35"} ${Math.min(85, Math.abs(v) / mx * 55 + 8).toFixed(0)}%, transparent)`;
+
+function storyChartCard(m, opts = {}) {
+  const c = { pseudo: true, sheet: mlabel(m), loc: opts.loc || null,
+    chart: opts.kindTime
+      ? { kind: "timeseries", periods: m.rows.map(r => r.period),
+          series: [], other: null, truncated: !!m.truncated }
+      : { kind: "profile", x: m.rows.map(r => r.member),
+          y: m.rows.map(r => r.value ?? 0), colors: opts.colors },
+    i: CHARTS.length, range: null };
+  if (opts.kindTime) c.lines = [{ label: m.measure,
+    values: m.rows.map(r => r.value), color: SERIES_COLORS[0], on: true }];
+  CHARTS.push(c);
+  return chartCard(c, false);
+}
+
+/* Step 3: the decision table — what each metric renders as. */
+function storyVisual(m) {
+  const id = m.id;
+  if (id === "trend")
+    return storyChartCard(m, { kindTime: true, loc: esc(m.measure) });
+  if (id === "movers") {
+    const mx = Math.max(...m.top.concat(m.bottom).map(r => Math.abs(r.value ?? 0)), 1e-9);
+    const tbl = rows => `<table class="mtable">${rows.map(r =>
+      `<tr><td>${esc(r.entity.slice(0, 30))}</td>
+       <td class="num" style="background:${fillFor(r.value, mx)}">${r.value >= 0 ? "+" : ""}${num(r.value)}</td>
+       <td class="num muted">${r.headline != null ? compact(r.headline) : ""}</td></tr>`).join("")}</table>`;
+    return `<div class="card"><div class="card-head"><span class="ct">${esc(mlabel(m))}</span>
+        <span class="cs">${esc(m.measure)}</span></div>
+      <div class="grid2" style="gap:16px;margin-top:8px">
+        <div><div class="psub">${T.st_top}</div>${tbl(m.top)}</div>
+        <div><div class="psub">${T.st_bottom}</div>${tbl(m.bottom)}</div>
+      </div></div>`;
+  }
+  if (id === "low_stock")
+    return `<div class="card"><div class="card-head"><span class="ct">${esc(mlabel(m))}</span>
+        <span class="cs">${esc(m.measure)}</span></div>
+      <table class="mtable" style="margin-top:8px">${m.rows.map(r =>
+        `<tr><td>${esc(String(r.entity).slice(0, 34))}</td>
+         <td class="num" style="color:var(--warning)">${num(r.value)}</td></tr>`).join("")}</table></div>`;
+  if (id.startsWith("by_") || id.startsWith("avg_")) {
+    const vals = m.rows.map(r => r.value);
+    const signed = vals.some(v => v != null && v < 0);
+    if (m.rows.length > 12 || (signed && m.rows.length > 8)) {
+      // many members read better as a ranked table with conditional fill
+      const mx = Math.max(...vals.map(v => Math.abs(v ?? 0)), 1e-9);
+      return `<div class="card"><div class="card-head"><span class="ct">${esc(mlabel(m))}</span></div>
+        <table class="mtable" style="margin-top:8px">${m.rows.map(r =>
+          `<tr><td>${esc(String(r.member).slice(0, 34))}</td>
+           <td class="num" style="background:${signed ? fillFor(r.value, mx) : "transparent"}">${num(r.value)}</td></tr>`).join("")}</table></div>`;
+    }
+    // signed change bars speak in semantic color; magnitude bars stay neutral
+    return storyChartCard(m, { colors: signed ? semanticColors(vals) : undefined });
+  }
+  return "";
+}
+
+/* Step 5: a shared-axis pair — amount and its change on one member axis. */
+function pairCard(mAmt, mChg) {
+  const chg = {}; mChg.rows.forEach(r => { chg[r.member] = r.value; });
+  const mxA = Math.max(...mAmt.rows.map(r => Math.abs(r.value ?? 0)), 1e-9);
+  const mxC = Math.max(...mChg.rows.map(r => Math.abs(chg[r.member] ?? 0)), 1e-9);
+  const cols = semanticColors(mAmt.rows.map(r => chg[r.member]));
+  const rows = mAmt.rows.map((r, i) => {
+    const cv = chg[r.member];
+    return `<div class="prow">
+      <span class="pl">${esc(String(r.member).slice(0, 22))}</span>
+      <span class="pbar"><span style="width:${Math.max(3, Math.abs(r.value ?? 0) / mxA * 100)}%;background:var(--gold)"></span></span>
+      <span class="pv">${compact(r.value)}</span>
+      <span class="pbar pc"><span style="width:${cv == null ? 0 : Math.max(3, Math.abs(cv) / mxC * 100)}%;background:${cols[i]}"></span></span>
+      <span class="pv" style="color:${cols[i] === GRAY_BAR ? "var(--ink-3)" : cols[i]}">${cv == null ? "—" : (cv >= 0 ? "+" : "") + num(cv)}</span>
+    </div>`;
+  }).join("");
+  return `<div class="card"><div class="card-head">
+      <span class="ct">${esc(mlabel(mAmt))} &amp; ${esc(mChg.measure)}</span>
+      <span class="cs">${esc(mAmt.grain)}</span></div>
+    <div style="margin-top:10px">${rows}</div></div>`;
+}
+
 function renderStoryDash() {
   const story = REPORT.story, plan = REPORT.plan, brief = REPORT.brief || {};
   const metricById = {}; story.metrics.forEach(m => { metricById[m.id] = m; });
-  const tiles = [], cards = [];
-  for (const id of plan.approved) {
-    const m = metricById[id];
-    if (!m) continue;
-    if (id === "headline") {
-      tiles.push(`<div class="hero-tile"><div class="hl">${esc(mlabel(m))}</div>
-        <div class="hv">${compact(m.value)}</div>
-        <div class="hs">${m.n} ${LANG === "fr" ? "lignes" : "rows"}</div></div>`);
-    } else if (id === "mom" || id === "yoy") {
+  const approved = plan.approved.filter(id => metricById[id]);
+  const done = new Set();
+
+  // Step 5a: the headline absorbs its own deltas (MoM/YoY beside the number)
+  let hero = "";
+  if (approved.includes("headline")) {
+    const h = metricById.headline;
+    const kds = ["mom", "yoy"].filter(id => approved.includes(id)).map(id => {
+      const m = metricById[id]; done.add(id);
       const p = m.pct;
-      tiles.push(`<div class="hero-tile"><div class="hl">${esc(mlabel(m))}</div>
-        <div class="hv" style="color:${p == null ? "inherit" : p >= 0 ? "var(--good)" : "var(--critical)"}">${p == null ? "—" : (p >= 0 ? "+" : "") + pctFmt(p, 1)}</div>
-        <div class="hs">${esc(m.period || "")}</div></div>`);
-    } else if (id === "trend") {
-      const c = { pseudo: true, sheet: mlabel(m), loc: esc(m.measure),
-        chart: { kind: "timeseries", periods: m.rows.map(r => r.period),
-                 series: [], other: null, truncated: !!m.truncated },
-        lines: [{ label: m.measure, values: m.rows.map(r => r.value),
-                  color: SERIES_COLORS[0], on: true }],
-        i: CHARTS.length, range: null };
-      CHARTS.push(c);
-      cards.push(chartCard(c, false));
-    } else if (id.startsWith("by_") || id.startsWith("avg_")) {
-      const c = { pseudo: true, sheet: mlabel(m), loc: null,
-        chart: { kind: "profile", x: m.rows.map(r => r.member),
-                 y: m.rows.map(r => r.value ?? 0) }, i: CHARTS.length, range: null };
-      CHARTS.push(c);
-      cards.push(chartCard(c, false));
-    } else if (id === "movers") {
-      const tbl = (rows) => `<table class="mtable">${rows.map(r =>
-        `<tr><td>${esc(r.entity.slice(0, 30))}</td>
-         <td class="num" style="color:${r.value >= 0 ? "var(--good)" : "var(--critical)"}">${r.value >= 0 ? "+" : ""}${num(r.value)}</td>
-         <td class="num muted">${r.headline != null ? compact(r.headline) : ""}</td></tr>`).join("")}</table>`;
-      cards.push(`<div class="card"><div class="card-head"><span class="ct">${esc(mlabel(m))}</span>
-          <span class="cs">${esc(m.measure)}</span></div>
-        <div class="grid2" style="gap:16px;margin-top:8px">
-          <div><div class="psub">${T.st_top}</div>${tbl(m.top)}</div>
-          <div><div class="psub">${T.st_bottom}</div>${tbl(m.bottom)}</div>
-        </div></div>`);
-    } else if (id === "low_stock") {
-      cards.push(`<div class="card"><div class="card-head"><span class="ct">${esc(mlabel(m))}</span>
-          <span class="cs">${esc(m.measure)}</span></div>
-        <table class="mtable" style="margin-top:8px">${m.rows.map(r =>
-          `<tr><td>${esc(String(r.entity).slice(0, 34))}</td>
-           <td class="num" style="color:var(--warning)">${num(r.value)}</td></tr>`).join("")}</table></div>`);
+      return `<div class="kd" style="color:${p == null ? "var(--ink-3)" : p >= 0 ? "var(--good)" : "var(--critical)"}">
+        ${p == null ? "—" : (p >= 0 ? "+" : "") + pctFmt(p, 1)} <span>${esc(mlabel(m))}</span></div>`;
+    }).join("");
+    done.add("headline");
+    hero = `<div class="hero"><div class="hero-tile"><div class="hl">${esc(mlabel(h))}</div>
+      <div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap">
+        <div class="hv">${compact(h.value)}</div>
+        ${kds ? `<div class="kds">${kds}</div>` : ""}</div></div></div>`;
+  }
+
+  // Step 5b: amount + change on the same grain merge into one pair card
+  const paired = {};                   // by_X id -> {html, partner avg_ id}
+  const claimed = new Set();
+  for (const id of approved) {
+    if (!id.startsWith("by_") || done.has(id)) continue;
+    const chgId = approved.find(o => o.startsWith("avg_") && !claimed.has(o)
+      && metricById[o].grain === metricById[id].grain);
+    if (chgId) {
+      paired[id] = { html: pairCard(metricById[id], metricById[chgId]),
+                     partner: chgId };
+      claimed.add(chgId);
     }
   }
 
+  // Step 5c: zones follow the brief's question order; first claim wins
+  const zones = [];
+  const emit = id => {
+    if (done.has(id)) return "";
+    done.add(id);
+    if (paired[id]) { done.add(paired[id].partner); return paired[id].html; }
+    // an avg_ that was absorbed into a pair never renders alone
+    if (id.startsWith("avg_") && Object.values(paired).some(p => p.partner === id))
+      return "";
+    return storyVisual(metricById[id]);
+  };
+  for (const q of plan.questions) {
+    const vis = q.metrics.filter(id => approved.includes(id))
+      .map(emit).filter(Boolean);
+    if (vis.length) zones.push({ title: q.question, cards: vis });
+  }
+  const rest = approved.map(emit).filter(Boolean);
+  if (rest.length) zones.push({ title: T.st_also, cards: rest });
+
+  const zoneHtml = zones.map(z => `
+    <div class="zq">${esc(z.title)}</div>
+    <div class="grid2">${z.cards.join("")}</div>`).join("");
+
   const misses = plan.questions.filter(q => q.status === "unanswerable" || q.status === "unmatched"
     || (q.status === "partial" && q.missing.length));
-  const gapsCard = misses.length ? `<div class="card" style="margin-top:14px">
+  const gapsCard = misses.length ? `<div class="card" style="margin-top:18px">
       <div class="card-head"><span class="ct">${T.st_gaps_t}</span></div>
       ${misses.map(q => `<div class="qrow"><b>${esc(q.question)}</b>
         <span class="qstat" style="color:var(--ink-3)">${T.st_status[q.status]}</span>
@@ -1715,8 +1828,8 @@ function renderStoryDash() {
       ${SHARE ? "" : `<span style="margin-left:auto">
         <button class="iconbtn" id="bf-edit">${T.st_edit}</button>
         <button class="iconbtn" id="plan-reopen">${T.st_replan}</button></span>`}</div>
-    ${tiles.length ? `<div class="hero">${tiles.join("")}</div>` : ""}
-    ${cards.length ? `<div class="grid2">${cards.join("")}</div>` : ""}
+    ${hero}
+    ${zoneHtml}
     ${gapsCard}
   </section>`;
 }
@@ -2303,8 +2416,9 @@ function svgProfile(c) {
     out += `<rect x="${x}" y="${yTop}" width="${bw}" height="${yBot - yTop}" rx="${bw/2}" fill="#eee3c4"/>`;
     const yv = sy(v);
     const top = Math.min(yv, y0), h = Math.max(bw, Math.abs(y0 - yv));
+    const fillc = (c.chart.colors && c.chart.colors[i]) || "#a8821f";
     out += `<rect class="bar" data-i="${i}" x="${x}" y="${Math.min(top, yBot - bw)}" width="${bw}"
-      height="${Math.min(h, yBot - yTop)}" rx="${bw/2}" fill="#a8821f"/>`;
+      height="${Math.min(h, yBot - yTop)}" rx="${bw/2}" fill="${fillc}"/>`;
     if (i % step === 0) out += `<text x="${x + bw/2}" y="${H - 8}" text-anchor="middle" font-size="10"
       fill="#99917e" font-family="ui-monospace,Menlo,monospace">${esc(String(c.chart.x[i]).slice(0, 12))}</text>`;
   });
