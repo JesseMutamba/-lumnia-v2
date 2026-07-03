@@ -35,6 +35,7 @@ from .models import (
 from .pipeline.celltypes import grid_kinds
 from .pipeline.eda import generate_insights
 from .pipeline.model import build_model
+from .pipeline.semantics import plan_from_brief
 from .pipeline.ingest import read_upload
 from .pipeline.orient import orient_sheet
 from .pipeline.profile import profile_sheet
@@ -254,6 +255,74 @@ def get_findings(analysis_id: str) -> FindingsResponse:
     return FindingsResponse(id=analysis_id, filename=report["filename"], **agg)
 
 
+@app.post("/analyses/{analysis_id}/brief")
+async def set_brief(analysis_id: str, request: Request) -> dict:
+    """Step 1 of the storytelling flow: store the intake answers and return
+    the proposed metric plan (Step 2), with honest per-question statuses."""
+    report = storage.get_report(analysis_id)
+    if report is None:
+        raise HTTPException(status_code=404,
+                            detail=f"No analysis '{analysis_id}'.")
+    if not report.get("story"):
+        raise HTTPException(
+            status_code=422,
+            detail="This analysis has no storytelling table — the brief flow "
+                   "needs at least one table with numeric measures.")
+    body = await request.json()
+    brief = {
+        "role": str(body.get("role") or "")[:80],
+        "goals": [str(g)[:160] for g in (body.get("goals") or [])][:5],
+        "questions": [str(q)[:200] for q in (body.get("questions") or [])][:8],
+        "cadence": str(body.get("cadence") or "")[:30],
+        "lang": "fr" if body.get("lang") == "fr" else "en",
+    }
+    if not brief["questions"]:
+        raise HTTPException(status_code=400,
+                            detail="A brief needs at least one question.")
+    plan = plan_from_brief(brief, report["story"])
+    report["brief"] = brief
+    report["plan"] = plan
+    storage.update_report(analysis_id, report)
+    return {"brief": brief, "plan": plan}
+
+
+@app.post("/analyses/{analysis_id}/plan")
+async def approve_plan(analysis_id: str, request: Request) -> dict:
+    """Approve (a subset of) the proposed plan: the metric ids the story
+    dashboard will render."""
+    report = storage.get_report(analysis_id)
+    if report is None or not report.get("plan"):
+        raise HTTPException(status_code=404,
+                            detail="No plan to approve — set the brief first.")
+    body = await request.json()
+    valid = {m["id"] for m in report["story"]["metrics"]}
+    seen: set = set()
+    approved = [i for i in (body.get("approved") or [])
+                if i in valid and not (i in seen or seen.add(i))]
+    report["plan"]["approved"] = approved
+    storage.update_report(analysis_id, report)
+    return {"approved": approved}
+
+
+@app.get("/analyses/{analysis_id}/brief-suggestion")
+def brief_suggestion(analysis_id: str) -> dict:
+    """The most recent brief from the same client workspace, for the
+    'same brief as last month?' shortcut. Honest empty when there is none."""
+    metas = storage.list_analyses()
+    me = next((m for m in metas if m["id"] == analysis_id), None)
+    if me is None:
+        raise HTTPException(status_code=404,
+                            detail=f"No analysis '{analysis_id}'.")
+    if me.get("client"):
+        for m in metas:                      # newest first already
+            if m["id"] == analysis_id or m.get("client") != me["client"]:
+                continue
+            rep = storage.get_report(m["id"])
+            if rep and rep.get("brief"):
+                return {"brief": rep["brief"], "from": m["filename"]}
+    return {"brief": None, "from": None}
+
+
 @app.post("/analyses/{analysis_id}/client")
 async def assign_client(analysis_id: str, request: Request) -> dict:
     """Assign the analysis to a client workspace ({"client": "PVAK"};
@@ -346,8 +415,19 @@ def rerun_analysis(analysis_id: str) -> AnalyzeResponse:
         raise HTTPException(status_code=404,
                             detail=f"No analysis '{analysis_id}'.")
     filename, content = stored
+    old = storage.get_report(analysis_id) or {}
     result = run_pipeline(content, filename)
     result.id = analysis_id
+    # the brief is the user's intent, not a computation — it survives reruns;
+    # the plan is re-matched against the fresh story (approvals kept where
+    # the metric still exists)
+    if old.get("brief") and result.story:
+        result.brief = old["brief"]
+        result.plan = plan_from_brief(old["brief"], result.story)
+        prev = (old.get("plan") or {}).get("approved")
+        if prev is not None:
+            valid = {m["id"] for m in result.story["metrics"]}
+            result.plan["approved"] = [i for i in prev if i in valid]
     storage.update_report(analysis_id, result.model_dump())
     return result
 
