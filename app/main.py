@@ -32,6 +32,7 @@ from .models import (
     SheetReport,
 )
 from .pipeline.celltypes import grid_kinds
+from .pipeline.eda import generate_insights
 from .pipeline.ingest import read_upload
 from .pipeline.orient import orient_sheet
 from .pipeline.profile import profile_sheet
@@ -127,10 +128,21 @@ def run_pipeline(content: bytes, filename: str) -> AnalyzeResponse:
                 tidy=None, panels=None,
             ))
 
+    # Step 6: fold every table's EDA facts into ranked workbook insights.
+    eda_results = []
+    for r in reports:
+        if r.tidy and r.tidy.eda:
+            eda_results.append({**r.tidy.eda, "sheet": r.name})
+        for p in r.panels or []:
+            t = p.get("tidy")
+            if t and t.get("eda"):
+                eda_results.append({**t["eda"], "sheet": r.name})
+
     return AnalyzeResponse(
         filename=filename or "upload",
         n_sheets=len(reports),
         sheets=reports,
+        insights=generate_insights(eda_results) or None,
     )
 
 
