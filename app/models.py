@@ -58,6 +58,9 @@ class AnalyzeResponse(BaseModel):
     # Step 8 — the workbook's best storytelling table: schema + computed
     # metrics + honest gaps (what the brief's staples would need)
     story: Optional[Dict[str, Any]] = None
+    # Phase 2 — the user's intake answers and the matched metric plan
+    brief: Optional[Dict[str, Any]] = None
+    plan: Optional[Dict[str, Any]] = None
 
 
 class AnalysisMeta(BaseModel):

@@ -315,6 +315,92 @@ def compute_story(df: pd.DataFrame, schema: Dict[str, Any]) -> Optional[Dict[str
     return {"headline_measure": head["name"], "metrics": metrics, "gaps": gaps}
 
 
+# --------------------------------------------------------------------------
+# Phase 2: the brief -> metric plan matcher
+# --------------------------------------------------------------------------
+# Each intent maps a question pattern (FR first, EN too) onto selectors over
+# the computed story: which present metric ids answer it, and which gap names
+# explain why it can't be answered.
+
+_INTENTS = [
+    # specific intents first: a question about stockouts should lead with
+    # the stock gap, not the generic product-performance one
+    ("stock", re.compile(
+        r"stock|inventaire|inventor|rupture|out of stock|shortage|p[ée]nurie",
+        re.IGNORECASE),
+     lambda mid: mid == "low_stock",
+     {"stock_on_hand"}),
+    ("trend", re.compile(
+        r"trend|tendance|[ée]volu|over time|au fil|progress|croissance"
+        r"|how is .* (doing|going)|comment", re.IGNORECASE),
+     lambda mid: mid in ("trend", "mom", "yoy"),
+     {"trend", "mom_change", "yoy_change"}),
+    ("performance", re.compile(
+        r"best|worst|top|bottom|perform|meilleur|pire|classement|rank"
+        r"|produits?|products?|entreprises?|compan(y|ies)", re.IGNORECASE),
+     lambda mid: mid == "movers" or mid.startswith("avg_"),
+     {"top_movers"}),
+    ("breakdown", re.compile(
+        r"where|o[uù]\b|r[ée]gion|by |par |split|r[ée]partition|breakdown"
+        r"|which|quel(le)?s?", re.IGNORECASE),
+     lambda mid: mid.startswith("by_"),
+     set()),
+    ("amount", re.compile(
+        r"revenu|revenue|ventes|sales|chiffre|montant|total|how much|combien",
+        re.IGNORECASE),
+     lambda mid: mid == "headline" or mid.startswith("by_"),
+     {"trend"}),
+]
+
+
+def plan_from_brief(brief: Dict[str, Any],
+                    story: Dict[str, Any]) -> Dict[str, Any]:
+    """Match every brief question against the computed story.
+
+    Statuses are honest: ``answerable`` (metrics exist), ``partial`` (some of
+    what the question implies is missing), ``unanswerable`` (only gaps
+    matched — with what the file would need), ``unmatched`` (the question
+    didn't map to anything; a human should rephrase or the data lacks it).
+    """
+    present = {m["id"] for m in story.get("metrics", [])}
+    gaps = {g["metric"]: g for g in story.get("gaps", [])}
+
+    questions = []
+    claimed: set = set()
+    for q in brief.get("questions", []):
+        hit_ids: List[str] = []
+        hit_gaps: List[Dict[str, Any]] = []
+        for _intent, rx, selector, gap_names in _INTENTS:
+            if not rx.search(q):
+                continue
+            hit_ids += [mid for mid in present if selector(mid)]
+            hit_gaps += [gaps[g] for g in gap_names if g in gaps]
+        hit_ids = sorted(set(hit_ids))
+        claimed.update(hit_ids)
+        seen = set()
+        missing = [g for g in hit_gaps
+                   if not (g["metric"] in seen or seen.add(g["metric"]))]
+        if hit_ids and missing:
+            status = "partial"
+        elif hit_ids:
+            status = "answerable"
+        elif missing:
+            status = "unanswerable"
+        else:
+            status = "unmatched"
+        questions.append({"question": q, "status": status,
+                          "metrics": hit_ids,
+                          "missing": [{"metric": g["metric"],
+                                       "requires": g["requires"]}
+                                      for g in missing]})
+
+    return {
+        "questions": questions,
+        "also_available": sorted(present - claimed),
+        "approved": None,     # set by the approval endpoint
+    }
+
+
 def build_semantics(df: pd.DataFrame) -> Optional[Dict[str, Any]]:
     """Extraction-time entry point: schema + computed story for one table."""
     if df.empty or len(df) < 3:
