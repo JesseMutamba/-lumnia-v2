@@ -35,7 +35,7 @@ from .models import (
 from .pipeline.celltypes import grid_kinds
 from .pipeline.eda import generate_insights
 from .pipeline.model import build_model
-from .pipeline.semantics import plan_from_brief
+from .pipeline.semantics import plan_from_brief, suggest_brief
 from .pipeline.ingest import read_upload
 from .pipeline.orient import orient_sheet
 from .pipeline.profile import profile_sheet
@@ -313,22 +313,32 @@ async def approve_plan(analysis_id: str, request: Request) -> dict:
 
 
 @app.get("/analyses/{analysis_id}/brief-suggestion")
-def brief_suggestion(analysis_id: str) -> dict:
-    """The most recent brief from the same client workspace, for the
-    'same brief as last month?' shortcut. Honest empty when there is none."""
+def brief_suggestion(analysis_id: str, lang: str = "en") -> dict:
+    """Intake helpers: the most recent brief from the same client workspace
+    ('same brief as last month?') plus recommended goals & questions derived
+    from what this workbook's stories can actually answer. Honest empties
+    when there is nothing to suggest."""
     metas = storage.list_analyses()
     me = next((m for m in metas if m["id"] == analysis_id), None)
     if me is None:
         raise HTTPException(status_code=404,
                             detail=f"No analysis '{analysis_id}'.")
+
+    report = storage.get_report(analysis_id) or {}
+    stories = report.get("stories") or \
+        ([report["story"]] if report.get("story") else [])
+    ideas = suggest_brief(stories, "fr" if lang == "fr" else "en")
+
+    prior, prior_from = None, None
     if me.get("client"):
         for m in metas:                      # newest first already
             if m["id"] == analysis_id or m.get("client") != me["client"]:
                 continue
             rep = storage.get_report(m["id"])
             if rep and rep.get("brief"):
-                return {"brief": rep["brief"], "from": m["filename"]}
-    return {"brief": None, "from": None}
+                prior, prior_from = rep["brief"], m["filename"]
+                break
+    return {"brief": prior, "from": prior_from, "ideas": ideas}
 
 
 @app.post("/analyses/{analysis_id}/client")

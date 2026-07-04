@@ -693,6 +693,7 @@ const STR = {
     st_role_chips: ["Manager", "Accountant", "Owner", "Analyst"],
     st_goals: "What are your business goals?",
     st_goals_ph: "One per line — e.g. Increase revenue",
+    st_ideas: "Suggestions — tap to add",
     st_questions: "What questions do you need answered?",
     st_q_ph: "One per line — e.g. How is revenue trending?",
     st_cadence: "How often will you review this?",
@@ -876,6 +877,7 @@ const STR = {
     st_role_chips: ["Gérant", "Comptable", "Directeur", "Analyste"],
     st_goals: "Quels sont vos objectifs ?",
     st_goals_ph: "Un par ligne — ex. Augmenter les revenus",
+    st_ideas: "Suggestions — touchez pour ajouter",
     st_questions: "À quelles questions devez-vous répondre ?",
     st_q_ph: "Une par ligne — ex. Comment évoluent les revenus ?",
     st_cadence: "À quelle fréquence consulterez-vous ce tableau ?",
@@ -1861,8 +1863,10 @@ function renderBriefWizard() {
         `<span class="chip" data-role="${esc(r)}">${esc(r)}</span>`).join("")}</div>
       <div class="bq">${T.st_goals}</div>
       <textarea id="bf-goals" class="binput" rows="2" placeholder="${T.st_goals_ph}">${esc((b.goals || []).join("\n"))}</textarea>
+      <div id="goal-ideas"></div>
       <div class="bq">${T.st_questions}</div>
       <textarea id="bf-questions" class="binput" rows="3" placeholder="${T.st_q_ph}">${esc((b.questions || []).join("\n"))}</textarea>
+      <div id="q-ideas"></div>
       <div class="bq">${T.st_cadence}</div>
       <div class="chiprow">${Object.entries(T.st_cadences).map(([k, l]) =>
         `<span class="chip ${CADENCE === k ? "on" : ""}" data-cad="${k}">${l}</span>`).join("")}</div>
@@ -2148,16 +2152,36 @@ function attachStory() {
   if (reopen) reopen.addEventListener("click", () => {
     REPORT.plan.approved = null; rerender(renderAll);
   });
-  // "same brief as last month?" — offered when the workspace has one
+  // intake helpers: "same brief as last month?" + goal/question chips
+  // generated from what THIS file can actually answer
   const sugBox = $("#brief-suggestion");
   if (sugBox && !SHARE) {
-    fetch(`/analyses/${current}/brief-suggestion`).then(r => r.json()).then(s => {
-      if (!s.brief) return;
-      sugBox.innerHTML = `<button class="iconbtn on" id="use-prev">${T.st_use_prev(esc(s.from))}</button>`;
-      $("#use-prev").addEventListener("click", () => {
-        REPORT.brief = s.brief; CADENCE = s.brief.cadence || "monthly";
-        renderAll();
-      });
+    fetch(`/analyses/${current}/brief-suggestion?lang=${LANG}`).then(r => r.json()).then(s => {
+      if (s.brief) {
+        sugBox.innerHTML = `<button class="iconbtn on" id="use-prev">${T.st_use_prev(esc(s.from))}</button>`;
+        $("#use-prev").addEventListener("click", () => {
+          REPORT.brief = s.brief; CADENCE = s.brief.cadence || "monthly";
+          renderAll();
+        });
+      }
+      const ideaRow = (boxId, taId, lines) => {
+        const box = $(boxId), ta = $(taId);
+        if (!box || !ta || !lines || !lines.length) return;
+        box.innerHTML = `<div class="label" style="margin-top:6px">${T.st_ideas}</div>
+          <div class="chiprow">${lines.map((q, i) =>
+            `<span class="chip" data-idea="${i}">${esc(q)}</span>`).join("")}</div>`;
+        box.querySelectorAll(".chip").forEach(ch =>
+          ch.addEventListener("click", () => {
+            const line = lines[+ch.dataset.idea];
+            if (!ta.value.split("\n").map(l => l.trim()).includes(line))
+              ta.value = (ta.value.trim() ? ta.value.trim() + "\n" : "") + line;
+            ch.classList.add("on");
+          }));
+      };
+      if (s.ideas) {
+        ideaRow("#goal-ideas", "#bf-goals", s.ideas.goals);
+        ideaRow("#q-ideas", "#bf-questions", s.ideas.questions);
+      }
     }).catch(() => {});
   }
 }
