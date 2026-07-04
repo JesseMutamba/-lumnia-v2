@@ -217,6 +217,52 @@ def test_questions_can_land_on_different_sheets():
     assert q["sheet"].strip() == "CARBURANT"
 
 
+def test_suggest_brief_covers_the_matrix_capabilities():
+    from app.pipeline.semantics import suggest_brief
+    an = _an(_matrix_book(), "sugg.xlsx")
+    ideas = suggest_brief(an["stories"], "fr")
+    joined = " | ".join(ideas["questions"]).lower()
+    assert "évolue" in joined                      # trend
+    assert "performe" in joined                    # movers
+    assert "stock gasoil" in joined                # low_stock names the series
+    assert ideas["goals"]                          # at least one goal
+    # EN variant is actually English, not the FR strings
+    en = suggest_brief(an["stories"], "en")
+    assert en["questions"] and en["questions"] != ideas["questions"]
+    assert any("trending" in q for q in en["questions"])
+
+
+def test_suggested_questions_round_trip_answerable():
+    """The guarantee that makes suggestions safe to tap: every question we
+    propose, fed back through the matcher, is answerable or honestly
+    partial — never unmatched or unanswerable."""
+    from app.pipeline.semantics import plan_from_brief, suggest_brief
+    for book, name in ((_matrix_book(), "rt1.xlsx"), (_dated_book(), "rt2.xlsx")):
+        an = _an(book, name)
+        for lang in ("fr", "en"):
+            ideas = suggest_brief(an["stories"], lang)
+            assert ideas["questions"]
+            plan = plan_from_brief(
+                {"questions": ideas["questions"], "lang": lang}, an["stories"])
+            for q in plan["questions"]:
+                assert q["status"] in ("answerable", "partial"), \
+                    f"suggested {q['question']!r} came back {q['status']}"
+
+
+def test_brief_suggestion_endpoint_carries_ideas():
+    an = _an(_matrix_book(), "ideas.xlsx")
+    sug = client.get(f"/analyses/{an['id']}/brief-suggestion?lang=fr").json()
+    assert sug["ideas"]["questions"]
+    assert any("évolue" in q for q in sug["ideas"]["questions"])
+    # no stories -> honestly empty questions (goals keep the generic fallback)
+    df = pd.DataFrame([["A", "B"], ["x", "y"], ["z", "w"], ["q", "r"]])
+    buf = io.BytesIO()
+    df.to_excel(buf, sheet_name="S", header=False, index=False, engine="openpyxl")
+    b = _an(buf.getvalue(), "noideas.xlsx")
+    sug2 = client.get(f"/analyses/{b['id']}/brief-suggestion").json()
+    assert sug2["ideas"]["questions"] == []
+
+
 def test_unrelated_questions_never_claim_generic_metrics():
     """A harvest question asked of a salary/finance workbook must NOT be
     'answered' with salary breakdowns — generic intents require the

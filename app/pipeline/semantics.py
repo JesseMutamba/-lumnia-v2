@@ -485,6 +485,102 @@ def build_semantics(df: pd.DataFrame) -> Optional[Dict[str, Any]]:
 
 
 # --------------------------------------------------------------------------
+# recommended goals & questions: derived from what the file CAN answer
+# --------------------------------------------------------------------------
+
+MAX_SUGGESTED_GOALS = 3
+MAX_SUGGESTED_QUESTIONS = 6
+
+
+def suggest_brief(stories: List[Dict[str, Any]], lang: str = "en"
+                  ) -> Dict[str, List[str]]:
+    """Goals and questions generated from the workbook's computed stories.
+
+    Every suggestion is phrased with the vocabulary the intent matcher
+    recognizes AND references a metric that already exists — so a suggested
+    question is answerable (or honestly partial) by construction. No AI,
+    no key: the file itself writes the menu.
+    """
+    fr = lang == "fr"
+    goals: List[str] = []
+    questions: List[str] = []
+    seen_g: set = set()
+    seen_q: set = set()
+
+    def add_goal(text: str) -> None:
+        if text not in seen_g and len(goals) < MAX_SUGGESTED_GOALS:
+            seen_g.add(text)
+            goals.append(text)
+
+    def add_q(key: tuple, text: str) -> None:
+        # dedupe on the rendered text too: two sheets with the same grain
+        # would otherwise suggest the identical question twice
+        if key in seen_q or text in seen_q:
+            return
+        if len(questions) < MAX_SUGGESTED_QUESTIONS:
+            seen_q.update((key, text))
+            questions.append(text)
+
+    stories = stories or []
+    roles = {m.get("role") for st in stories
+             for m in st.get("schema", {}).get("measures", []) if m.get("role")}
+    has_stock = any(m["id"] == "low_stock"
+                    for st in stories for m in st.get("metrics", []))
+    if "revenue" in roles:
+        add_goal("Augmenter les revenus" if fr else "Increase revenue")
+    if "inventory" in roles or has_stock:
+        add_goal("Éviter les ruptures de stock" if fr
+                 else "Avoid stock shortages")
+    if "volume" in roles:
+        add_goal("Augmenter la production" if fr else "Increase production")
+    if "capex" in roles:
+        add_goal("Maîtriser les investissements" if fr
+                 else "Control investment")
+    if not goals:
+        add_goal("Suivre la performance mensuelle" if fr
+                 else "Track monthly performance")
+
+    for st in stories:
+        ids = {m["id"]: m for m in st.get("metrics", [])}
+        meas = (st.get("headline_measure") or "").strip()[:32]
+        rich = False
+        if "trend" in ids and meas:
+            add_q(("trend", meas),
+                  f"Comment évolue {meas} mois par mois ?" if fr
+                  else f"How is {meas} trending month by month?")
+            rich = True
+        if "movers" in ids:
+            grain = (ids["movers"].get("grain") or "").strip()[:32] \
+                or ("série" if fr else "series")
+            add_q(("movers", st.get("sheet")),
+                  f"Quel {grain} performe le mieux, et lequel sous-performe ?"
+                  if fr else
+                  f"Which {grain} is performing best, and which worst?")
+            rich = True
+        if "low_stock" in ids and ids["low_stock"].get("rows"):
+            lbl = str(ids["low_stock"]["rows"][0].get("entity", ""))[:32]
+            add_q(("stock", st.get("sheet")),
+                  f"Le stock ({lbl}) descend-il vers la rupture ?" if fr
+                  else f"Is stock ({lbl}) heading toward a shortage?")
+            rich = True
+        for mid, m in ids.items():
+            if mid.startswith("by_") and not re.fullmatch(r"by_col_\d+", mid):
+                dim = (m.get("grain") or "").strip()[:32]
+                subject = meas or dim
+                add_q(("by", subject, dim),
+                      f"Quelle est la répartition de {subject} par {dim} ?"
+                      if fr else f"How is {subject} split by {dim}?")
+                rich = True
+                break                          # one breakdown per story
+        if not rich and "headline" in ids and meas:
+            add_q(("total", meas),
+                  f"Quel est le total de {meas} ?" if fr
+                  else f"What is the total {meas}?")
+
+    return {"goals": goals, "questions": questions}
+
+
+# --------------------------------------------------------------------------
 # matrix (cross-tab) sheets: the long form drives the same story engine
 # --------------------------------------------------------------------------
 
