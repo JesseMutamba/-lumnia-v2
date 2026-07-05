@@ -347,8 +347,10 @@
   .mtable .num { text-align: right; font-variant-numeric: tabular-nums;
     font-family: var(--mono); font-size: 12px; }
   /* Phase 3: zoned layout, KPI-with-deltas, shared-axis pair rows */
-  .zq { font-family: var(--serif); font-size: 18px; font-weight: 650;
-    margin: 22px 0 10px; }
+  .zq { font-size: 13px; font-weight: 700; margin: 24px 0 10px;
+    text-transform: uppercase; letter-spacing: .03em; }
+  .zq .zn { font-family: var(--mono); color: var(--gold); }
+  .zq .vbadge { margin-left: 8px; }
   .kds { display: flex; flex-direction: column; gap: 4px; padding-left: 16px;
     border-left: 1px solid var(--line); }
   .kd { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -603,6 +605,26 @@
 
   /* one-line insight caption under a chart */
   .chcap { font-size: 11.5px; color: var(--ink-4); margin-top: 8px; line-height: 1.5; }
+
+  /* briefing wizard: a focused centered column */
+  .wizard { max-width: 640px; margin: 12px auto 0; }
+  .whead { font-family: var(--serif); font-size: 32px; font-weight: 600;
+    line-height: 1.2; margin: 4px 0 10px; letter-spacing: -.005em; }
+  .whr { height: 1px; background: var(--hairline); margin: 26px 0 20px; }
+  .seg { display: inline-flex; border: 1px solid var(--border-strong);
+    border-radius: 8px; overflow: hidden; background: var(--card); }
+  .seg .chip { border: none; border-radius: 0; border-left: 1px solid var(--border-strong);
+    padding: 7px 16px; background: transparent; }
+  .seg .chip:first-child { border-left: none; }
+  .seg .chip.on { background: var(--gold); color: #fff; }
+  .qrow.dim > div:first-child b, .qrow.dim .qmiss { opacity: .55; }
+  .chip.on { background: var(--ink); border-color: var(--ink); color: #f6f3ec; }
+  .chip.idea { background: var(--chip-bg); border-color: var(--chip-bd);
+    color: var(--gold); font-weight: 550; }
+  .chip.idea:hover { border-color: var(--gold); }
+  .chip.idea.on { background: var(--gold-tint); border-color: var(--chip-bd);
+    color: var(--gold); }
+  .mchip input[type=checkbox] { accent-color: var(--gold); width: 13px; height: 13px; }
 
   /* executive overview grid: story chart | numbered next steps */
   .execgrid { display: grid; grid-template-columns: 1.55fr 1fr; gap: 44px;
@@ -912,6 +934,16 @@ const STR = {
     st_also: "Also available from this file",
     st_gaps_t: "What this file can't answer",
     st_edit: "✎ edit brief", st_replan: "↺ change plan",
+    st_edit_link: "Edit the brief",
+    sp_brief: "Brief", sp_plan: "Plan", sp_dash: "Dashboard",
+    st_badge: { answerable: "Answerable", partial: "Partial",
+      unanswerable: "Can't answer", unmatched: "Unmatched" },
+    bh_trend: (m, up, p) => `${m} ${up ? "rose" : "fell"} ${p} over this period.`,
+    bk_change: "Change", bk_share: "Largest share",
+    bk_gain: "Top gainer", bk_drop: "Top decliner",
+    bk_of_total: m => `of total ${m}`,
+    dv_foot: m => `diverging from zero · Δ ${m}`,
+    sb_q: "Questions", sb_series: "Series",
     st_top: "Top", st_bottom: "Bottom",
     st_brief_line: (role, cad) => `Briefing for ${role || "you"} · reviewed ${cad || "regularly"}`,
     sn_headline: m => `This is our total ${m}…`,
@@ -1125,6 +1157,16 @@ const STR = {
     st_also: "Également disponible dans ce fichier",
     st_gaps_t: "Ce que ce fichier ne peut pas répondre",
     st_edit: "✎ modifier le brief", st_replan: "↺ changer le plan",
+    st_edit_link: "Modifier le brief",
+    sp_brief: "Brief", sp_plan: "Plan", sp_dash: "Tableau",
+    st_badge: { answerable: "Possible", partial: "Partiel",
+      unanswerable: "Sans réponse", unmatched: "Non reconnu" },
+    bh_trend: (m, up, p) => `${m} ${up ? "a progressé de" : "a reculé de"} ${p} sur la période.`,
+    bk_change: "Évolution", bk_share: "Part principale",
+    bk_gain: "Meilleure progression", bk_drop: "Plus fort recul",
+    bk_of_total: m => `du total ${m}`,
+    dv_foot: m => `écarts autour de zéro · Δ ${m}`,
+    sb_q: "Questions", sb_series: "Séries",
     st_top: "Meilleurs", st_bottom: "Pires",
     st_brief_line: (role, cad) => `Briefing pour ${role || "vous"} · consulté ${cad || "régulièrement"}`,
     sn_headline: m => `Voici notre ${m} total…`,
@@ -2323,27 +2365,41 @@ function storyRecs(metricById, approved) {
   return recs.slice(0, 4);
 }
 
+/* stepper: 1 BRIEF — 2 PLAN — 3 DASHBOARD */
+function stepper(active) {
+  const steps = [T.sp_brief, T.sp_plan, T.sp_dash];
+  return `<div class="stepper">${steps.map((s, i) => {
+    const st = i < active ? "done" : i === active ? "on" : "";
+    return `${i ? `<span class="ln"></span>` : ""}<span class="sp ${st}">
+      <span class="c">${i < active ? "✓" : i + 1}</span>${s}</span>`;
+  }).join("")}</div>`;
+}
+
 function renderBriefWizard() {
   const b = REPORT.brief || {};
-  return `<section id="sec-story"><span class="kicker">${T.tab_story}</span>
-    <div class="card" style="max-width:760px">
-      <div class="card-head"><span class="ct">${T.st_intro_t}</span></div>
-      <p class="muted" style="margin:8px 0 14px">${T.st_intro}</p>
+  return `<section id="sec-story"><div class="wizard">
+      ${stepper(0)}
+      <h1 class="whead">${T.st_intro_t}.</h1>
+      <p class="vlede" style="margin-bottom:26px">${T.st_intro}</p>
       <div id="brief-suggestion"></div>
-      <div class="bq">${T.st_role}</div>
-      <input id="bf-role" class="binput" placeholder="${T.st_role_ph}" value="${esc(b.role || "")}">
-      <div class="chiprow">${T.st_role_chips.map(r =>
+      <div class="bq">01 · ${T.st_role}</div>
+      <div class="chiprow" style="margin-bottom:6px">${T.st_role_chips.map(r =>
         `<span class="chip" data-role="${esc(r)}">${esc(r)}</span>`).join("")}</div>
-      <div class="bq">${T.st_goals}</div>
+      <input id="bf-role" class="binput" placeholder="${T.st_role_ph}" value="${esc(b.role || "")}">
+      <div class="bq">02 · ${T.st_goals}</div>
       <textarea id="bf-goals" class="binput" rows="2" placeholder="${T.st_goals_ph}">${esc((b.goals || []).join("\n"))}</textarea>
       <div id="goal-ideas"></div>
-      <div class="bq">${T.st_questions}</div>
+      <div class="bq">03 · ${T.st_questions}</div>
       <textarea id="bf-questions" class="binput" rows="3" placeholder="${T.st_q_ph}">${esc((b.questions || []).join("\n"))}</textarea>
       <div id="q-ideas"></div>
-      <div class="bq">${T.st_cadence}</div>
-      <div class="chiprow">${Object.entries(T.st_cadences).map(([k, l]) =>
+      <div class="bq">04 · ${T.st_cadence}</div>
+      <div class="seg">${Object.entries(T.st_cadences).map(([k, l]) =>
         `<span class="chip ${CADENCE === k ? "on" : ""}" data-cad="${k}">${l}</span>`).join("")}</div>
-      <button class="runbtn" id="bf-submit" style="max-width:280px">${T.st_submit}</button>
+      <div class="whr"></div>
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+        <button class="runbtn" id="bf-submit" style="max-width:240px;margin-top:0">${T.st_submit} →</button>
+        <span id="use-prev-slot"></span>
+      </div>
       <div class="nerr" id="bf-err"></div>
     </div></section>`;
 }
@@ -2351,8 +2407,8 @@ function renderBriefWizard() {
 function renderPlanApproval() {
   const plan = REPORT.plan;
   const metricById = storyMetricMap();
-  const ICO = { answerable: ["✓", "var(--good)"], partial: ["~", "var(--warning)"],
-    unanswerable: ["✕", "var(--critical)"], unmatched: ["?", "var(--ink-3)"] };
+  const BADGE = { answerable: "good", partial: "warn", unanswerable: "crit",
+    unmatched: "crit" };
   const chipFor = id => {
     const m = metricById[id];
     if (!m) return "";
@@ -2360,28 +2416,30 @@ function renderPlanApproval() {
       ${esc(mlabel(m))}${m._sid ? ` <span class="msheet">${esc(m._sheet)}</span>` : ""}</label>`;
   };
   const qs = plan.questions.map(q => {
-    const [ico, color] = ICO[q.status] || ICO.unmatched;
+    const dead = q.status === "unanswerable" || q.status === "unmatched";
     const chips = q.metrics.map(chipFor).join("");
     const miss = q.missing.map(g =>
       `<div class="qmiss">→ ${T.st_needs(esc(g.requires))}</div>`).join("");
-    return `<div class="qrow">
-      <div><span style="color:${color};font-weight:700">${ico}</span>
-        <b>${esc(q.question)}</b>
-        <span class="qstat" style="color:${color}">${T.st_status[q.status]}</span></div>
-      ${chips ? `<div class="chiprow" style="margin:6px 0 0 22px">${chips}</div>` : ""}
-      <div style="margin-left:22px">${miss}</div>
+    return `<div class="qrow ${dead ? "dim" : ""}">
+      <div><b>${esc(q.question)}</b>
+        <span class="vbadge ${BADGE[q.status] || ""}">${T.st_badge[q.status]}</span></div>
+      ${chips ? `<div class="chiprow" style="margin:8px 0 0">${chips}</div>` : ""}
+      ${miss}
     </div>`;
   }).join("");
   const also = plan.also_available.filter(id => metricById[id]).map(id =>
     `<label class="mchip"><input type="checkbox" data-mid="${esc(id)}"> ${esc(mlabel(metricById[id]))}</label>`).join("");
-  return `<section id="sec-story"><span class="kicker">${T.tab_story}</span>
-    <div class="card" style="max-width:860px">
-      <div class="card-head"><span class="ct">${T.st_plan_t}</span>
-        <span class="grow"></span>${SHARE ? "" : `<button class="iconbtn" id="bf-edit">${T.st_edit}</button>`}</div>
-      <p class="muted" style="margin:8px 0 4px">${T.st_plan_sub}</p>
+  return `<section id="sec-story"><div class="wizard" style="max-width:760px">
+      ${stepper(1)}
+      <h1 class="whead">${T.st_plan_t}.</h1>
+      <p class="vlede" style="margin-bottom:10px">${T.st_plan_sub}</p>
       ${qs}
       ${also ? `<div class="bq">${T.st_also}</div><div class="chiprow">${also}</div>` : ""}
-      <button class="runbtn" id="plan-approve" style="max-width:320px">${T.st_build}</button>
+      <div class="whr"></div>
+      <div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap">
+        <button class="runbtn" id="plan-approve" style="max-width:280px;margin-top:0">${T.st_build} →</button>
+        ${SHARE ? "" : `<a class="seeall" id="bf-edit" style="font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase">← ${T.st_edit_link}</a>`}
+      </div>
     </div></section>`;
 }
 
@@ -2417,19 +2475,7 @@ function storyVisual(m) {
   const id = m.id;
   if (id === "trend")
     return storyChartCard(m, { kindTime: true, loc: esc(m.measure) });
-  if (id === "movers") {
-    const mx = Math.max(...m.top.concat(m.bottom).map(r => Math.abs(r.value ?? 0)), 1e-9);
-    const tbl = rows => `<table class="mtable">${rows.map(r =>
-      `<tr><td>${esc(r.entity.slice(0, 30))}</td>
-       <td class="num" style="background:${fillFor(r.value, mx)}">${r.value >= 0 ? "+" : ""}${num(r.value)}</td>
-       <td class="num muted">${r.headline != null ? compact(r.headline) : ""}</td></tr>`).join("")}</table>`;
-    return `<div class="card"><div class="card-head"><span class="ct">${esc(storySentence(m))}</span>
-        <span class="cs">${esc(m.measure)}${m._sid ? " · " + esc(m._sheet) : ""}</span></div>
-      <div class="grid2" style="gap:16px;margin-top:8px">
-        <div><div class="psub">${T.st_top}</div>${tbl(m.top)}</div>
-        <div><div class="psub">${T.st_bottom}</div>${tbl(m.bottom)}</div>
-      </div></div>`;
-  }
+  if (id === "movers") return moversDiverging(m);
   if (id === "low_stock")
     return `<div class="card"><div class="card-head"><span class="ct">${esc(storySentence(m))}</span>
         <span class="cs">${esc(m.measure)}${m._sid ? " · " + esc(m._sheet) : ""}</span></div>
@@ -2451,6 +2497,39 @@ function storyVisual(m) {
     return storyChartCard(m, { colors: signed ? semanticColors(vals) : undefined });
   }
   return "";
+}
+
+/* movers as diverging bars: zero axis centered, gains right in muted green,
+   losses left in reds — intensity follows magnitude (spec §10) */
+function moversDiverging(m) {
+  const seen = new Set(), all = [];
+  for (const r of (m.top || []).concat(m.bottom || [])) {
+    if (r.value == null || seen.has(r.entity)) continue;
+    seen.add(r.entity); all.push(r);
+  }
+  all.sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
+  if (!all.length) return "";
+  const mx = Math.max(...all.map(r => Math.abs(r.value ?? 0)), 1e-9);
+  const GAIN = ["#5e7d54", "#7d9673", "#a3b199"], LOSS = ["#b03a2e", "#c07f72", "#c99a90"];
+  const shade = a => a >= .66 ? 0 : a >= .33 ? 1 : 2;
+  const rows = all.slice(0, 8).map((r, i) => {
+    const v = r.value, w = Math.abs(v) / mx * 49;
+    const col = (v >= 0 ? GAIN : LOSS)[shade(Math.abs(v) / mx)];
+    const bar = v >= 0
+      ? `<span class="dbar" style="left:50%;width:${w.toFixed(1)}%;background:${col}"></span>`
+      : `<span class="dbar" style="right:50%;width:${w.toFixed(1)}%;background:${col}"></span>`;
+    const big = i === 0 || i === all.length - 1;
+    return `<div class="dvrow ${big ? "big" : ""}">
+      <span class="dl">${esc(String(r.entity).slice(0, 24))}</span>
+      <span class="dd" style="color:${v >= 0 ? "var(--good-series)" : "var(--critical)"}">${v >= 0 ? "+" : "−"}${num(Math.abs(v))}</span>
+      <span class="dwrap">${bar}</span>
+      <span class="dv2">${r.headline != null ? compact(r.headline) : ""}</span>
+    </div>`;
+  }).join("");
+  return `<div class="card"><div class="card-head"><span class="ct">${esc(storySentence(m))}</span>
+      <span class="cs">${m._sid ? esc(m._sheet) : ""}</span></div>
+    <div style="margin-top:8px">${rows}</div>
+    <div class="rfoot">${T.dv_foot(esc(m.measure.replace(/^Δ\s*/, "").slice(0, 30)))}</div></div>`;
 }
 
 /* Step 5: a shared-axis pair — amount and its change on one member axis. */
@@ -2475,10 +2554,95 @@ function pairCard(mAmt, mChg) {
     <div style="margin-top:10px">${rows}</div></div>`;
 }
 
+/* the trend metric as a bare executive chart (annotated, gradient) */
+function trendExecChart(m) {
+  const c = { pseudo: true, sheet: m.measure,
+    chart: { kind: "timeseries", periods: m.rows.map(r => r.period), series: [] },
+    lines: [{ label: m.measure, values: m.rows.map(r => r.value),
+      color: SERIES_COLORS[0], on: true }],
+    i: CHARTS.length, range: null };
+  CHARTS.push(c);
+  return storyChartExec(c);
+}
+
+function renderStoryDashExec(metricById, approved) {
+  const plan = REPORT.plan, brief = REPORT.brief || {};
+  const sel = approved.map(k => metricById[k]).filter(Boolean);
+  const first = id => sel.find(m => m.id === id);
+  const trend = first("trend"), mv = first("movers");
+  const by = sel.find(m => m.id && m.id.startsWith("by_") && m.rows && m.rows.length >= 2);
+
+  // the headline is the trend, spoken as a sentence
+  let head = "", changePct = null, pa = null, pb = null;
+  if (trend && trend.rows.length >= 2) {
+    const a = trend.rows.find(r => r.value != null);
+    const b = [...trend.rows].reverse().find(r => r.value != null);
+    if (a && b && a !== b && a.value) {
+      changePct = (b.value / a.value - 1) * 100;
+      pa = a.period; pb = b.period;
+      head = T.bh_trend(titleCase(String(trend.measure).slice(0, 44)),
+        changePct >= 0, pctFmt(Math.abs(changePct)));
+    }
+  }
+  if (!head) {
+    const takes = storyTakeaways(metricById, approved);
+    head = takes[0] || T.st_plan_t + ".";
+  }
+
+  const cells = [];
+  if (changePct != null)
+    cells.push(`<div class="kcell ${changePct < 0 ? "crit" : ""}"><div class="kl">${T.bk_change}</div>
+      <div class="kv">${changePct >= 0 ? "+" : "−"}${pctFmt(Math.abs(changePct))}</div>
+      <div class="ks">${esc(String(pa))} → ${esc(String(pb))}</div></div>`);
+  if (by) {
+    const total = by.rows.reduce((s, r) => s + Math.abs(r.value ?? 0), 0);
+    if (total > 0) cells.push(`<div class="kcell"><div class="kl">${T.bk_share}</div>
+      <div class="kv">${pctFmt(Math.abs(by.rows[0].value ?? 0) / total * 100)}</div>
+      <div class="ks">${esc(String(by.rows[0].member).slice(0, 26))}, ${T.bk_of_total(esc(by.grain))}</div></div>`);
+  }
+  if (mv && mv.top.length && mv.top[0].value > 0)
+    cells.push(`<div class="kcell"><div class="kl">${T.bk_gain}</div>
+      <div class="kv">+${compact(mv.top[0].value)}</div>
+      <div class="ks">${esc(String(mv.top[0].entity).slice(0, 26))}</div></div>`);
+  if (mv && mv.bottom.length && mv.bottom[0].value < 0)
+    cells.push(`<div class="kcell crit"><div class="kl">${T.bk_drop}</div>
+      <div class="kv">−${compact(Math.abs(mv.bottom[0].value))}</div>
+      <div class="ks">${esc(String(mv.bottom[0].entity).slice(0, 26))}</div></div>`);
+  const strip = cells.length ? `<div class="kstrip">${cells.join("")}</div>` : "";
+
+  const recs = storyRecs(metricById, approved);
+  const steps = recs.length ? recs.map((r, i) => `<div class="step"><span class="n">${i + 1}</span>
+      <div><b>${esc(r.text)}</b><p>${esc(r.because)}</p></div></div>`).join("") : "";
+  const misses = plan.questions.filter(q => q.status === "unanswerable"
+    || q.status === "unmatched" || (q.status === "partial" && q.missing.length));
+  const gaps = misses.length ? `<div style="margin-top:30px"><span class="kicker">${T.st_gaps_t}</span>
+      ${misses.map(q => `<p class="chcap" style="max-width:46ch"><b>${esc(q.question)}</b> —
+        ${T.st_status[q.status]}${q.missing[0] ? ` · ${T.st_needs(esc(q.missing[0].requires))}` : ""}</p>`).join("")}</div>` : "";
+
+  const cad = T.st_cadences[brief.cadence]
+    ? T.st_cadences[brief.cadence].toLowerCase() : brief.cadence;
+  return `<section id="sec-story">
+    <div style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap">
+      <span class="kicker">${esc(T.st_brief_line(brief.role, cad))} · ${esc((REPORT.story.sheet || "").trim())}</span>
+      <span class="grow"></span>
+      ${SHARE ? "" : `<button class="iconbtn" id="bf-edit">${T.st_edit}</button>
+        <button class="iconbtn" id="plan-reopen">${T.st_replan}</button>`}
+    </div>
+    <h1 class="vhead">${esc(head)}</h1>
+    ${strip}
+    <div class="execgrid">
+      <div>${trend ? trendExecChart(trend) : ""}
+        ${mv ? `<div style="margin-top:26px">${moversDiverging(mv)}</div>` : ""}</div>
+      <div>${steps ? `<span class="kicker">${T.rc_title}</span>${steps}` : ""}${gaps}</div>
+    </div>
+  </section>`;
+}
+
 function renderStoryDash() {
   const story = REPORT.story, plan = REPORT.plan, brief = REPORT.brief || {};
   const metricById = storyMetricMap();
   const approved = plan.approved.filter(id => metricById[id]);
+  if (MODE === "exec") return renderStoryDashExec(metricById, approved);
   const done = new Set();
 
   // Step 5a: the headline absorbs its own deltas (MoM/YoY beside the number)
@@ -2529,16 +2693,20 @@ function renderStoryDash() {
     if (Object.values(paired).some(p => p.partner === key)) return "";
     return storyVisual(metricById[key]);
   };
+  let qn = 0;
   for (const q of plan.questions) {
     const vis = q.metrics.filter(id => approved.includes(id))
       .map(emit).filter(Boolean);
-    if (vis.length) zones.push({ title: q.question, cards: vis });
+    qn++;
+    if (vis.length) zones.push({ title: q.question, cards: vis, n: qn, status: q.status });
   }
   const rest = approved.map(emit).filter(Boolean);
   if (rest.length) zones.push({ title: T.st_also, cards: rest });
 
+  const BADGE = { answerable: "good", partial: "warn" };
   const zoneHtml = zones.map(z => `
-    <div class="zq">${esc(z.title)}</div>
+    <div class="zq">${z.n ? `<span class="zn">Q${z.n}</span> — ` : ""}${esc(z.title)}${
+      z.status ? ` <span class="vbadge ${BADGE[z.status] || ""}">${T.st_badge[z.status]}</span>` : ""}</div>
     <div class="grid2">${z.cards.join("")}</div>`).join("");
 
   // Step 6: takeaways lead, recommendations close — both computed from the
@@ -2568,12 +2736,22 @@ function renderStoryDash() {
         ${q.missing.map(g => `<div class="qmiss">→ ${T.st_needs(esc(g.requires))}</div>`).join("")}
       </div>`).join("")}</div>` : "";
 
-  return `<section id="sec-story"><span class="kicker">${T.tab_story}</span>
-    <div class="greet" style="margin-bottom:10px"><div>
-      <div class="gsub">${esc(T.st_brief_line(brief.role, T.st_cadences[brief.cadence] ? T.st_cadences[brief.cadence].toLowerCase() : brief.cadence))} · ${esc(story.sheet.trim())}</div></div>
-      ${SHARE ? "" : `<span style="margin-left:auto">
+  const nA = plan.questions.filter(q => q.status === "answerable").length;
+  const nP = plan.questions.filter(q => q.status === "partial").length;
+  const statbar = `<div class="statbar">
+    <span>${T.sb_q} <b>${plan.questions.length}</b></span>
+    ${nA ? `<span class="sbgood">${T.st_badge.answerable} <b>${nA}</b></span>` : ""}
+    ${nP ? `<span class="sbwarn">${T.st_badge.partial} <b>${nP}</b></span>` : ""}
+    <span>${T.sb_series} <b>${approved.length}</b></span>
+  </div>`;
+  return `<section id="sec-story">
+    <div style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:6px">
+      <span class="kicker">${esc(T.st_brief_line(brief.role, T.st_cadences[brief.cadence] ? T.st_cadences[brief.cadence].toLowerCase() : brief.cadence))} · ${esc(story.sheet.trim())}</span>
+      <span class="grow"></span>
+      ${SHARE ? "" : `<span>
         <button class="iconbtn" id="bf-edit">${T.st_edit}</button>
         <button class="iconbtn" id="plan-reopen">${T.st_replan}</button></span>`}</div>
+    ${statbar}
     ${hero}
     ${takesCard}
     ${zoneHtml}
@@ -2631,7 +2809,8 @@ function attachStory() {
   if (sugBox && !SHARE) {
     fetch(`/analyses/${current}/brief-suggestion?lang=${LANG}`).then(r => r.json()).then(s => {
       if (s.brief) {
-        sugBox.innerHTML = `<button class="iconbtn on" id="use-prev">${T.st_use_prev(esc(s.from))}</button>`;
+        const slot = $("#use-prev-slot") || sugBox;
+        slot.innerHTML = `<a class="seeall" id="use-prev" style="font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase">↺ ${T.st_use_prev(esc(s.from))}</a>`;
         $("#use-prev").addEventListener("click", () => {
           REPORT.brief = s.brief; CADENCE = s.brief.cadence || "monthly";
           renderAll();
@@ -2640,9 +2819,10 @@ function attachStory() {
       const ideaRow = (boxId, taId, lines) => {
         const box = $(boxId), ta = $(taId);
         if (!box || !ta || !lines || !lines.length) return;
-        box.innerHTML = `<div class="label" style="margin-top:6px">${T.st_ideas}</div>
-          <div class="chiprow">${lines.map((q, i) =>
-            `<span class="chip" data-idea="${i}">${esc(q)}</span>`).join("")}</div>`;
+        box.innerHTML = `<div class="chiprow" style="margin:8px 0 0;align-items:center">
+          <span class="kicker" style="font-size:8.5px">${T.st_ideas}</span>
+          ${lines.map((q, i) =>
+            `<span class="chip idea" data-idea="${i}">+ ${esc(q)}</span>`).join("")}</div>`;
         box.querySelectorAll(".chip").forEach(ch =>
           ch.addEventListener("click", () => {
             const line = lines[+ch.dataset.idea];
