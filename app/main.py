@@ -25,7 +25,8 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 import datetime as _dt
 
 from . import auth, narrative, storage
-from .findings import DECISIONS, aggregate_findings
+from .findings import DECISIONS, aggregate_findings, count_open
+from .snapshot import build_exec_snapshot
 from .models import (
     AnalysisMeta,
     AnalyzeResponse,
@@ -64,9 +65,12 @@ async def require_password(request: Request, call_next):
     page, API calls get 401.
     """
     if auth.password() is None or request.url.path in auth.PUBLIC_PATHS \
+            or request.url.path.startswith("/published/") \
             or request.url.path.startswith("/share/"):
-        # /share/{token} is deliberately public: the unguessable token IS the
-        # credential, and the routes behind it are read-only.
+        # /published/{token} is deliberately public: the unguessable token IS
+        # the credential, and the only thing behind it is the frozen
+        # exec-only snapshot. /share/ stays listed so retired links get an
+        # honest 404 instead of a login wall.
         return await call_next(request)
     if auth.valid_token(request.cookies.get(auth.COOKIE)):
         return await call_next(request)
@@ -303,7 +307,9 @@ def set_decisions(analysis_id: str, body: DecisionsRequest) -> dict:
                 detail=f"Unknown decision '{value}' — expected one of "
                        f"{', '.join(DECISIONS)}.")
     stored = report.get("decisions") or {}
-    now = _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")
+    # microseconds to match storage timestamps: stale is a lexicographic
+    # decided_at > published_at comparison
+    now = _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="microseconds")
     for fid, value in body.decisions.items():
         # `open` is recorded too: reverting a decision is itself a review
         # event, and its timestamp is what makes a published copy stale
@@ -408,49 +414,68 @@ async def assign_client(analysis_id: str, request: Request) -> dict:
     return {"id": analysis_id, "client": client or None}
 
 
-@app.post("/analyses/{analysis_id}/share")
-def create_share(analysis_id: str) -> dict:
-    """Mint (or return) the read-only share link for an analysis."""
-    token = storage.create_share(analysis_id)
-    if token is None:
+@app.post("/analyses/{analysis_id}/publish")
+def publish_analysis(analysis_id: str) -> dict:
+    """Freeze the exec-only snapshot behind the public token.
+
+    Gated: publishing with findings still `open` is refused — the product
+    will not let unreviewed numbers circulate. Republish bumps the version;
+    the token (and therefore the client's link) never changes."""
+    report = storage.get_report(analysis_id)
+    if report is None:
         raise HTTPException(status_code=404,
                             detail=f"No analysis '{analysis_id}'.")
-    return {"token": token, "url": f"/share/{token}"}
+    n_open = count_open(report)
+    if n_open:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{n_open} finding(s) still open — decide each one "
+                   f"(approve or flag) before publishing.")
+    info = storage.publish(analysis_id, build_exec_snapshot(report))
+    return {**info, "url": f"/published/{info['token']}"}
 
 
-@app.delete("/analyses/{analysis_id}/share")
-def revoke_share(analysis_id: str) -> dict:
-    """Revoke the share link; the URL stops working immediately."""
-    return {"revoked": storage.revoke_share(analysis_id)}
-
-
-def _shared_report(token: str) -> dict:
-    analysis_id = storage.resolve_share(token)
-    report = storage.get_report(analysis_id) if analysis_id else None
+@app.get("/analyses/{analysis_id}/publish")
+def publish_status(analysis_id: str) -> dict:
+    """Publish state for the workbook panel: version, when, opens, stale."""
+    report = storage.get_report(analysis_id)
     if report is None:
-        raise HTTPException(status_code=404, detail="This link is no longer active.")
-    return report
+        raise HTTPException(status_code=404,
+                            detail=f"No analysis '{analysis_id}'.")
+    info = storage.published_info(analysis_id)
+    if info is None:
+        return {"published": False}
+    return {"published": True, **info,
+            "url": f"/published/{info['token']}",
+            "stale": storage.is_stale(report, info["published_at"])}
 
 
-@app.get("/share/{token}", include_in_schema=False)
-def share_page(token: str) -> FileResponse:
-    """The read-only client view (same SPA; it detects /share/ and hides
-    upload, library, rerun and delete). 404 for dead tokens."""
-    _shared_report(token)
+@app.delete("/analyses/{analysis_id}/publish")
+def revoke_publish(analysis_id: str) -> dict:
+    """Drop the published snapshot; the public link dies immediately."""
+    return {"revoked": storage.revoke_publish(analysis_id)}
+
+
+@app.get("/published/{token}")
+def published_snapshot(token: str) -> dict:
+    """PUBLIC. Serves the frozen exec-only snapshot VERBATIM — this handler
+    never reads the full report, so analyst-only material cannot leak
+    through it. Counts each open."""
+    snap = storage.open_published(token)
+    if snap is None:
+        raise HTTPException(status_code=404,
+                            detail="This link is no longer active.")
+    return snap
+
+
+@app.get("/published/{token}/page", include_in_schema=False)
+def published_page(token: str) -> FileResponse:
+    """PUBLIC. The executive page shell; it fetches the snapshot above."""
+    if not storage.published_token_exists(token):
+        raise HTTPException(status_code=404,
+                            detail="This link is no longer active.")
     return FileResponse(_INDEX, media_type="text/html",
                         headers={"Cache-Control": "no-cache"})
-
-
-@app.get("/share/{token}/report", response_model=AnalyzeResponse)
-def share_report(token: str) -> AnalyzeResponse:
-    return AnalyzeResponse(**_shared_report(token))
-
-
-@app.get("/share/{token}/findings", response_model=FindingsResponse)
-def share_findings(token: str) -> FindingsResponse:
-    report = _shared_report(token)
-    agg = aggregate_findings(report)
-    return FindingsResponse(id="shared", filename=report["filename"], **agg)
 
 
 @app.post("/analyses/{analysis_id}/narrative")

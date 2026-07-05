@@ -81,6 +81,10 @@ class AnalysisMeta(BaseModel):
     client: Optional[str] = None
     # findings (mismatched + unverified) still waiting on a decision
     open_findings: Optional[int] = None
+    # publish state: latest published version (None = never published) and
+    # whether decisions have moved since — both derived, never stored
+    published_version: Optional[int] = None
+    stale: Optional[bool] = None
 
 
 class DecisionsRequest(BaseModel):
