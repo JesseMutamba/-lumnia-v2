@@ -22,11 +22,14 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
+import datetime as _dt
+
 from . import auth, narrative, storage
-from .findings import aggregate_findings
+from .findings import DECISIONS, aggregate_findings
 from .models import (
     AnalysisMeta,
     AnalyzeResponse,
+    DecisionsRequest,
     DeleteResponse,
     FindingsResponse,
     HealthResponse,
@@ -279,6 +282,40 @@ def get_findings(analysis_id: str) -> FindingsResponse:
     return FindingsResponse(id=analysis_id, filename=report["filename"], **agg)
 
 
+@app.post("/analyses/{analysis_id}/decisions")
+def set_decisions(analysis_id: str, body: DecisionsRequest) -> dict:
+    """Batch per-finding decisions. Rejects unknown finding ids and unknown
+    decision values wholesale — a typo must not half-apply a review."""
+    report = storage.get_report(analysis_id)
+    if report is None:
+        raise HTTPException(status_code=404,
+                            detail=f"No analysis '{analysis_id}'.")
+    agg = aggregate_findings(report)
+    known = {f["id"] for f in
+             agg["findings"] + agg["unverified"] + agg["verified"]}
+    for fid, value in body.decisions.items():
+        if fid not in known:
+            raise HTTPException(status_code=400,
+                                detail=f"Unknown finding id '{fid}'.")
+        if value not in DECISIONS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown decision '{value}' — expected one of "
+                       f"{', '.join(DECISIONS)}.")
+    stored = report.get("decisions") or {}
+    now = _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")
+    for fid, value in body.decisions.items():
+        # `open` is recorded too: reverting a decision is itself a review
+        # event, and its timestamp is what makes a published copy stale
+        stored[fid] = {"decision": value, "decided_at": now}
+    report["decisions"] = stored
+    storage.update_report(analysis_id, report)
+    fresh = aggregate_findings(report)
+    actionable = fresh["findings"] + fresh["unverified"]
+    return {s: sum(1 for f in actionable if f["decision"] == s)
+            for s in DECISIONS}
+
+
 @app.post("/analyses/{analysis_id}/brief")
 async def set_brief(analysis_id: str, request: Request) -> dict:
     """Step 1 of the storytelling flow: store the intake answers and return
@@ -467,6 +504,14 @@ def rerun_analysis(analysis_id: str) -> AnalyzeResponse:
                      for si, st in enumerate(result.stories or [result.story])
                      for m in st.get("metrics", [])}
             result.plan["approved"] = [i for i in prev if i in valid]
+    # decisions survive the rerun for findings whose stable id still exists;
+    # decisions on vanished findings are dropped (same policy as approvals)
+    if old.get("decisions"):
+        fresh = aggregate_findings(result.model_dump())
+        alive = {f["id"] for f in
+                 fresh["findings"] + fresh["unverified"] + fresh["verified"]}
+        kept = {fid: d for fid, d in old["decisions"].items() if fid in alive}
+        result.decisions = kept or None
     storage.update_report(analysis_id, result.model_dump())
     return result
 

@@ -63,6 +63,7 @@ def _connect() -> sqlite3.Connection:
     for migration in (                # migrate DBs created before the column
         "ALTER TABLE analyses ADD COLUMN sha256 TEXT",
         "ALTER TABLE analyses ADD COLUMN client TEXT",
+        "ALTER TABLE analyses ADD COLUMN open_findings INTEGER",
     ):
         try:
             con.execute(migration)
@@ -84,17 +85,23 @@ def find_by_content(content: bytes) -> Optional[str]:
     return row["id"] if row else None
 
 
+def _open_findings(report: Dict[str, Any]) -> int:
+    # local import: findings.py is pure and imports nothing from storage
+    from .findings import count_open
+    return count_open(report)
+
+
 def save_analysis(filename: str, content: bytes, report: Dict[str, Any]) -> str:
     """Persist a new analysis; returns its id (also stamped into the report)."""
     analysis_id = uuid.uuid4().hex[:12]
     report = {**report, "id": analysis_id}
     with _connect() as con:
         con.execute(
-            "INSERT INTO analyses (id, filename, uploaded_at, size_bytes, sha256, content, report) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO analyses (id, filename, uploaded_at, size_bytes, sha256, content, report, open_findings) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (analysis_id, filename, _now(), len(content),
              hashlib.sha256(content).hexdigest(), content,
-             json.dumps(report, ensure_ascii=False)),
+             json.dumps(report, ensure_ascii=False), _open_findings(report)),
         )
     return analysis_id
 
@@ -109,21 +116,28 @@ def list_analyses() -> List[Dict[str, Any]]:
     """
     with _connect() as con:
         rows = con.execute(
-            "SELECT id, filename, uploaded_at, reran_at, size_bytes, client, report "
-            "FROM analyses ORDER BY uploaded_at DESC, id"
+            "SELECT id, filename, uploaded_at, reran_at, size_bytes, client, "
+            "report, open_findings FROM analyses ORDER BY uploaded_at DESC, id"
         ).fetchall()
-    out = []
-    for r in rows:
-        report = json.loads(r["report"])
-        out.append({
-            "id": r["id"],
-            "filename": r["filename"],
-            "uploaded_at": r["uploaded_at"],
-            "reran_at": r["reran_at"],
-            "size_bytes": r["size_bytes"],
-            "client": r["client"],
-            "n_sheets": report.get("n_sheets", 0),
-        })
+        out = []
+        for r in rows:
+            report = json.loads(r["report"])
+            open_findings = r["open_findings"]
+            if open_findings is None:      # row predates the column: backfill
+                open_findings = _open_findings(report)
+                con.execute(
+                    "UPDATE analyses SET open_findings = ? WHERE id = ?",
+                    (open_findings, r["id"]))
+            out.append({
+                "id": r["id"],
+                "filename": r["filename"],
+                "uploaded_at": r["uploaded_at"],
+                "reran_at": r["reran_at"],
+                "size_bytes": r["size_bytes"],
+                "client": r["client"],
+                "n_sheets": report.get("n_sheets", 0),
+                "open_findings": open_findings,
+            })
     return out
 
 
@@ -211,8 +225,10 @@ def get_content(analysis_id: str) -> Optional[Tuple[str, bytes]]:
 def update_report(analysis_id: str, report: Dict[str, Any]) -> bool:
     with _connect() as con:
         cur = con.execute(
-            "UPDATE analyses SET report = ?, reran_at = ? WHERE id = ?",
-            (json.dumps(report, ensure_ascii=False), _now(), analysis_id),
+            "UPDATE analyses SET report = ?, reran_at = ?, open_findings = ? "
+            "WHERE id = ?",
+            (json.dumps(report, ensure_ascii=False), _now(),
+             _open_findings(report), analysis_id),
         )
     return cur.rowcount > 0
 

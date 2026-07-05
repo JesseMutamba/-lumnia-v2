@@ -64,6 +64,9 @@ class AnalyzeResponse(BaseModel):
     # Phase 2 — the user's intake answers and the matched metric plan
     brief: Optional[Dict[str, Any]] = None
     plan: Optional[Dict[str, Any]] = None
+    # Publish lifecycle — persisted per-finding decisions keyed by the
+    # stable finding id: {fid: {"decision": ..., "decided_at": iso}}
+    decisions: Optional[Dict[str, Any]] = None
 
 
 class AnalysisMeta(BaseModel):
@@ -76,6 +79,13 @@ class AnalysisMeta(BaseModel):
     n_sheets: int
     # client workspace this analysis belongs to (None = unassigned)
     client: Optional[str] = None
+    # findings (mismatched + unverified) still waiting on a decision
+    open_findings: Optional[int] = None
+
+
+class DecisionsRequest(BaseModel):
+    """Batch decision update: {finding_id: "open"|"approved"|"flagged"}."""
+    decisions: Dict[str, str]
 
 
 class FindingsResponse(BaseModel):
