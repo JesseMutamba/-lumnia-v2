@@ -19,6 +19,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
 from . import auth, narrative, storage
@@ -45,6 +46,10 @@ app = FastAPI(title="Lumnia v2", version="0.5.0")
 # Reject uploads beyond this size with 413 — bigger files need a real queue,
 # not a synchronous request.
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+# Bytes cap work in transit; this caps work in the pipeline. A dense grid
+# past this many cells would hold a worker thread for minutes — refuse
+# honestly instead of grinding (~1.5M cells ≈ 90s of pipeline).
+MAX_TOTAL_CELLS = 1_500_000
 
 
 @app.middleware("http")
@@ -105,6 +110,16 @@ def run_pipeline(content: bytes, filename: str) -> AnalyzeResponse:
             status_code=422,
             detail=f"Could not read '{filename}': {exc}",
         )
+
+    total_cells = sum(int(df.shape[0]) * int(df.shape[1])
+                      for df in sheets.values())
+    if total_cells > MAX_TOTAL_CELLS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"'{filename}' has {total_cells:,} cells across "
+                   f"{len(sheets)} sheet(s); the limit is "
+                   f"{MAX_TOTAL_CELLS:,}. Split the workbook or remove "
+                   f"unused sheets.")
 
     reports = []
     for name, df in sheets.items():
@@ -222,7 +237,10 @@ async def analyze(file: UploadFile = File(...)) -> AnalyzeResponse:
         if report is not None:
             return AnalyzeResponse(**report)
 
-    result = run_pipeline(content, file.filename or "")
+    # CPU-bound pandas work must not run on the event loop: inline it and
+    # one big upload freezes every other request AND the /health check,
+    # which lets Fly/Render restart the box mid-analysis.
+    result = await run_in_threadpool(run_pipeline, content, file.filename or "")
     result.id = storage.save_analysis(
         result.filename, content, result.model_dump())
     return result
