@@ -487,17 +487,24 @@
   .sl .sln { color: var(--ink-2); font-size: 12px; }
   .sl .slv { font-family: var(--mono); font-size: 12px; font-weight: 700;
     color: var(--gold); }
-  .sl input[type=range] { width: 100%; accent-color: var(--gold-strong);
-    height: 4px; cursor: pointer; }
+  .sl input[type=range] { -webkit-appearance: none; appearance: none; width: 100%;
+    height: 3px; border-radius: 2px; background: #e2d9c2; outline: none;
+    cursor: pointer; }
+  .sl input[type=range]::-webkit-slider-thumb { -webkit-appearance: none;
+    width: 14px; height: 14px; border-radius: 50%; background: var(--gold);
+    border: 2.5px solid var(--surface); box-shadow: 0 1px 3px rgba(70,58,25,.3); }
+  .sl input[type=range]::-moz-range-thumb { width: 14px; height: 14px;
+    border-radius: 50%; background: var(--gold); border: 2.5px solid var(--surface);
+    box-shadow: 0 1px 3px rgba(70,58,25,.3); }
   .preset { border: none; border-radius: 7px; padding: 5px 12px; font-size: 11px;
     font-weight: 600; cursor: pointer; margin: 0 6px 6px 0; }
-  .scard { background: var(--card); border: 1px solid var(--hairline);
-    border-top: 3px solid var(--scolor, var(--border)); border-radius: 12px;
-    padding: 13px 16px; box-shadow: var(--shadow); }
-  .scard .sn { font-family: var(--mono); font-size: 10px; letter-spacing: .12em;
+  .scard { background: var(--card); border: 1px solid var(--border);
+    border-top: 2px solid var(--scolor, var(--border)); border-radius: 6px;
+    padding: 13px 16px; }
+  .scard .sn { font-family: var(--mono); font-size: 9.5px; letter-spacing: .12em;
     text-transform: uppercase; color: var(--ink-3); }
-  .scard .sv { font-size: 19px; font-weight: 700; color: var(--scolor);
-    font-variant-numeric: tabular-nums; margin: 4px 0 1px; }
+  .scard .sv { font-family: var(--serif); font-size: 26px; font-weight: 600;
+    color: var(--scolor); font-variant-numeric: tabular-nums; margin: 4px 0 1px; }
   .scard .ss { font-size: 10.5px; color: var(--ink-3); }
   .runbtn { width: 100%; margin-top: 12px; background: var(--gold); color: #fff;
     border: none; border-radius: 8px; padding: 10px 0; font-family: var(--mono);
@@ -605,6 +612,31 @@
 
   /* one-line insight caption under a chart */
   .chcap { font-size: 11.5px; color: var(--ink-4); margin-top: 8px; line-height: 1.5; }
+
+  /* actions: triage rows with serif numerals and an at-stake column */
+  .acrow { display: grid; grid-template-columns: 44px minmax(0, 1fr) 132px;
+    gap: 14px; padding: 20px 0; border-bottom: 1px solid var(--hairline); }
+  .acrow .n { font-family: var(--serif); font-size: 24px; color: var(--ink-3);
+    line-height: 1.1; }
+  .acrow > div:nth-child(2) > b { font-size: 14px; }
+  .acrow .aw { color: var(--ink-2); font-size: 13px; margin-top: 6px;
+    line-height: 1.6; max-width: 72ch; }
+  .acrow .ad { margin-top: 8px; font-size: 13px; line-height: 1.55; }
+  .acrow .ad b { color: var(--gold); }
+  .acrow .stake { text-align: right; }
+  .acrow .stake .v { font-family: var(--serif); font-size: 26px; font-weight: 600;
+    color: var(--critical); font-variant-numeric: tabular-nums; }
+  .acrow .stake .l { font-family: var(--mono); font-size: 8.5px;
+    letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3);
+    margin-top: 2px; }
+  .acpass { margin-top: 18px; font-size: 13px; color: var(--ink-2); }
+
+  /* trends overflow: the honest "there is more" card */
+  .overflow-card { border: 1.5px dashed var(--border-strong);
+    border-radius: var(--radius-card); display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+    padding: 30px 20px; cursor: pointer; min-height: 200px; }
+  .overflow-card:hover { border-color: var(--gold); }
 
   /* briefing wizard: a focused centered column */
   .wizard { max-width: 640px; margin: 12px auto 0; }
@@ -997,6 +1029,17 @@ const STR = {
     ov_profile_t: "Data profile — worst columns",
     ov_missing: "missing values",
     sp_peak: "Peak", sp_rising: "rising", sp_falling: "falling", sp_spike: "Spike",
+    // redesign: actions, trends, finances, stress test
+    ac_head: n => n ? `${n} number${n === 1 ? "" : "s"} need${n === 1 ? "s" : ""} an owner's eye.`
+      : "Nothing needs an owner's eye.",
+    ac_sub: "Ranked by money at stake. Everything else on this file passed its automated checks.",
+    ac_stake: "at stake",
+    ac_pass_n: n => `${n} check${n === 1 ? "" : "s"} passed`,
+    ac_pass_txt: "every other discovered relation holds. Fix the above and this file is safe to circulate.",
+    tr_more: "more charts", tr_showall: "Show all",
+    tr_prof_cap: (x, v) => `“${x}” carries the peak (${v}).`,
+    fin_rfoot: (k, n, v) => `top ${k} of ${n} line items · remaining ${n - k} = ${v}`,
+    mc_range: (a, b) => `80% of outcomes land between <b>${a}</b> and <b>${b}</b>.`,
   },
   fr: {
     tab_overview: "Aperçu", tab_financials: "Finances", tab_whatif: "Scénarios",
@@ -1220,6 +1263,17 @@ const STR = {
     ov_profile_t: "Profil — colonnes les plus incomplètes",
     ov_missing: "valeurs manquantes",
     sp_peak: "Pic", sp_rising: "en hausse", sp_falling: "en baisse", sp_spike: "Pic isolé",
+    // redesign : actions, tendances, finances, stress test
+    ac_head: n => n ? `${n} chiffre${n === 1 ? "" : "s"} attend${n === 1 ? "" : "ent"} l'œil du propriétaire.`
+      : "Rien n'attend l'œil du propriétaire.",
+    ac_sub: "Classés par montant en jeu. Tout le reste du fichier a passé les contrôles automatiques.",
+    ac_stake: "en jeu",
+    ac_pass_n: n => `${n} contrôle${n === 1 ? "" : "s"} réussi${n === 1 ? "" : "s"}`,
+    ac_pass_txt: "toutes les autres relations découvertes tiennent. Corrigez ce qui précède et le fichier peut circuler.",
+    tr_more: "autres graphiques", tr_showall: "Tout afficher",
+    tr_prof_cap: (x, v) => `« ${x} » porte le pic (${v}).`,
+    fin_rfoot: (k, n, v) => `${k} premiers postes sur ${n} · reste ${n - k} = ${v}`,
+    mc_range: (a, b) => `80 % des résultats se situent entre <b>${a}</b> et <b>${b}</b>.`,
   },
 };
 const T = STR[LANG];
@@ -1534,7 +1588,7 @@ function renderAll() {
       (exec ? "" : `<section id="sec-sheets"><span class="kicker">${T.sh_kicker(r.n_sheets)}</span>${renderSheets()}</section>`);
   } else if (TAB === "audit") {
     body = exec
-      ? `<section id="sec-audit"><span class="kicker">${T.tab_actions}</span>${renderActionList()}${renderExecDownloads()}</section>`
+      ? `<section id="sec-audit">${renderActionList()}${renderExecDownloads()}</section>`
       : (renderFilters() +
          `<section id="sec-audit"><span class="kicker">${T.tab_audit}</span>${renderHighlights()}${renderLeaderboards()}${renderFindingsTable()}</section>`);
   }
@@ -2140,8 +2194,10 @@ function plainFormula(f) {
 }
 
 function renderActionList() {
-  const cards = [];
+  const rows = [];
+  let i = 0;
   for (const f of AUDIT.findings) {
+    i++;
     const safe = safeFixes(f);
     let action;
     if (safe.length) {
@@ -2149,29 +2205,34 @@ function renderActionList() {
         T.a_change(esc(m.cell || T.row_w + " " + m.row), num(m.actual), num(m.expected))).join("; ")
         + (safe.length > 3 ? T.a_more(safe.length - 3) : "") + ".";
     } else {
-      const rows = [...new Set(f.mismatches.map(m => m.row))].slice(0, 4);
-      action = `<b>${T.a_owner}</b> ${T.a_rows(rows.join(", "), rows.length > 1)}`;
+      const rws = [...new Set(f.mismatches.map(m => m.row))].slice(0, 4);
+      action = `<b>${T.a_owner}</b> ${T.a_rows(rws.join(", "), rws.length > 1)}`;
     }
-    cards.push(`<div class="action-card" style="--acolor:var(--critical)">
-      <div class="ahead"><span class="asheet">${esc(f.sheet)}</span>
-        <span class="aval">${compact(f.total_abs_delta)}</span></div>
-      <div class="awhat">${T.a_in(plainFormula(f))} ${T.a_off(f.n_mismatched, f.n_checked)}</div>
-      <div class="ado">→ ${action}</div>
+    rows.push(`<div class="acrow">
+      <span class="n">${i}</span>
+      <div><b>${esc(f.sheet)}</b> <span class="vbadge crit">${T.st_mismatch}</span>
+        <div class="aw">${T.a_in(plainFormula(f))} ${T.a_off(f.n_mismatched, f.n_checked)}</div>
+        <div class="ad">→ ${action}</div></div>
+      <div class="stake"><div class="v">${compact(f.total_abs_delta)}</div>
+        <div class="l">${T.ac_stake}</div></div>
     </div>`);
   }
   if (AUDIT.n_unverified_relations) {
-    cards.push(`<div class="action-card" style="--acolor:var(--warning)">
-      <div class="ahead"><span class="asheet">${T.a_eyeball}</span></div>
-      <div class="awhat">${T.a_unv(AUDIT.n_unverified_relations)}</div>
-      <div class="ado">${T.a_manual}</div>
+    i++;
+    rows.push(`<div class="acrow">
+      <span class="n">${i}</span>
+      <div><b>${T.a_eyeball}</b> <span class="vbadge warn">${T.st_unverified}</span>
+        <div class="aw">${T.a_unv(AUDIT.n_unverified_relations)}</div>
+        <div class="ad">${T.a_manual}</div></div>
+      <div class="stake"><div class="v" style="color:var(--ink-3)">—</div></div>
     </div>`);
   }
-  if (!cards.length) {
-    cards.push(`<div class="action-card" style="--acolor:var(--good)">
-      <div class="ahead"><span class="asheet">${T.a_none}</span></div>
-      <div class="awhat">${T.a_none_txt}</div></div>`);
-  }
-  return cards.join("");
+  const pass = AUDIT.n_verified_relations
+    ? `<p class="acpass">✓ <b>${T.ac_pass_n(AUDIT.n_verified_relations)}</b> — ${T.ac_pass_txt}</p>` : "";
+  return `<h1 class="vhead" style="margin-top:2px">${T.ac_head(AUDIT.findings.length)}</h1>
+    <p class="vlede" style="margin-bottom:6px">${AUDIT.findings.length ? T.ac_sub : T.a_none_txt}</p>
+    ${rows.length ? `<div style="border-top:1px solid var(--border-strong);margin-top:20px">${rows.join("")}</div>` : ""}
+    ${pass}`;
 }
 
 function printReport() {
@@ -2849,45 +2910,34 @@ function renderFinancials() {
   const lastIdx = a => { for (let i = a.length - 1; i >= 0; i--) if (a[i] != null) return i; return -1; };
   const met = m.metrics;
 
-  // KPI cards — only for the roles actually found
-  const tiles = [];
+  // header stat row — the roles actually found, as one terminal line
+  const stats = [];
   if (met.revenue) {
     const v = met.revenue.values, li = lastIdx(v);
     const fi = v.findIndex(x => x != null);
     const growth = fi >= 0 && li > fi && v[fi] ? ((v[li] / v[fi] - 1) * 100) : null;
-    tiles.push(`<div class="tile"><div class="label">${T.h_revenue(esc(m.periods[fi]), esc(m.periods[li]))}</div>
-      <div class="value">${compact(sum(v))}</div>
-      ${growth != null ? `<div class="label" style="margin-top:4px;color:var(--good)">▲ ${T.h_horizon(growth.toFixed(0))}</div>` : ""}</div>`);
+    stats.push(`<span>${T.roles.revenue} <b>${compact(sum(v))}</b>${growth != null
+      ? ` <span class="${growth >= 0 ? "sbgood" : "sbbad"}">${growth >= 0 ? "▲" : "▼"} ${growth >= 0 ? "+" : "−"}${Math.abs(growth).toFixed(0)}%</span>` : ""}</span>`);
   }
-  if (met.capex) tiles.push(`<div class="tile"><div class="label">${T.h_capex}</div>
-      <div class="value">${compact(sum(met.capex.values))}</div></div>`);
+  if (met.capex) stats.push(`<span>CAPEX <b>${compact(sum(met.capex.values))}</b></span>`);
   if (met.opex) {
     const v = met.opex.values, li = lastIdx(v);
-    tiles.push(`<div class="tile"><div class="label">${T.fin_opex_at(esc(m.periods[li]))}</div>
-      <div class="value">${compact(v[li])}</div></div>`);
+    stats.push(`<span>${T.fin_opex_at(esc(m.periods[li]))} <b>${compact(v[li])}</b></span>`);
   }
   if (met.area) {
     const v = met.area.values;
     const peak = v.indexOf(Math.max(...v.filter(x => x != null)));
-    tiles.push(`<div class="tile"><div class="label">${T.fin_peak(esc(met.area.label.slice(0, 18)))}</div>
-      <div class="value">${esc(m.periods[peak])}</div>
-      <div class="label" style="margin-top:4px">${T.fin_that(compact(v[peak]))}</div></div>`);
+    stats.push(`<span>${T.fin_peak(esc(met.area.label.slice(0, 16)))} <b>${esc(m.periods[peak])}</b></span>`);
   }
   const mp = m.derived.margin_pct;
   if (mp) {
     const li = lastIdx(mp);
-    if (li >= 0) tiles.push(`<div class="tile"><div class="label">${T.fin_margin_at(esc(m.periods[li]))}</div>
-      <div class="value">${pctFmt(mp[li])}</div></div>`);
+    if (li >= 0) stats.push(`<span>${T.fin_margin_at(esc(m.periods[li]))} <b>${pctFmt(mp[li])}</b></span>`);
   }
   const upv = m.derived.opex_per_volume;
   if (upv) {
-    const li = lastIdx(upv), fi = upv.findIndex(x => x != null);
-    if (li >= 0) {
-      const chg = fi >= 0 && li > fi && upv[fi] ? ((upv[li] / upv[fi] - 1) * 100) : null;
-      tiles.push(`<div class="tile"><div class="label">${T.fin_cpu(esc(m.periods[li]))}</div>
-        <div class="value">${compact(upv[li])}</div>
-        ${chg != null ? `<div class="label" style="margin-top:4px;color:${chg <= 0 ? "var(--good)" : "var(--critical)"}">${chg <= 0 ? "▼" : "▲"} ${T.fin_since(Math.abs(chg).toFixed(0), esc(m.periods[fi]))}</div>` : ""}</div>`);
-    }
+    const li = lastIdx(upv);
+    if (li >= 0) stats.push(`<span>${T.fin_cpu(esc(m.periods[li]))} <b>${compact(upv[li])}</b></span>`);
   }
 
   // trajectory chart: the role series as a pseudo-timeseries (reuses hover/legend)
@@ -2937,21 +2987,28 @@ function renderFinancials() {
     convCard = chartCard(conv, false);
   }
 
-  // breakdown panels: top line items per sheet (tracks, like the audit bars)
+  // breakdown panels: ranked bars — fill fades by rank, ONE shared scale
+  const RANK_FADE = ["#a8821f", "#c2a960", "#d5c391"];
   const bds = (m.breakdowns || []).slice(0, 4).map(b => {
-    const mx = Math.max(1, ...b.items.map(i => Math.abs(i.value)));
+    const items = b.items.slice(0, 6);
+    const mx = Math.max(1, ...items.map(i => Math.abs(i.value)));
+    const rows = items.map((it, k) => `<div class="rrow ${k === 0 ? "top" : ""}">
+        <span class="rl">${esc(it.label.slice(0, 38))}</span>
+        <span class="rtrack"><span style="width:${Math.max(2, Math.abs(it.value) / mx * 100).toFixed(1)}%;background:${RANK_FADE[Math.min(k, 2)]}"></span></span>
+        <span class="rv">${compact(it.value)}</span>
+      </div>`).join("");
+    const hidden = b.items.length - items.length;
+    const foot = hidden > 0
+      ? `<div class="rfoot">${T.fin_rfoot(items.length, b.items.length,
+          compact(b.items.slice(items.length).reduce((t, x) => t + Math.abs(x.value), 0)))}</div>` : "";
     return `<div class="card"><div class="card-head">
         <span class="ct">${esc(b.sheet)}</span>
         <span class="cs">${T.fin_top(esc(b.value_col.slice(0, 26)))}</span></div>
-      ${b.items.slice(0, 6).map(i => `<div class="bar-row">
-        <span class="bl">${esc(i.label.slice(0, 44))}</span>
-        <span class="bv">${compact(i.value)}</span>
-        <div class="track"><div class="fill" style="width:${Math.max(3, Math.abs(i.value) / mx * 100)}%;background:var(--gold)"></div></div>
-      </div>`).join("")}</div>`;
+      <div style="margin-top:8px">${rows}</div>${foot}</div>`;
   }).join("");
 
   return `<section id="sec-financials"><span class="kicker">${T.fin_kicker}</span>
-    ${tiles.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px">${tiles.join("")}</div>` : ""}
+    ${stats.length ? `<div class="statbar">${stats.join("")}</div>` : ""}
     <div class="grid2">${chartCard(traj, false)}${marginCard}</div>
     ${unitCard || convCard ? `<div class="grid2" style="margin-top:14px">${unitCard}${convCard}</div>` : ""}
     ${bds ? `<div class="grid2" style="margin-top:14px">${bds}</div>` : ""}
@@ -3088,6 +3145,17 @@ function renderMC() {
     for (const v of r) y[Math.min(bins - 1, Math.floor((v - mn) / step))]++;
     const hist = { pseudo: true, i: "mc", range: null,
       chart: { kind: "profile", x: y.map((_, i2) => compact(mn + i2 * step)), y } };
+    // dashed P10/P50/P90 marker lines over the histogram (spec §11)
+    const band = (W - ML - MR) / bins;
+    const marks = [[p10, "#b03a2e", "P10"], [p50, "#201d17", "P50"], [p90, "#0a7d33", "P90"]]
+      .map(([v, col, lb]) => {
+        const x = ML + band * Math.min(bins, Math.max(0, (v - mn) / step));
+        return `<line x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${mtCur() + 10}" y2="${H - MB}"
+            stroke="${col}" stroke-width="1" stroke-dasharray="3 3"/>
+          <text x="${(x + 4).toFixed(1)}" y="${mtCur() + 8}" font-size="8.5" fill="${col}"
+            font-family="'IBM Plex Mono',ui-monospace,monospace">${lb}</text>`;
+      }).join("");
+    const histSvg = svgProfile(hist).replace("</svg>", marks + "</svg>");
     const probs = [0.8, 1.0, 1.2].map(f2 => {
       const t = base * f2, p = r.filter(v => v >= t).length / r.length * 100;
       return `<div class="prob-row"><span>${T.mc_row(compact(t), (f2*100).toFixed(0))}</span>
@@ -3102,7 +3170,8 @@ function renderMC() {
       <div class="grid2">
         <div class="card chart-card"><div class="card-head"><span class="ct">${T.mc_dist}</span>
           <span class="cs">${T.mc_draws(nf.format(MCP.N))}</span></div>
-          <div class="plot">${svgProfile(hist)}</div></div>
+          <div class="plot">${histSvg}</div>
+          <div class="chcap">${T.mc_range(compact(p10), compact(p90))}</div></div>
         <div class="card"><div class="card-head"><span class="ct">${T.mc_prob}</span></div>${probs}</div>
       </div>`;
   }
@@ -3253,10 +3322,21 @@ function chartRange(c) {
   return [0, n - 1];
 }
 
+let SHOWALL = false;
 function renderChartGrid() {
   const vis = visCharts().filter(c => !c.pseudo);
   if (!vis.length) return `<div class="card muted">${CHARTS.length ? T.ch_none_f : T.ch_none}</div>`;
-  return `<div class="grid2">${vis.map(c => chartCard(c, false)).join("")}</div>`;
+  // progressive disclosure: a uniform grid of the first six, the rest
+  // behind an explicit overflow card
+  const show = (SHOWALL || vis.length <= 6) ? vis : vis.slice(0, 5);
+  const hidden = vis.length - show.length;
+  const over = hidden > 0 ? `<div class="overflow-card" id="show-all-charts">
+      <span class="kicker">+ ${hidden} ${T.tr_more}</span>
+      <div style="font-size:12.5px;color:var(--ink-3);max-width:34ch;margin:10px 0">${
+        vis.slice(show.length, show.length + 4).map(c => esc(c.sheet.trim().slice(0, 22))).join(", ")}…</div>
+      <span class="seeall">${T.tr_showall} →</span>
+    </div>` : "";
+  return `<div class="grid2">${show.map(c => chartCard(c, false)).join("")}${over}</div>`;
 }
 
 function chartCard(c, isPrimary) {
@@ -3279,11 +3359,19 @@ function chartCard(c, isPrimary) {
   const cumBtn = c.chart.kind === "profile" && !c.pseudo
     ? `<button class="iconbtn ${c.cum ? "on" : ""}" data-cum="${c.i}">${T.ch_cum}</button>` : "";
   const csvBtn = exec ? "" : `<button class="iconbtn" data-csv="${c.i}">⤓ csv</button>`;
+  // one-line insight caption: every chart says what it means (spec, Trends)
+  let cap = "";
+  if (c.chart.kind === "timeseries") cap = execCapline(c);
+  else if (c.chart.y && c.chart.y.length > 1) {
+    const iMax = c.chart.y.indexOf(Math.max(...c.chart.y));
+    if (iMax >= 0) cap = T.tr_prof_cap(esc(String(c.chart.x[iMax]).slice(0, 22)),
+      compact(c.chart.y[iMax]));
+  }
   return `<div class="card chart-card" data-chart="${c.i}" data-sheet="${esc(c.sheet)}">
     <div class="card-head"><span class="ct">${esc(c.sheet)}</span><span class="cs">${esc(sub)}</span>
       <span class="grow"></span>${cumBtn}${csvBtn}</div>
     <div class="plot">${c.chart.kind === "timeseries" ? svgTimeseries(c) : svgProfile(c)}</div>
-    ${legend}${hint}<div class="tooltip"></div></div>`;
+    ${legend}${cap ? `<div class="chcap">${cap}</div>` : ""}${hint}<div class="tooltip"></div></div>`;
 }
 
 function yScale(vals) {
@@ -3410,11 +3498,17 @@ function svgTimeseries(c) {
           compact(pv[idx(last)]), "end");
     }
   } else if (on.length <= 4) {
-    // analyst: direct end labels in the series color — no swatch legend needed
+    // analyst: direct end labels in the series color — no swatch legend needed;
+    // labels that would collide get pushed apart vertically
+    const used = [];
     for (const s of on) {
       let last = null;
       for (let i = n - 1; i >= 0; i--) if (s.values[idx(i)] != null) { last = i; break; }
-      if (last != null) out += `<text x="${W - MR - 2}" y="${sy(s.values[idx(last)]) - 5}"
+      if (last == null) continue;
+      let ly = sy(s.values[idx(last)]) - 5;
+      while (used.some(u => Math.abs(u - ly) < 9)) ly += 9;
+      used.push(ly);
+      out += `<text x="${W - MR - 2}" y="${ly.toFixed(1)}"
         text-anchor="end" font-size="8.5" font-weight="${s === primary ? "600" : "400"}"
         fill="${s.color}" font-family="'IBM Plex Mono',ui-monospace,monospace">${esc(s.label.slice(0, 14).toUpperCase())}</text>`;
     }
@@ -3482,6 +3576,10 @@ function attachCharts() {
   }));
   $$(".iconbtn[data-csv]").forEach(b => b.addEventListener("click",
     () => downloadChartCSV(CHARTS[+b.dataset.csv])));
+  const showAll = $("#show-all-charts");
+  if (showAll) showAll.addEventListener("click", () => {
+    SHOWALL = true; rerender(renderAll);
+  });
   $$(".iconbtn[data-cum]").forEach(b => b.addEventListener("click", () => {
     const c = CHARTS[+b.dataset.cum];
     c.cum = !c.cum;
