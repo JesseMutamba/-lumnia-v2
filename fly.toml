@@ -34,4 +34,5 @@ primary_region = "iad"          # pick one near you: `fly platform regions`
 
 [[vm]]
   size = "shared-cpu-1x"
-  memory = "512mb"             # bump to 1024mb if large workbooks OOM
+  memory = "1024mb"            # pandas+openpyxl balloon 5-15x file size in RAM;
+                               # 512mb OOM-kills on a 25 MB workbook
