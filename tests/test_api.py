@@ -32,6 +32,19 @@ def test_health():
     assert resp.json()["status"] == "ok"
 
 
+def test_oversized_grid_rejected_honestly(monkeypatch):
+    """Bytes are capped in transit; cells cap the work. Past the cell cap
+    the pipeline must refuse with a clear 422, not grind for minutes."""
+    import app.main as m
+    monkeypatch.setattr(m, "MAX_TOTAL_CELLS", 500)
+    df = pd.DataFrame({"A": range(300), "B": range(300)})   # 602 cells raw
+    resp = client.post("/analyze", files={
+        "file": ("dense.csv", df.to_csv(index=False).encode(), "text/csv")})
+    assert resp.status_code == 422
+    detail = resp.json()["detail"]
+    assert "cells" in detail and "500" in detail
+
+
 def test_analyze_multi_sheet_workbook():
     files = {"file": ("book.xlsx", _xlsx_bytes(),
                       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}

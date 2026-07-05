@@ -100,7 +100,13 @@ def save_analysis(filename: str, content: bytes, report: Dict[str, Any]) -> str:
 
 
 def list_analyses() -> List[Dict[str, Any]]:
-    """Newest-first metadata for every stored analysis (no blobs)."""
+    """Newest-first metadata for every stored analysis (no blobs).
+
+    # DEBT: json.loads() of every report blob just to read n_sheets (same
+    # in stats()). Fine at tens of analyses; at thousands the library page
+    # gets slow and memory-spiky. Fix is an n_sheets column (one ALTER +
+    # backfill) — do it when a workspace passes ~500 stored analyses.
+    """
     with _connect() as con:
         rows = con.execute(
             "SELECT id, filename, uploaded_at, reran_at, size_bytes, client, report "
