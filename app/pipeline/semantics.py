@@ -93,6 +93,7 @@ def detect_schema(df: pd.DataFrame) -> Dict[str, Any]:
     what it could not classify (those columns are simply absent)."""
     n = len(df)
     time_dim: Optional[Dict[str, Any]] = None
+    year_dim: Optional[Dict[str, Any]] = None
     dims: List[Dict[str, Any]] = []
     entities: List[Dict[str, Any]] = []
     measures: List[Dict[str, Any]] = []
@@ -107,10 +108,17 @@ def detect_schema(df: pd.DataFrame) -> Dict[str, Any]:
         if num.notna().sum() >= 0.8 * nonnull:
             vals = num.dropna()
             # a column of calendar years (2019, 2020…) is a period label,
-            # not a quantity — summing years is never meaningful
+            # not a quantity — summing years is never meaningful. It IS a
+            # candidate time axis (adopted below only if no date column).
             if (vals.between(1900, 2100).mean() >= 0.9
                     and (vals % 1 == 0).mean() >= 0.95
                     and vals.nunique() >= 3):
+                if year_dim is None:
+                    yrs = vals.astype(int)
+                    year_dim = {"name": name, "grain": "year",
+                                "start": str(int(yrs.min())),
+                                "end": str(int(yrs.max())),
+                                "n_periods": int(yrs.nunique())}
                 continue
             # *_ID columns are identifiers, not quantities — a summed
             # PLAYER_ID is arithmetic without meaning; ranks are ordinals
@@ -155,6 +163,8 @@ def detect_schema(df: pd.DataFrame) -> Dict[str, Any]:
             entities.append({"name": name, "cardinality": card,
                              "avg_len": round(float(txt.str.len().mean()), 1)})
 
+    if time_dim is None:              # a real date column always wins
+        time_dim = year_dim
     dims.sort(key=lambda d: d["cardinality"])
     # the display entity is the wordiest identifier (names beat codes)
     entities.sort(key=lambda e: -e["avg_len"])
@@ -245,7 +255,32 @@ def compute_story(df: pd.DataFrame, schema: Dict[str, Any]) -> Optional[Dict[str
 
     # ---- time family: trend, MoM, YoY — or an honest gap ------------------
     t = schema["time"]
-    if t:
+    yrs = (pd.to_numeric(df[t["name"]], errors="coerce")
+           if t and t.get("grain") == "year" else None)
+    if yrs is not None and yrs.dropna().between(1900, 2100).mean() >= 0.9:
+        # bare year numbers (2025, 2026…) group by the year itself —
+        # to_datetime would misread the integers as epoch nanoseconds
+        series = (pd.DataFrame({"p": yrs.astype("Int64"), "v": hvals}).dropna()
+                  .groupby("p")["v"].agg(how).sort_index())
+        rows = [{"period": str(int(p)), "value": _round(v)}
+                for p, v in series.items()]
+        metrics.append({"id": "trend", "metric": "trend", "measure": head["name"],
+                        "grain": "year", "rows": rows[-MAX_TREND_PERIODS:],
+                        "truncated": len(rows) > MAX_TREND_PERIODS})
+        if len(series) >= 2:      # on yearly data, last vs previous IS YoY
+            base, last = float(series.iloc[-2]), float(series.iloc[-1])
+            metrics.append({
+                "id": "yoy", "metric": "yoy_change", "measure": head["name"],
+                "period": str(int(series.index[-1])),
+                "pct": _round((last / base - 1) * 100) if base else None,
+            })
+        else:
+            gaps.append({"metric": "yoy_change",
+                         "reason": "only one year of data",
+                         "requires": "at least two years of rows"})
+        # no MoM gap: month-over-month is not applicable to yearly data,
+        # not something more rows of it could ever supply
+    elif t:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             dt = pd.to_datetime(df[t["name"]], errors="coerce")
@@ -563,9 +598,12 @@ def suggest_brief(stories: List[Dict[str, Any]], lang: str = "en"
         meas = (st.get("headline_measure") or "").strip()[:32]
         rich = False
         if "trend" in ids and meas:
+            yearly = ids["trend"].get("grain") == "year"
+            step = ("année par année" if yearly else "mois par mois") if fr \
+                else ("year by year" if yearly else "month by month")
             add_q(("trend", meas),
-                  f"Comment évolue {meas} mois par mois ?" if fr
-                  else f"How is {meas} trending month by month?")
+                  f"Comment évolue {meas} {step} ?" if fr
+                  else f"How is {meas} trending {step}?")
             rich = True
         if "movers" in ids:
             grain = (ids["movers"].get("grain") or "").strip()[:32] \
