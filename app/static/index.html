@@ -1201,6 +1201,7 @@ const STR = {
     st_brief_line: (role, cad) => `Briefing for ${role || "you"} · reviewed ${cad || "regularly"}`,
     sn_headline: m => `This is our total ${m}…`,
     sn_trend: "…and how it has moved month by month",
+    sn_trend_y: "…and how it has moved year by year",
     sn_by: (m, g) => `This is ${m} split by ${g}`,
     sn_avg: (m, g) => `How ${m} varies by ${g}`,
     sn_pair: (m, g) => `${m} by ${g} — how big, and which way it's moving`,
@@ -1515,6 +1516,7 @@ const STR = {
     st_brief_line: (role, cad) => `Briefing pour ${role || "vous"} · consulté ${cad || "régulièrement"}`,
     sn_headline: m => `Voici notre ${m} total…`,
     sn_trend: "…et son évolution mois par mois",
+    sn_trend_y: "…et son évolution année par année",
     sn_by: (m, g) => `Voici la répartition de ${m} par ${g}`,
     sn_avg: (m, g) => `Comment ${m} varie selon ${g}`,
     sn_pair: (m, g) => `${m} par ${g} — le poids, et la direction`,
@@ -3088,7 +3090,9 @@ let CADENCE = "monthly";
 function mlabel(m) {
   const fr = LANG === "fr", id = m.id;
   if (id === "headline") return `Total ${m.measure}`;
-  if (id === "trend") return fr ? "Évolution mensuelle" : "Monthly trend";
+  if (id === "trend") return m.grain === "year"
+    ? (fr ? "Évolution annuelle" : "Yearly trend")
+    : (fr ? "Évolution mensuelle" : "Monthly trend");
   if (id === "mom") return fr ? "vs mois précédent" : "vs previous month";
   if (id === "yoy") return fr ? "vs année précédente" : "vs a year earlier";
   if (id === "movers") return (fr ? "Meilleurs & pires — " : "Best & worst — ") + m.grain;
@@ -3122,7 +3126,7 @@ function storyMetricMap() {
 function storySentence(m) {
   const id = m.id;
   if (id === "headline") return T.sn_headline(m.measure);
-  if (id === "trend") return T.sn_trend;
+  if (id === "trend") return m.grain === "year" ? T.sn_trend_y : T.sn_trend;
   if (id === "movers") return T.sn_movers(m.grain);
   if (id === "low_stock") return T.sn_stock(m.measure);
   if (id.startsWith("by_")) return T.sn_by(m.measure, m.grain);

@@ -87,6 +87,62 @@ def timeseries_chart(periods: List[object],
     return out
 
 
+def _year_col(numeric_cols: Dict[str, List[Optional[float]]],
+              totals_idx: set) -> Optional[str]:
+    """First column whose data rows are ≥90% whole calendar years (≥3 of
+    them) — a period label living in rows instead of across the header."""
+    for name, vals in numeric_cols.items():
+        data = [v for i, v in enumerate(vals)
+                if v is not None and i not in totals_idx]
+        if len(data) < 3:
+            continue
+        years = [v for v in data
+                 if float(v).is_integer() and 1900 <= v <= 2100]
+        if len(years) / len(data) >= 0.9 \
+                and len({int(v) for v in years}) >= 3:
+            return name
+    return None
+
+
+def year_series_chart(numeric_cols: Dict[str, List[Optional[float]]],
+                      totals_idx: set) -> Optional[dict]:
+    """A tidy table with a bare year column (2025, 2026…) is a time series
+    stored in rows: sum every other numeric column by year and emit the same
+    ``axis="year"`` payload matrix sheets produce — so the business-model
+    layer can role-tag the series. Data rows only; totals rows would
+    double-count. Nothing year-like -> ``None`` (profile chart fallback)."""
+    ycol = _year_col(numeric_cols, totals_idx)
+    if ycol is None:
+        return None
+
+    rows_by_year: Dict[int, List[int]] = {}
+    for i, y in enumerate(numeric_cols[ycol]):
+        if i in totals_idx or y is None:
+            continue
+        if float(y).is_integer() and 1900 <= y <= 2100:
+            rows_by_year.setdefault(int(y), []).append(i)
+    if len(rows_by_year) < 3:
+        return None
+
+    periods = sorted(rows_by_year)
+    pidx = {y: k for k, y in enumerate(periods)}
+    series_values: Dict[str, Dict[int, float]] = {}
+    for name, vals in numeric_cols.items():
+        # a second year-like column is another label, never a series
+        if name == ycol or _year_col({name: vals}, totals_idx) == name:
+            continue
+        bucket: Dict[int, float] = {}
+        for y, idxs in rows_by_year.items():
+            cell = [vals[i] for i in idxs if vals[i] is not None]
+            if cell:
+                bucket[pidx[y]] = sum(cell)
+        if bucket:
+            series_values[name] = bucket
+    if not series_values:
+        return None
+    return timeseries_chart(periods, series_values, axis="year")
+
+
 def profile_chart(names: List[str],
                   numeric_cols: Dict[str, List[Optional[float]]],
                   totals_idx: set) -> Optional[dict]:

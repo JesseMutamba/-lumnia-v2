@@ -20,7 +20,7 @@ from typing import Dict, List, Optional, Tuple
 import pandas as pd
 
 from .celltypes import cell_kind, grid_kinds, is_blank, BLANK, DATE, NUMBER, TEXT
-from .charts import profile_chart, timeseries_chart
+from .charts import profile_chart, timeseries_chart, year_series_chart
 from .checks import detect_total_rows, run_checks
 from .eda import run_eda_df
 from .semantics import build_matrix_semantics, build_semantics
@@ -508,7 +508,10 @@ def _extract_tidy_table(df, kinds, meta, max_rows) -> dict:
                         totals=totals, col_map=col_map) if numeric_cols else None
 
     summary = table_summary(accs, total)
-    chart = profile_chart(names, numeric_cols, {t["i"] for t in totals}) \
+    totals_idx = {t["i"] for t in totals}
+    # a year column in rows makes a real time series; else the column profile
+    chart = (year_series_chart(numeric_cols, totals_idx)
+             or profile_chart(names, numeric_cols, totals_idx)) \
         if numeric_cols else None
     if chart:
         summary["chart"] = chart
