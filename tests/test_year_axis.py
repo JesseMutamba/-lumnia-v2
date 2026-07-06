@@ -66,10 +66,19 @@ def test_tidy_year_chart_feeds_the_model():
     m = rep["model"]
     assert m is not None
     assert m["metrics"]["revenue"]["values"][-1] == 5230000
-    # actual OPEX (largest total) wins over the budget line
+    # the budget line has its own role — actual OPEX stands alone
     assert m["metrics"]["opex"]["label"] == "OPEX_USD"
-    assert m["derived"]["margin_pct"][-1] == round(
-        (5230000 - 997000) / 5230000 * 100, 4)
+    assert m["metrics"]["budget"]["label"] == "Budget_OPEX_USD"
+    # underscore-separated CPO/FFB tag as volumes; FFB (larger) is primary
+    assert m["metrics"]["volume"]["label"] == "FFB_Harvested_T"
+    assert m["metrics"]["volume_secondary"]["label"] == "CPO_Produced_T"
+    d = m["derived"]
+    assert d["margin_pct"][-1] == round((5230000 - 997000) / 5230000 * 100, 4)
+    assert d["opex_per_volume"][-1] == round(997000 / 22729, 4)
+    assert d["opex_per_volume_out"][-1] == round(997000 / 5228, 4)  # $/T CPO
+    assert d["volume_ratio"][-1] == round(5228 / 22729, 4)      # extraction
+    assert d["opex_budget_variance_pct"][-1] == round(
+        (997000 - 990000) / 990000 * 100, 4)
     assert m["scenario_ready"] is True
 
 

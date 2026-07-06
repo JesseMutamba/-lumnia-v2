@@ -346,6 +346,25 @@
   .mtable tr:last-child td { border-bottom: none; }
   .mtable .num { text-align: right; font-variant-numeric: tabular-nums;
     font-family: var(--mono); font-size: 12px; }
+  /* indicator × period tables (Financials full table, scenario comparison) */
+  .ftwrap { overflow-x: auto; }
+  .ftable { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .ftable th { color: var(--ink-3); font-size: 10px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .06em; padding: 6px 10px;
+    text-align: right; border-bottom: 1px solid var(--border-strong);
+    white-space: nowrap; }
+  .ftable th:first-child, .ftable td:first-child { text-align: left;
+    padding-left: 0; }
+  .ftable td { padding: 7px 10px; border-bottom: 1px solid var(--hairline);
+    text-align: right; font-family: var(--mono); font-size: 11.5px;
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .ftable td:first-child { font-family: inherit; font-size: 12px;
+    color: var(--ink-2); }
+  .ftable .hi { font-weight: 700; }
+  .ftable tr.total td { border-top: 1px solid var(--border-strong);
+    border-bottom: none; font-weight: 700; }
+  .ftable .good { color: var(--good); } .ftable .warn { color: var(--gold); }
+  .ftable .bad { color: var(--critical); }
   /* Phase 3: zoned layout, KPI-with-deltas, shared-axis pair rows */
   .zq { font-size: 13px; font-weight: 700; margin: 24px 0 10px;
     text-transform: uppercase; letter-spacing: .03em; }
@@ -1084,22 +1103,43 @@ const STR = {
     fin_margin_at: p => `Margin · ${p}`, fin_cpu: p => `Cost per unit · ${p}`,
     fin_since: (pc, p) => `${pc}% since ${p}`,
     roles: { revenue: "Revenue", opex: "Operating costs", capex: "Investment",
-      volume: "Volume", volume_secondary: "Volume (output)", area: "Area",
-      headcount: "Headcount", price: "Price" },
+      budget: "Budget", volume: "Volume", volume_secondary: "Volume (output)",
+      area: "Area", headcount: "Headcount", price: "Price" },
+    fin_budget_at: p => `vs budget · ${p}`, fin_over: "over", fin_under: "under",
+    fin_table: "Cost & production — full table",
+    fin_table_sub: "every detected series and derived indicator, by period",
+    fin_ind: "Indicator",
+    der_margin: "Margin", der_margin_pct: "Margin %",
+    der_opex_per_volume: "Cost per unit", der_revenue_per_volume: "Revenue per unit",
+    der_opex_per_volume_out: "Cost per output unit",
+    der_revenue_per_area: "Revenue per area", der_volume_ratio: "Conversion rate %",
+    der_opex_budget_variance_pct: "OPEX vs budget %",
     sc_kicker: "What-if — test your assumptions",
     sc_bear: "Downside", sc_base: "Base", sc_bull: "Upside", sc_custom: "Custom",
     sc_total: "total revenue over the horizon", sc_margin: m => `margin ${m}`,
+    sc_final: p => `margin % · ${p}`,
     sc_levers: "Your own scenario", sc_price: "Prices", sc_vol: "Volumes", sc_cost: "Costs",
+    sc_extract: "Conversion rate",
     sc_chart: "Revenue by scenario", sc_adj: "adjusted",
+    sc_mchart: "Margin % by scenario",
+    sc_table: "Scenario comparison — full table",
+    sc_table_sub: "revenue, costs and margin % per period, all scenarios",
+    sc_th_rev: "Rev", sc_th_opex: "Costs", sc_th_margin: "Margin%",
+    sc_total_row: "TOTAL",
     sc_assume: (p, v, c) => `prices ${p}, volumes ${v}${c ? `, costs ${c}` : ""}`,
     mc_kicker: "Stress test — how sure can we be",
     mc_unc: "Uncertainty", mc_price: "Price swings", mc_vol: "Volume swings",
     mc_cost: "Cost swings", mc_n: "Number of trials",
     mc_run: n => `Run ${n} simulations`, mc_press: "Press run to simulate.",
     mc_p10: "P10 — pessimistic", mc_p50: "P50 — median", mc_p90: "P90 — optimistic",
-    mc_dist: "Distribution of total revenue", mc_draws: n => `${n} draws`,
+    mc_mean: "Mean ± σ",
+    mc_metric_rev: "Total revenue", mc_metric_margin: "Total margin",
+    mc_metric_mpct: "Final-period margin %",
+    mc_dist: m => `Distribution of ${m.toLowerCase()}`, mc_draws: n => `${n} draws`,
     mc_prob: "Probability of hitting targets",
-    mc_row: (t, p) => `Total revenue ≥ ${t} (${p}% of base)`,
+    mc_row: (m, t, p) => `${m} ≥ ${t} (${p}% of base)`,
+    mc_scatter: "Price sensitivity", mc_scatter_sub: "each dot is one simulation draw",
+    mc_price_axis: "price factor",
     ch_peak: "Peak", ch_latest: "Latest",
     ch_kicker: "Charts", ch_trends: "Trends", ch_cum: "Σ cumulative",
     ch_hint: "drag to zoom · double-click to reset",
@@ -1399,22 +1439,43 @@ const STR = {
     fin_margin_at: p => `Marge · ${p}`, fin_cpu: p => `Coût unitaire · ${p}`,
     fin_since: (pc, p) => `${pc} % depuis ${p}`,
     roles: { revenue: "Revenus", opex: "Charges", capex: "Investissements",
-      volume: "Volume", volume_secondary: "Volume (sortie)", area: "Surface",
-      headcount: "Effectifs", price: "Prix" },
+      budget: "Budget", volume: "Volume", volume_secondary: "Volume (sortie)",
+      area: "Surface", headcount: "Effectifs", price: "Prix" },
+    fin_budget_at: p => `vs budget · ${p}`, fin_over: "au-dessus", fin_under: "en dessous",
+    fin_table: "Coûts & production — tableau complet",
+    fin_table_sub: "chaque série détectée et indicateur dérivé, par période",
+    fin_ind: "Indicateur",
+    der_margin: "Marge", der_margin_pct: "Marge %",
+    der_opex_per_volume: "Coût par unité", der_revenue_per_volume: "Revenu par unité",
+    der_opex_per_volume_out: "Coût par unité produite",
+    der_revenue_per_area: "Revenu par surface", der_volume_ratio: "Taux de conversion %",
+    der_opex_budget_variance_pct: "Charges vs budget %",
     sc_kicker: "Scénarios — testez vos hypothèses",
     sc_bear: "Pessimiste", sc_base: "Référence", sc_bull: "Optimiste", sc_custom: "Personnalisé",
     sc_total: "revenus totaux sur la période", sc_margin: m => `marge ${m}`,
+    sc_final: p => `marge % · ${p}`,
     sc_levers: "Votre scénario", sc_price: "Prix", sc_vol: "Volumes", sc_cost: "Coûts",
+    sc_extract: "Taux de conversion",
     sc_chart: "Revenus par scénario", sc_adj: "ajusté",
+    sc_mchart: "Marge % par scénario",
+    sc_table: "Comparaison des scénarios — tableau complet",
+    sc_table_sub: "revenus, coûts et marge % par période, tous scénarios",
+    sc_th_rev: "Rev", sc_th_opex: "Coûts", sc_th_margin: "Marge%",
+    sc_total_row: "TOTAL",
     sc_assume: (p, v, c) => `prix ${p}, volumes ${v}${c ? `, coûts ${c}` : ""}`,
     mc_kicker: "Test de résistance — quel niveau de confiance",
     mc_unc: "Incertitudes", mc_price: "Variations de prix", mc_vol: "Variations de volume",
     mc_cost: "Variations de coûts", mc_n: "Nombre de tirages",
     mc_run: n => `Lancer ${n} simulations`, mc_press: "Lancez la simulation.",
     mc_p10: "P10 — défavorable", mc_p50: "P50 — médian", mc_p90: "P90 — favorable",
-    mc_dist: "Distribution des revenus totaux", mc_draws: n => `${n} tirages`,
+    mc_mean: "Moyenne ± σ",
+    mc_metric_rev: "Revenus totaux", mc_metric_margin: "Marge totale",
+    mc_metric_mpct: "Marge % dernière période",
+    mc_dist: m => `Distribution — ${m.toLowerCase()}`, mc_draws: n => `${n} tirages`,
     mc_prob: "Probabilité d'atteindre les objectifs",
-    mc_row: (t, p) => `Revenus totaux ≥ ${t} (${p} % de la référence)`,
+    mc_row: (m, t, p) => `${m} ≥ ${t} (${p} % de la référence)`,
+    mc_scatter: "Sensibilité au prix", mc_scatter_sub: "chaque point est un tirage",
+    mc_price_axis: "facteur prix",
     ch_peak: "Pic", ch_latest: "Dernier",
     ch_kicker: "Graphiques", ch_trends: "Tendances", ch_cum: "Σ cumul",
     ch_hint: "glisser pour zoomer · double-clic pour réinitialiser",
@@ -1802,7 +1863,7 @@ async function select(id) {
      fetch(`/analyses/${id}/findings`).then(r => r.json()),
      fetch(`/analyses/${id}/publish`).then(r => r.json()).catch(() => ({ published: false }))]);
   FILTER.sheets = null; FILTER.status = null; FILTER.periods = "all";
-  MC_RESULTS = null; SCEN = { price: 1.0, vol: 1.0, cost: 1.0 };
+  MC_RESULTS = null; SCEN = { price: 1.0, vol: 1.0, cost: 1.0, ext: 1.0 };
   PAGE = NEXT_PAGE; NEXT_PAGE = "analyst";
   TAB = "workbench";
   renderAll();
@@ -3436,6 +3497,31 @@ function renderStoryDashExec(metricById, approved) {
     cells.push(`<div class="kcell ${changePct < 0 ? "crit" : ""}"><div class="kl">${T.bk_change}</div>
       <div class="kv">${changePct >= 0 ? "+" : "−"}${pctFmt(Math.abs(changePct))}</div>
       <div class="ks">${esc(String(pa))} → ${esc(String(pb))}</div></div>`);
+  // derived business KPIs — only what the model actually computed
+  const mdl = REPORT.model;
+  if (mdl) {
+    const lastOf = a => { for (let i = a.length - 1; i >= 0; i--)
+      if (a[i] != null) return [a[i], i]; return [null, -1]; };
+    const mp2 = mdl.derived.margin_pct && lastOf(mdl.derived.margin_pct);
+    if (mp2 && mp2[0] != null)
+      cells.push(`<div class="kcell"><div class="kl">${T.der_margin_pct}</div>
+        <div class="kv">${mp2[0].toFixed(0)}%</div>
+        <div class="ks">${esc(String(mdl.periods[mp2[1]]))}</div></div>`);
+    // the output-side unit cost (OPEX/T of product) is the industry lens
+    const cuOut = mdl.derived.opex_per_volume_out;
+    const cu = (cuOut || mdl.derived.opex_per_volume)
+      && lastOf(cuOut || mdl.derived.opex_per_volume);
+    const cuVol = cuOut ? mdl.metrics.volume_secondary : mdl.metrics.volume;
+    if (cu && cu[0] != null)
+      cells.push(`<div class="kcell"><div class="kl">${cuOut ? T.der_opex_per_volume_out : T.der_opex_per_volume}</div>
+        <div class="kv">${compact(cu[0])}</div>
+        <div class="ks">${esc(String(mdl.periods[cu[1]]))} · ${esc(cuVol.label.slice(0, 22))}</div></div>`);
+    const bv2 = mdl.derived.opex_budget_variance_pct && lastOf(mdl.derived.opex_budget_variance_pct);
+    if (bv2 && bv2[0] != null)
+      cells.push(`<div class="kcell ${bv2[0] > 0 ? "crit" : ""}"><div class="kl">${T.der_opex_budget_variance_pct}</div>
+        <div class="kv">${bv2[0] >= 0 ? "+" : "−"}${Math.abs(bv2[0]).toFixed(1)}%</div>
+        <div class="ks">${esc(String(mdl.periods[bv2[1]]))} · ${bv2[0] > 0 ? T.fin_over : T.fin_under}</div></div>`);
+  }
   if (by) {
     const total = by.rows.reduce((s, r) => s + Math.abs(r.value ?? 0), 0);
     const share = total > 0 ? Math.abs(by.rows[0].value ?? 0) / total : 0;
@@ -3453,6 +3539,7 @@ function renderStoryDashExec(metricById, approved) {
     cells.push(`<div class="kcell crit"><div class="kl">${T.bk_drop}</div>
       <div class="kv">−${compact(Math.abs(mv.bottom[0].value))}</div>
       <div class="ks">${esc(String(mv.bottom[0].entity).slice(0, 26))}</div></div>`);
+  cells.length = Math.min(cells.length, 4);   // four tiles, like the strip was designed for
   const strip = cells.length ? `<div class="kstrip">${cells.join("")}</div>` : "";
 
   const recs = storyRecs(metricById, approved);
@@ -3726,10 +3813,16 @@ function renderFinancials() {
     const li = lastIdx(mp);
     if (li >= 0) stats.push(`<span>${T.fin_margin_at(esc(m.periods[li]))} <b>${pctFmt(mp[li])}</b></span>`);
   }
-  const upv = m.derived.opex_per_volume;
+  const upv = m.derived.opex_per_volume_out || m.derived.opex_per_volume;
   if (upv) {
     const li = lastIdx(upv);
     if (li >= 0) stats.push(`<span>${T.fin_cpu(esc(m.periods[li]))} <b>${compact(upv[li])}</b></span>`);
+  }
+  const bv = m.derived.opex_budget_variance_pct;
+  if (bv) {
+    const li = lastIdx(bv);
+    if (li >= 0) stats.push(`<span>${T.fin_budget_at(esc(m.periods[li]))}
+      <b class="${bv[li] > 0 ? "sbbad" : "sbgood"}">${bv[li] >= 0 ? "+" : "−"}${Math.abs(bv[li]).toFixed(1)}% ${bv[li] > 0 ? T.fin_over : T.fin_under}</b></span>`);
   }
 
   // trajectory chart: the role series as a pseudo-timeseries (reuses hover/legend)
@@ -3803,29 +3896,74 @@ function renderFinancials() {
     ${stats.length ? `<div class="statbar">${stats.join("")}</div>` : ""}
     <div class="grid2">${chartCard(traj, false)}${marginCard}</div>
     ${unitCard || convCard ? `<div class="grid2" style="margin-top:14px">${unitCard}${convCard}</div>` : ""}
+    ${finTable(m)}
     ${bds ? `<div class="grid2" style="margin-top:14px">${bds}</div>` : ""}
   </section>`;
 }
 
+/* every detected series + derived indicator, one row each, periods across —
+   the "read the whole plan in one screen" table; formats only, no math */
+function finTable(m) {
+  const mpctCls = v => v == null ? "" : v >= 50 ? "good" : v >= 20 ? "warn" : "bad";
+  const rows = [];
+  for (const [role, s] of Object.entries(m.metrics))
+    rows.push({ label: `${ROLE_LABELS[role] || role} — ${s.label.slice(0, 24)}`,
+      values: s.values, fmt: compact });
+  const D = m.derived, derived = [
+    ["margin", compact, null],
+    ["margin_pct", v => `${v.toFixed(0)}%`, mpctCls],
+    ["opex_per_volume", compact, null],
+    ["opex_per_volume_out", compact, null],
+    ["revenue_per_volume", compact, null],
+    ["revenue_per_area", compact, null],
+    ["volume_ratio", v => `${(v * 100).toFixed(1)}%`, null],
+    ["opex_budget_variance_pct",
+      v => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(1)}%`,
+      v => v == null ? "" : v > 0 ? "bad" : "good"],
+  ];
+  for (const [key, fmt, cls] of derived)
+    if (D[key] && D[key].some(v => v != null))
+      rows.push({ label: T["der_" + key], values: D[key], fmt, cls });
+  if (!rows.length) return "";
+  const last = m.periods.length - 1;
+  const body = rows.map(r => `<tr><td>${esc(r.label)}</td>${
+    m.periods.map((_, i) => {
+      const v = r.values[i];
+      const cls = [i === last ? "hi" : "", r.cls ? r.cls(v) : ""].join(" ").trim();
+      return `<td${cls ? ` class="${cls}"` : ""}>${v == null ? "—" : r.fmt(v)}</td>`;
+    }).join("")}</tr>`).join("");
+  return `<div class="card" style="margin-top:14px"><div class="card-head">
+      <span class="ct">${T.fin_table}</span><span class="cs">${T.fin_table_sub}</span></div>
+    <div class="ftwrap" style="margin-top:8px"><table class="ftable">
+      <thead><tr><th>${T.fin_ind}</th>${m.periods.map(p =>
+        `<th>${esc(String(p))}</th>`).join("")}</tr></thead>
+      <tbody>${body}</tbody></table></div></div>`;
+}
+
 /* ---------- scenario analysis + monte carlo (generic over the model) ----- */
 const SCEN_DEFS = {
-  bear:   { label: T.sc_bear, color: "#b03a2a", price: 0.7, vol: 0.85, cost: 1.2 },
-  base:   { label: T.sc_base, color: "#a8821f", price: 1.0, vol: 1.0,  cost: 1.0 },
-  bull:   { label: T.sc_bull, color: "#2c5f1a", price: 1.3, vol: 1.1,  cost: 0.9 },
+  bear:   { label: T.sc_bear, color: "#b03a2a", price: 0.7, vol: 0.85, cost: 1.2, ext: 0.9 },
+  base:   { label: T.sc_base, color: "#a8821f", price: 1.0, vol: 1.0,  cost: 1.0, ext: 1.0 },
+  bull:   { label: T.sc_bull, color: "#2c5f1a", price: 1.3, vol: 1.1,  cost: 0.9, ext: 1.08 },
   custom: { label: T.sc_custom, color: "#c8a04a" },
 };
-let SCEN = { price: 1.0, vol: 1.0, cost: 1.0 };
-let MCP = { priceSd: 0.15, volSd: 0.10, costSd: 0.08, N: 2000 };
+let SCEN = { price: 1.0, vol: 1.0, cost: 1.0, ext: 1.0 };
+let MCP = { priceSd: 0.15, volSd: 0.10, costSd: 0.08, N: 2000, metric: "rev" };
 let MC_RESULTS = null;
 
 function scenSeries(f) {           // apply factors to the model, per period
   const m = REPORT.model, rev = m.metrics.revenue.values;
   const opx = m.metrics.opex ? m.metrics.opex.values : null;
+  // the conversion lever only exists when the file has an input->output
+  // ratio (two volume series); it scales output, hence revenue
+  const e = m.derived.volume_ratio ? (f.ext ?? 1) : 1;
   return rev.map((r, i) => {
-    if (r == null) return { rev: null, opex: null, margin: null };
-    const r2 = r * f.price * f.vol;
+    if (r == null) return { rev: null, opex: null, margin: null, marginPct: null };
+    const r2 = r * f.price * f.vol * e;
     const o2 = opx && opx[i] != null ? opx[i] * f.cost : null;
-    return { rev: r2, opex: o2, margin: o2 != null ? r2 - o2 : null };
+    const mg = o2 != null ? r2 - o2 : null;
+    return { rev: r2, opex: o2, margin: mg,
+             marginPct: mg != null && r2 ? mg / r2 * 100 : null };
   });
 }
 const scenTotal = rows => rows.reduce((t, r) => t + (r.rev ?? 0), 0);
@@ -3842,10 +3980,12 @@ function renderScenario() {
     const rows = scens[k];
     const mt = rows.reduce((t, r) => t + (r.margin ?? 0), 0);
     const f = k === "custom" ? SCEN : d;
+    const lastM = [...rows].reverse().find(r => r.marginPct != null);
     return `<div class="scard" style="--scolor:${d.color}">
       <div class="sn">${d.label}</div>
       <div class="sv">${compact(scenTotal(rows))}</div>
       <div class="ss">${T.sc_total}${hasCost ? ` · ${T.sc_margin(compact(mt))}` : ""}</div>
+      ${hasCost && lastM ? `<div class="ss">${T.sc_final(esc(String(m.periods[rows.lastIndexOf(lastM)])))} <b>${lastM.marginPct.toFixed(0)}%</b></div>` : ""}
       <div class="ss" style="margin-top:2px">${T.sc_assume(deltaPct(f.price), deltaPct(f.vol), hasCost ? deltaPct(f.cost) : null)}</div>
     </div>`;
   }).join("");
@@ -3857,9 +3997,35 @@ function renderScenario() {
   const chart = { pseudo: true, i: "scen", range: null, lines,
     chart: { kind: "timeseries", periods: m.periods, series: [], other: null, truncated: false } };
 
+  // margin % per scenario, per period — the reference's second lens
+  let marginChart = "";
+  if (hasCost) {
+    const mlines = Object.entries(SCEN_DEFS).map(([k, d]) => ({
+      label: d.label, color: d.color, on: true,
+      values: scens[k].map(r => r.marginPct == null ? null : +r.marginPct.toFixed(1)),
+    }));
+    const mc = { pseudo: true, i: "scenm", range: null, lines: mlines,
+      chart: { kind: "timeseries", periods: m.periods, series: [], other: null, truncated: false } };
+    marginChart = `<div class="card chart-card" style="margin-top:14px">
+      <div class="card-head"><span class="ct">${T.sc_mchart}</span>
+        <span class="cs">%</span></div>
+      <div class="plot">${svgTimeseries(mc)}</div>
+      <div class="legend">${mlines.map(l => `<span class="lg"><span class="sw" style="background:${l.color}"></span>${l.label}</span>`).join("")}</div>
+    </div>`;
+  }
+
+  // conversion-rate lever, shown as the real resulting rate, not a factor
+  const vr = m.derived.volume_ratio;
+  const baseExt = vr ? [...vr].reverse().find(v => v != null) : null;
+  const extSlider = baseExt
+    ? slider(T.sc_extract, "ext", 0.7, 1.3, 0.02, SCEN.ext ?? 1,
+        v => `${(baseExt * v * 100).toFixed(1)}%`)
+    : "";
+
   const sliders = `
     ${slider(T.sc_price, "price", 0.5, 1.8, 0.05, SCEN.price, deltaPct)}
     ${slider(T.sc_vol, "vol", 0.5, 1.5, 0.05, SCEN.vol, deltaPct)}
+    ${extSlider}
     ${hasCost ? slider(T.sc_cost, "cost", 0.7, 1.5, 0.05, SCEN.cost, deltaPct) : ""}
     <div style="margin-top:10px">
       ${Object.entries(SCEN_DEFS).filter(([k]) => k !== "custom").map(([k, d]) =>
@@ -3876,7 +4042,43 @@ function renderScenario() {
         <div class="plot">${svgTimeseries(chart)}</div>
         <div class="legend">${lines.map(l => `<span class="lg"><span class="sw" style="background:${l.color}"></span>${l.label}</span>`).join("")}</div>
       </div>
-    </div></section>`;
+    </div>
+    ${marginChart}
+    ${scenTable(m, scens, hasCost)}</section>`;
+}
+
+/* year × scenario comparison — every number from the factor math above */
+function scenTable(m, scens, hasCost) {
+  const keys = Object.keys(SCEN_DEFS);
+  const cols = hasCost ? [["rev", T.sc_th_rev], ["opex", T.sc_th_opex],
+                          ["marginPct", T.sc_th_margin]] : [["rev", T.sc_th_rev]];
+  const cell = (v, key) => v == null ? "—"
+    : key === "marginPct" ? `${v.toFixed(0)}%` : compact(v);
+  const cls = (v, key) => key !== "marginPct" || v == null ? ""
+    : v >= 50 ? "good" : v >= 20 ? "warn" : "bad";
+  const head1 = `<tr><th></th>${keys.map(k =>
+    `<th colspan="${cols.length}" style="color:${SCEN_DEFS[k].color}">${SCEN_DEFS[k].label}</th>`).join("")}</tr>`;
+  const head2 = `<tr><th></th>${keys.map(() =>
+    cols.map(([, lb]) => `<th>${lb}</th>`).join("")).join("")}</tr>`;
+  const body = m.periods.map((p, i) => `<tr><td>${esc(String(p))}</td>${
+    keys.map(k => cols.map(([key]) => {
+      const v = scens[k][i][key];
+      const c = cls(v, key);
+      return `<td${c ? ` class="${c}"` : ""}>${cell(v, key)}</td>`;
+    }).join("")).join("")}</tr>`).join("");
+  const totals = `<tr class="total"><td>${T.sc_total_row}</td>${keys.map(k => {
+    const rows = scens[k];
+    const tr = rows.reduce((t, r) => t + (r.rev ?? 0), 0);
+    const to = rows.reduce((t, r) => t + (r.opex ?? 0), 0);
+    const mp = tr ? (tr - to) / tr * 100 : null;
+    return cols.map(([key]) => key === "rev" ? `<td>${compact(tr)}</td>`
+      : key === "opex" ? `<td>${compact(to)}</td>`
+      : `<td class="${cls(mp, "marginPct")}">${mp == null ? "—" : mp.toFixed(0) + "%"}</td>`).join("");
+  }).join("")}</tr>`;
+  return `<div class="card" style="margin-top:14px"><div class="card-head">
+      <span class="ct">${T.sc_table}</span><span class="cs">${T.sc_table_sub}</span></div>
+    <div class="ftwrap" style="margin-top:8px"><table class="ftable">
+      <thead>${head1}${head2}</thead><tbody>${body}${totals}</tbody></table></div></div>`;
 }
 
 function slider(name, key, min, max, step, val, fmt) {
@@ -3892,7 +4094,7 @@ function attachScenario() {
   }));
   $$('#sec-scenario .preset').forEach(b => b.addEventListener("click", () => {
     const d = SCEN_DEFS[b.dataset.preset];
-    SCEN = { price: d.price, vol: d.vol, cost: d.cost };
+    SCEN = { price: d.price, vol: d.vol, cost: d.cost, ext: d.ext ?? 1 };
     refreshScenario();
   }));
 }
@@ -3911,32 +4113,85 @@ function gauss() {
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 }
 function runMC() {
-  const m = REPORT.model, out = [];
+  const out = [];
   for (let i = 0; i < MCP.N; i++) {
     const f = {
       price: Math.max(0.2, 1 + gauss() * MCP.priceSd),
       vol: Math.max(0.2, 1 + gauss() * MCP.volSd),
       cost: Math.max(0.4, 1 + gauss() * MCP.costSd),
     };
-    out.push(scenTotal(scenSeries(f)));
+    const rows = scenSeries(f);
+    const lastM = [...rows].reverse().find(r => r.marginPct != null);
+    out.push({ price: f.price,
+      rev: rows.reduce((t, r) => t + (r.rev ?? 0), 0),
+      margin: rows.reduce((t, r) => t + (r.margin ?? 0), 0),
+      mpct: lastM ? lastM.marginPct : null });
   }
-  out.sort((a, b) => a - b);
   MC_RESULTS = out;
 }
 const pctl = (a, p) => a[Math.min(a.length - 1, Math.floor(p / 100 * a.length))];
 
+/* which outcome the histogram measures — margin lenses need a cost series */
+function mcMetrics() {
+  const out = [["rev", T.mc_metric_rev]];
+  if (REPORT.model && REPORT.model.metrics.opex)
+    out.push(["margin", T.mc_metric_margin], ["mpct", T.mc_metric_mpct]);
+  return out;
+}
+function mcBase(key) {
+  const rows = scenSeries(SCEN_DEFS.base);
+  if (key === "mpct") {
+    const lastM = [...rows].reverse().find(r => r.marginPct != null);
+    return lastM ? lastM.marginPct : null;
+  }
+  return rows.reduce((t, r) => t + (r[key === "rev" ? "rev" : "margin"] ?? 0), 0);
+}
+
+/* price factor vs outcome, one dot per sampled draw — hand-built, no libs */
+function mcScatter(draws, key, fmtV) {
+  const pts = draws.filter((_, i) => i % Math.max(1, Math.floor(draws.length / 160)) === 0)
+    .map(d => [d.price, d[key]]).filter(([, v]) => v != null);
+  if (pts.length < 10) return "";
+  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs);
+  const y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const HS = 200, MT = 12;
+  const px = v => ML + (v - x0) / ((x1 - x0) || 1) * (W - ML - MR);
+  const py = v => MT + (1 - (v - y0) / ((y1 - y0) || 1)) * (HS - MT - MB);
+  const dots = pts.map(([x, y]) =>
+    `<circle cx="${px(x).toFixed(1)}" cy="${py(y).toFixed(1)}" r="2" fill="var(--gold)" fill-opacity=".45"/>`).join("");
+  const gy = [y0, (y0 + y1) / 2, y1].map(v => `
+    <line x1="${ML}" x2="${W - MR}" y1="${py(v).toFixed(1)}" y2="${py(v).toFixed(1)}" stroke="var(--hairline)" stroke-dasharray="2 4"/>
+    <text x="${ML - 6}" y="${(py(v) + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--ink-3)" font-family="var(--mono)">${fmtV(v)}</text>`).join("");
+  const gx = [x0, 1, x1].filter((v, i, a) => a.indexOf(v) === i).map(v => `
+    <text x="${px(v).toFixed(1)}" y="${HS - 8}" text-anchor="middle" font-size="9" fill="var(--ink-3)" font-family="var(--mono)">×${v.toFixed(2)}</text>`).join("");
+  return `<svg viewBox="0 0 ${W} ${HS}" role="img">${gy}${gx}${dots}
+    <text x="${W - MR}" y="${HS - 8}" text-anchor="end" font-size="9" fill="var(--ink-3)">${T.mc_price_axis}</text></svg>`;
+}
+
 function renderMC() {
   const m = REPORT.model;
   if (!m || !m.scenario_ready) return "";
+  const metrics = mcMetrics();
+  if (!metrics.some(([k]) => k === MCP.metric)) MCP.metric = "rev";
+  const mLabel = metrics.find(([k]) => k === MCP.metric)[1];
+  const fmtV = MCP.metric === "mpct" ? v => `${v.toFixed(1)}%` : compact;
+  const picker = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">${
+    metrics.map(([k, lb]) => `<button class="preset ${k === MCP.metric ? "on" : ""}" data-mcmetric="${k}"
+      style="${k === MCP.metric ? "background:var(--ink);color:var(--card)" : ""}">${lb}</button>`).join("")}</div>`;
+
   let body = `<div class="muted" style="padding:24px 0;text-align:center">${T.mc_press}</div>`;
   if (MC_RESULTS) {
-    const r = MC_RESULTS, base = scenTotal(scenSeries(SCEN_DEFS.base));
+    const r = MC_RESULTS.map(d => d[MCP.metric]).filter(v => v != null).sort((a, b) => a - b);
+    const base = mcBase(MCP.metric);
     const p10 = pctl(r, 10), p50 = pctl(r, 50), p90 = pctl(r, 90);
+    const mean = r.reduce((a, b) => a + b, 0) / r.length;
+    const sd = Math.sqrt(r.reduce((s, v) => s + (v - mean) ** 2, 0) / r.length);
     const bins = 30, mn = r[0], mx = r[r.length - 1], step = (mx - mn) / bins || 1;
     const y = Array.from({ length: bins }, () => 0);
     for (const v of r) y[Math.min(bins - 1, Math.floor((v - mn) / step))]++;
     const hist = { pseudo: true, i: "mc", range: null,
-      chart: { kind: "profile", x: y.map((_, i2) => compact(mn + i2 * step)), y } };
+      chart: { kind: "profile", x: y.map((_, i2) => fmtV(mn + i2 * step)), y } };
     // dashed P10/P50/P90 marker lines over the histogram (spec §11)
     const band = (W - ML - MR) / bins;
     const marks = [[p10, "#b03a2e", "P10"], [p50, "#201d17", "P50"], [p90, "#0a7d33", "P90"]]
@@ -3948,24 +4203,31 @@ function renderMC() {
             font-family="'IBM Plex Mono',ui-monospace,monospace">${lb}</text>`;
       }).join("");
     const histSvg = svgProfile(hist).replace("</svg>", marks + "</svg>");
-    const probs = [0.8, 1.0, 1.2].map(f2 => {
+    const probs = base ? [0.8, 1.0, 1.2].map(f2 => {
       const t = base * f2, p = r.filter(v => v >= t).length / r.length * 100;
-      return `<div class="prob-row"><span>${T.mc_row(compact(t), (f2*100).toFixed(0))}</span>
+      return `<div class="prob-row"><span>${T.mc_row(mLabel, fmtV(t), (f2*100).toFixed(0))}</span>
         <span class="pv" style="color:${p >= 70 ? "var(--good)" : p >= 40 ? "var(--gold)" : "var(--critical)"}">${p.toFixed(1)}%</span></div>`;
-    }).join("");
+    }).join("") : "";
+    const scatter = mcScatter(MC_RESULTS, MCP.metric, fmtV);
     body = `
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:12px">
-        <div class="scard" style="--scolor:#b03a2a"><div class="sn">${T.mc_p10}</div><div class="sv">${compact(p10)}</div></div>
-        <div class="scard" style="--scolor:#a8821f"><div class="sn">${T.mc_p50}</div><div class="sv">${compact(p50)}</div></div>
-        <div class="scard" style="--scolor:#2c5f1a"><div class="sn">${T.mc_p90}</div><div class="sv">${compact(p90)}</div></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:12px">
+        <div class="scard" style="--scolor:#b03a2a"><div class="sn">${T.mc_p10}</div><div class="sv">${fmtV(p10)}</div></div>
+        <div class="scard" style="--scolor:#a8821f"><div class="sn">${T.mc_p50}</div><div class="sv">${fmtV(p50)}</div></div>
+        <div class="scard" style="--scolor:#2c5f1a"><div class="sn">${T.mc_p90}</div><div class="sv">${fmtV(p90)}</div></div>
+        <div class="scard" style="--scolor:#8a8375"><div class="sn">${T.mc_mean}</div><div class="sv">${fmtV(mean)}</div>
+          <div class="ss">σ = ${fmtV(sd)}</div></div>
       </div>
       <div class="grid2">
-        <div class="card chart-card"><div class="card-head"><span class="ct">${T.mc_dist}</span>
+        <div class="card chart-card"><div class="card-head"><span class="ct">${T.mc_dist(mLabel)}</span>
           <span class="cs">${T.mc_draws(nf.format(MCP.N))}</span></div>
           <div class="plot">${histSvg}</div>
-          <div class="chcap">${T.mc_range(compact(p10), compact(p90))}</div></div>
+          <div class="chcap">${T.mc_range(fmtV(p10), fmtV(p90))}</div></div>
         <div class="card"><div class="card-head"><span class="ct">${T.mc_prob}</span></div>${probs}</div>
-      </div>`;
+      </div>
+      ${scatter ? `<div class="card chart-card" style="margin-top:14px">
+        <div class="card-head"><span class="ct">${T.mc_scatter}</span>
+          <span class="cs">${T.mc_scatter_sub}</span></div>
+        <div class="plot">${scatter}</div></div>` : ""}`;
   }
   return `<section id="sec-mc"><span class="kicker">${T.mc_kicker}</span>
     <div class="scen-grid">
@@ -3977,7 +4239,7 @@ function renderMC() {
         ${mcslider(T.mc_n, "N", 500, 5000, 500, MCP.N)}
         <button class="runbtn" id="mc-run">${T.mc_run(nf.format(MCP.N))}</button>
         </div></div>
-      <div id="mc-body">${body}</div>
+      <div>${picker}<div id="mc-body">${body}</div></div>
     </div></section>`;
 }
 function mcslider(name, key, min, max, step, val) {
@@ -3989,6 +4251,10 @@ function mcslider(name, key, min, max, step, val) {
 function attachMC() {
   $$('#sec-mc input[data-mc]').forEach(inp => inp.addEventListener("input", () => {
     MCP[inp.dataset.mc] = +inp.value;
+    const sec = $("#sec-mc"); sec.outerHTML = renderMC(); attachMC();
+  }));
+  $$('#sec-mc [data-mcmetric]').forEach(b => b.addEventListener("click", () => {
+    MCP.metric = b.dataset.mcmetric;
     const sec = $("#sec-mc"); sec.outerHTML = renderMC(); attachMC();
   }));
   const run = $("#mc-run");
