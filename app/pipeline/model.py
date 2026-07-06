@@ -103,41 +103,10 @@ def _tag_roles(chart: dict) -> Dict[str, dict]:
     return roles
 
 
-def build_model(report_sheets) -> Optional[Dict[str, Any]]:
-    """Assemble the business model, or ``None`` when nothing role-tags."""
-    charts = _year_charts(report_sheets)
-    if not charts:
-        return None
-
-    # spine = the year chart where the most roles were found
-    best_sheet, best_roles, best_chart = None, {}, None
-    for name, ch in charts:
-        roles = _tag_roles(ch)
-        if len(roles) > len(best_roles):
-            best_sheet, best_roles, best_chart = name, roles, ch
-    if not best_roles:
-        return None
-
-    periods = [str(p) for p in best_chart["periods"]]
-
-    # supplement missing roles from other year charts with IDENTICAL periods
-    for name, ch in charts:
-        if ch is best_chart:
-            continue
-        if [str(p) for p in ch["periods"]] != periods:
-            continue
-        for role, series in _tag_roles(ch).items():
-            if role not in best_roles:
-                series["_sheet"] = name
-                best_roles[role] = series
-
-    metrics = {
-        role: {"label": s["label"], "sheet": s.get("_sheet", best_sheet),
-               "values": s["values"]}
-        for role, s in best_roles.items()
-    }
-
-    # derived metrics — only where both inputs exist, cell by cell
+def derive_metrics(metrics: Dict[str, dict]) -> Dict[str, Any]:
+    """Derived indicators — only where both inputs exist, cell by cell.
+    Shared by the heuristic model and the mapping path so a mapped model
+    can never disagree with a detected one about the arithmetic."""
     def _pair(a, b, fn):
         return [round(fn(x, y), 4) if x is not None and y is not None and y != 0
                 else None for x, y in zip(a, b)]
@@ -173,6 +142,43 @@ def build_model(report_sheets) -> Optional[Dict[str, Any]]:
     if opx and bud:
         derived["opex_budget_variance_pct"] = _pair(
             opx, bud, lambda o, b: (o - b) / b * 100)
+    return derived
+
+
+def build_model(report_sheets) -> Optional[Dict[str, Any]]:
+    """Assemble the business model, or ``None`` when nothing role-tags."""
+    charts = _year_charts(report_sheets)
+    if not charts:
+        return None
+
+    # spine = the year chart where the most roles were found
+    best_sheet, best_roles, best_chart = None, {}, None
+    for name, ch in charts:
+        roles = _tag_roles(ch)
+        if len(roles) > len(best_roles):
+            best_sheet, best_roles, best_chart = name, roles, ch
+    if not best_roles:
+        return None
+
+    periods = [str(p) for p in best_chart["periods"]]
+
+    # supplement missing roles from other year charts with IDENTICAL periods
+    for name, ch in charts:
+        if ch is best_chart:
+            continue
+        if [str(p) for p in ch["periods"]] != periods:
+            continue
+        for role, series in _tag_roles(ch).items():
+            if role not in best_roles:
+                series["_sheet"] = name
+                best_roles[role] = series
+
+    metrics = {
+        role: {"label": s["label"], "sheet": s.get("_sheet", best_sheet),
+               "values": s["values"]}
+        for role, s in best_roles.items()
+    }
+    derived = derive_metrics(metrics)
 
     # breakdowns: the top line items already computed at extraction
     breakdowns = []
@@ -190,5 +196,5 @@ def build_model(report_sheets) -> Optional[Dict[str, Any]]:
         "breakdowns": breakdowns[:MAX_BREAKDOWNS],
         # scenario/simulation math needs a revenue line; cost levers appear
         # only when a cost series was actually found
-        "scenario_ready": bool(rev),
+        "scenario_ready": bool(metrics.get("revenue")),
     }

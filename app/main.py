@@ -40,6 +40,8 @@ from .models import (
 from .pipeline.celltypes import grid_kinds
 from .pipeline.eda import generate_insights
 from .pipeline.model import build_model
+from .pipeline.mapping import (MAPPABLE_ROLES, build_mapped_model, reconcile,
+                               resolve, year_series)
 from .pipeline.semantics import plan_from_brief, suggest_brief
 from .pipeline.ingest import read_upload
 from .pipeline.orient import orient_sheet
@@ -248,9 +250,41 @@ async def analyze(file: UploadFile = File(...)) -> AnalyzeResponse:
     # one big upload freezes every other request AND the /health check,
     # which lets Fly/Render restart the box mid-analysis.
     result = await run_in_threadpool(run_pipeline, content, file.filename or "")
+    report = result.model_dump()
+    _inherit_mapping(report)          # a verified client mapping carries over
+    result = AnalyzeResponse(**report)
     result.id = storage.save_analysis(
         result.filename, content, result.model_dump())
     return result
+
+
+def _inherit_mapping(report: dict) -> None:
+    """Apply the newest stored mapping that resolves on this report AND
+    reconciles green against ITS data. Verified-only, both at save time and
+    now: a mapping the file itself cannot confirm never spreads to new
+    uploads — it stays a per-file manual pin."""
+    for cand in storage.recent_mappings():
+        roles = (cand["mapping"] or {}).get("roles")
+        if not roles:
+            continue
+        if (cand["mapping"].get("reconciliation") or {}).get("ok") is not True:
+            continue
+        resolved, _errors = resolve(roles, report)
+        if not resolved:
+            continue
+        rec = reconcile(resolved)
+        if rec["ok"] is not True:
+            continue
+        report["model"] = build_mapped_model(report, resolved)
+        report["mapping"] = {
+            "roles": roles,
+            "provenance": {"kind": "inherited", "from": cand["filename"],
+                           "from_id": cand["id"],
+                           "at": _dt.datetime.now(_dt.timezone.utc)
+                                 .isoformat(timespec="seconds")},
+            "reconciliation": rec,
+        }
+        return
 
 
 @app.get("/analyses", response_model=list[AnalysisMeta])
@@ -414,6 +448,70 @@ async def assign_client(analysis_id: str, request: Request) -> dict:
     return {"id": analysis_id, "client": client or None}
 
 
+@app.get("/analyses/{analysis_id}/mapping")
+def get_mapping(analysis_id: str) -> dict:
+    """The stored mapping (if any) plus the address space a mapping may
+    point at: every series of every year-axis chart in this workbook."""
+    report = storage.get_report(analysis_id)
+    if report is None:
+        raise HTTPException(status_code=404,
+                            detail=f"No analysis '{analysis_id}'.")
+    return {
+        "mapping": report.get("mapping"),
+        "available": [{"sheet": a["sheet"], "label": a["label"]}
+                      for a in year_series(report)],
+        "roles": list(MAPPABLE_ROLES),
+    }
+
+
+@app.post("/analyses/{analysis_id}/mapping")
+async def set_mapping(analysis_id: str, request: Request) -> dict:
+    """Pin role -> series ({"mapping": {"revenue": {"label": ..., "sheet":
+    ...}}}). Gated: a mapping the file's own identities contradict is
+    refused (422) — a wrong mapping is a confident wrong dashboard."""
+    report = storage.get_report(analysis_id)
+    if report is None:
+        raise HTTPException(status_code=404,
+                            detail=f"No analysis '{analysis_id}'.")
+    body = await request.json()
+    mapping = body.get("mapping") or {}
+    if not isinstance(mapping, dict) or not mapping:
+        raise HTTPException(status_code=422, detail="Empty mapping.")
+
+    resolved, errors = resolve(mapping, report)
+    if resolved is None:
+        raise HTTPException(status_code=422, detail="; ".join(errors))
+    rec = reconcile(resolved)
+    if rec["ok"] is False:
+        raise HTTPException(status_code=422, detail={
+            "message": "mapping contradicts the data", "reconciliation": rec})
+
+    report["model"] = build_mapped_model(report, resolved)
+    report["mapping"] = {
+        "roles": mapping,
+        "provenance": {"kind": "manual",
+                       "at": _dt.datetime.now(_dt.timezone.utc)
+                             .isoformat(timespec="seconds")},
+        "reconciliation": rec,
+    }
+    storage.update_report(analysis_id, report)
+    return {"model": report["model"], "mapping": report["mapping"],
+            "reconciliation": rec}
+
+
+@app.delete("/analyses/{analysis_id}/mapping")
+def clear_mapping(analysis_id: str) -> dict:
+    """Drop the mapping and fall back to the label heuristics."""
+    report = storage.get_report(analysis_id)
+    if report is None:
+        raise HTTPException(status_code=404,
+                            detail=f"No analysis '{analysis_id}'.")
+    report.pop("mapping", None)
+    report["model"] = build_model(AnalyzeResponse(**report).sheets)
+    storage.update_report(analysis_id, report)
+    return {"cleared": True, "model": report["model"]}
+
+
 @app.post("/analyses/{analysis_id}/publish")
 def publish_analysis(analysis_id: str) -> dict:
     """Freeze the exec-only snapshot behind the public token.
@@ -537,6 +635,17 @@ def rerun_analysis(analysis_id: str) -> AnalyzeResponse:
                  fresh["findings"] + fresh["unverified"] + fresh["verified"]}
         kept = {fid: d for fid, d in old["decisions"].items() if fid in alive}
         result.decisions = kept or None
+    # a pinned mapping is the analyst's call — it survives the rerun as long
+    # as its series still resolve and the data does not contradict it
+    old_map = old.get("mapping") or {}
+    if old_map.get("roles"):
+        rep = result.model_dump()
+        resolved, _errors = resolve(old_map["roles"], rep)
+        if resolved:
+            rec = reconcile(resolved)
+            if rec["ok"] is not False:
+                result.model = build_mapped_model(rep, resolved)
+                result.mapping = {**old_map, "reconciliation": rec}
     storage.update_report(analysis_id, result.model_dump())
     return result
 
