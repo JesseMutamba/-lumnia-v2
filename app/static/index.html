@@ -3147,9 +3147,11 @@ function storyTakeaways(metricById, approved) {
     && m.rows && m.rows.length >= 2);
   if (by) {
     const total = by.rows.reduce((s, r) => s + Math.abs(r.value ?? 0), 0);
-    if (total > 0) {
-      const top = by.rows[0];
-      out.push(T.tk_conc(top.member, pctFmt(Math.abs(top.value ?? 0) / total * 100),
+    const top = by.rows[0];
+    const share = total > 0 ? Math.abs(top.value ?? 0) / total : 0;
+    // concentration is only a takeaway when it exists (declutter rule)
+    if (share >= 0.15) {
+      out.push(T.tk_conc(top.member, pctFmt(share * 100),
         by.measure, by.grain));
     }
   }
@@ -3419,8 +3421,10 @@ function renderStoryDashExec(metricById, approved) {
     }
   }
   if (!head) {
-    const takes = storyTakeaways(metricById, approved);
-    head = takes[0] || T.st_plan_t + ".";
+    // no trend to speak about: the audit verdict is the honest headline —
+    // never promote a takeaway fragment to a sentence it can't carry
+    const mN = AUDIT.n_mismatched_relations, uN = AUDIT.n_unverified_relations;
+    head = mN ? T.vh_bad(mN) : (uN ? T.vh_review(uN) : T.vh_ok);
   }
 
   const cells = [];
@@ -3430,8 +3434,11 @@ function renderStoryDashExec(metricById, approved) {
       <div class="ks">${esc(String(pa))} → ${esc(String(pb))}</div></div>`);
   if (by) {
     const total = by.rows.reduce((s, r) => s + Math.abs(r.value ?? 0), 0);
-    if (total > 0) cells.push(`<div class="kcell"><div class="kl">${T.bk_share}</div>
-      <div class="kv">${pctFmt(Math.abs(by.rows[0].value ?? 0) / total * 100)}</div>
+    const share = total > 0 ? Math.abs(by.rows[0].value ?? 0) / total : 0;
+    // significance gate: a 6% "largest share" across 30 members says
+    // nothing — the cell earns its place only when concentration is real
+    if (share >= 0.15) cells.push(`<div class="kcell"><div class="kl">${T.bk_share}</div>
+      <div class="kv">${pctFmt(share * 100)}</div>
       <div class="ks">${esc(String(by.rows[0].member).slice(0, 26))}, ${T.bk_of_total(esc(by.grain))}</div></div>`);
   }
   if (mv && mv.top.length && mv.top[0].value > 0)
@@ -3455,6 +3462,14 @@ function renderStoryDashExec(metricById, approved) {
 
   const cad = T.st_cadences[brief.cadence]
     ? T.st_cadences[brief.cadence].toLowerCase() : brief.cadence;
+  // no trend -> the top breakdown carries the visual as true-baseline columns
+  const chartHtml = trend ? trendExecChart(trend)
+    : by ? storyVisual(by) : "";
+  const stepsHtml = steps
+    ? `<span class="kicker">${T.rc_title}</span>${steps}`
+    : `<span class="kicker">${T.rc_title}</span>
+       <div class="step"><span class="n" style="color:var(--good)">✓</span>
+         <div><p>${T.nx_none}</p></div></div>`;
   return `<section id="sec-story">
     <div style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap">
       <span class="kicker">${esc(T.st_brief_line(brief.role, cad))} · ${esc((REPORT.story.sheet || "").trim())}</span>
@@ -3465,9 +3480,9 @@ function renderStoryDashExec(metricById, approved) {
     <h1 class="vhead">${esc(head)}</h1>
     ${strip}
     <div class="execgrid">
-      <div>${trend ? trendExecChart(trend) : ""}
+      <div>${chartHtml}
         ${mv ? `<div style="margin-top:26px">${moversDiverging(mv)}</div>` : ""}</div>
-      <div>${steps ? `<span class="kicker">${T.rc_title}</span>${steps}` : ""}${gaps}</div>
+      <div>${stepsHtml}${gaps}</div>
     </div>
   </section>`;
 }

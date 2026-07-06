@@ -48,6 +48,12 @@ RATIO_RX = re.compile(
 # identifier columns: "ID", "PLAYER_ID", "code client"… — labels, never sums
 ID_NAME_RX = re.compile(r"(?:^|[_\s.\-])id(?:entifiant)?$|^id$|(?:^|[_\s.\-])"
                         r"code(?:$|[_\s.\-])", re.IGNORECASE)
+# rank/position columns are ordinals — "Total PTS_RANK" means nothing
+RANK_NAME_RX = re.compile(r"(?:^|[_\s.\-])(?:rank|rang|classement)$",
+                          re.IGNORECASE)
+# mean-only quantities: an average age informs, a summed age never does
+MEANISH_RX = re.compile(r"(?:^|[_\s.\-])(?:age|âge)$|ancien+et[ée]",
+                        re.IGNORECASE)
 
 _NULLISH = {"", "none", "nan", "null"}
 
@@ -107,8 +113,8 @@ def detect_schema(df: pd.DataFrame) -> Dict[str, Any]:
                     and vals.nunique() >= 3):
                 continue
             # *_ID columns are identifiers, not quantities — a summed
-            # PLAYER_ID is arithmetic without meaning
-            if ID_NAME_RX.search(name):
+            # PLAYER_ID is arithmetic without meaning; ranks are ordinals
+            if ID_NAME_RX.search(name) or RANK_NAME_RX.search(name):
                 continue
             uniq = set(vals.unique())
             if uniq <= {0, 1}:
@@ -119,7 +125,9 @@ def detect_schema(df: pd.DataFrame) -> Dict[str, Any]:
                                  "members": [0, 1]})
                 continue
             kind = ("change_pct" if CHANGE_RX.search(name)
-                    else "ratio" if RATIO_RX.search(name) else "amount")
+                    else "ratio" if RATIO_RX.search(name)
+                    else "mean" if MEANISH_RX.search(name)   # AGE averages
+                    else "amount")
             measures.append({"name": name, "kind": kind,
                              "role": _measure_role(name)})
             continue
@@ -226,7 +234,10 @@ def compute_story(df: pd.DataFrame, schema: Dict[str, Any]) -> Optional[Dict[str
         "n": int(hvals.notna().sum()),
     })
 
-    for dim in schema["dimensions"][:MAX_DIMS_PER_METRIC]:
+    # 0/1 flags stay in the schema for analysts but never become narrative
+    # subjects — "1 accounts for 93% of…" is a sentence about a checkbox
+    real_dims = [d for d in schema["dimensions"] if d.get("kind") != "flag"]
+    for dim in real_dims[:MAX_DIMS_PER_METRIC]:
         metrics.append({
             "id": f"by_{dim['name']}", "metric": how, "measure": head["name"],
             "grain": dim["name"], "rows": _by_dim(df, head, dim["name"], how),
