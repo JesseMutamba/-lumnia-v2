@@ -84,6 +84,7 @@ def _connect() -> sqlite3.Connection:
         "ALTER TABLE analyses ADD COLUMN checks_ok INTEGER",
         "ALTER TABLE analyses ADD COLUMN checks_total INTEGER",
         "ALTER TABLE analyses ADD COLUMN last_decided_at TEXT",
+        "ALTER TABLE analyses ADD COLUMN at_stake REAL",
     ):
         try:
             con.execute(migration)
@@ -124,6 +125,7 @@ def _rollup(report: Dict[str, Any]) -> Dict[str, Any]:
         "checks_total": (agg["n_verified_relations"]
                          + agg["n_mismatched_relations"]),
         "last_decided_at": max(decided) if decided else None,
+        "at_stake": agg["total_abs_delta"],
     }
 
 
@@ -135,13 +137,13 @@ def save_analysis(filename: str, content: bytes, report: Dict[str, Any]) -> str:
     with _connect() as con:
         con.execute(
             "INSERT INTO analyses (id, filename, uploaded_at, size_bytes, sha256, content, report, "
-            "open_findings, n_sheets, checks_ok, checks_total, last_decided_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "open_findings, n_sheets, checks_ok, checks_total, last_decided_at, at_stake) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (analysis_id, filename, _now(), len(content),
              hashlib.sha256(content).hexdigest(), content,
              json.dumps(report, ensure_ascii=False),
              roll["open_findings"], roll["n_sheets"], roll["checks_ok"],
-             roll["checks_total"], roll["last_decided_at"]),
+             roll["checks_total"], roll["last_decided_at"], roll["at_stake"]),
         )
     return analysis_id
 
@@ -154,7 +156,7 @@ def list_analyses() -> List[Dict[str, Any]]:
         rows = con.execute(
             "SELECT a.id, a.filename, a.uploaded_at, a.reran_at, a.size_bytes, "
             "a.client, a.open_findings, a.n_sheets, a.checks_ok, "
-            "a.checks_total, a.last_decided_at, "
+            "a.checks_total, a.last_decided_at, a.at_stake, "
             "p.version AS pub_version, p.published_at AS pub_at "
             "FROM analyses a LEFT JOIN published p ON p.analysis_id = a.id "
             "ORDER BY a.uploaded_at DESC, a.id"
@@ -168,11 +170,11 @@ def list_analyses() -> List[Dict[str, Any]]:
                 roll = _rollup(json.loads(blob))
                 con.execute(
                     "UPDATE analyses SET open_findings = ?, n_sheets = ?, "
-                    "checks_ok = ?, checks_total = ?, last_decided_at = ? "
-                    "WHERE id = ?",
+                    "checks_ok = ?, checks_total = ?, last_decided_at = ?, "
+                    "at_stake = ? WHERE id = ?",
                     (roll["open_findings"], roll["n_sheets"],
                      roll["checks_ok"], roll["checks_total"],
-                     roll["last_decided_at"], r["id"]))
+                     roll["last_decided_at"], roll["at_stake"], r["id"]))
                 r.update(roll)
             out.append({
                 "id": r["id"],
@@ -185,6 +187,7 @@ def list_analyses() -> List[Dict[str, Any]]:
                 "open_findings": r["open_findings"],
                 "checks_ok": r["checks_ok"],
                 "checks_total": r["checks_total"],
+                "at_stake": r["at_stake"],
                 "published_version": r["pub_version"],
                 "stale": ((r["last_decided_at"] or "") > r["pub_at"]
                           if r["pub_version"] is not None else None),
@@ -282,11 +285,12 @@ def update_report(analysis_id: str, report: Dict[str, Any]) -> bool:
     with _connect() as con:
         cur = con.execute(
             "UPDATE analyses SET report = ?, reran_at = ?, open_findings = ?, "
-            "n_sheets = ?, checks_ok = ?, checks_total = ?, last_decided_at = ? "
-            "WHERE id = ?",
+            "n_sheets = ?, checks_ok = ?, checks_total = ?, last_decided_at = ?, "
+            "at_stake = ? WHERE id = ?",
             (json.dumps(report, ensure_ascii=False), _now(),
              roll["open_findings"], roll["n_sheets"], roll["checks_ok"],
-             roll["checks_total"], roll["last_decided_at"], analysis_id),
+             roll["checks_total"], roll["last_decided_at"], roll["at_stake"],
+             analysis_id),
         )
     return cur.rowcount > 0
 

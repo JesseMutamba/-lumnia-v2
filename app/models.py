@@ -84,6 +84,8 @@ class AnalysisMeta(BaseModel):
     # reconciliation rollup for the Command Center row
     checks_ok: Optional[int] = None
     checks_total: Optional[int] = None
+    # total |delta| of mismatched relations — the money number on Home
+    at_stake: Optional[float] = None
     # publish state: latest published version (None = never published) and
     # whether decisions have moved since — both derived, never stored
     published_version: Optional[int] = None
