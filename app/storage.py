@@ -80,6 +80,10 @@ def _connect() -> sqlite3.Connection:
         "ALTER TABLE analyses ADD COLUMN sha256 TEXT",
         "ALTER TABLE analyses ADD COLUMN client TEXT",
         "ALTER TABLE analyses ADD COLUMN open_findings INTEGER",
+        "ALTER TABLE analyses ADD COLUMN n_sheets INTEGER",
+        "ALTER TABLE analyses ADD COLUMN checks_ok INTEGER",
+        "ALTER TABLE analyses ADD COLUMN checks_total INTEGER",
+        "ALTER TABLE analyses ADD COLUMN last_decided_at TEXT",
     ):
         try:
             con.execute(migration)
@@ -103,52 +107,73 @@ def find_by_content(content: bytes) -> Optional[str]:
     return row["id"] if row else None
 
 
-def _open_findings(report: Dict[str, Any]) -> int:
+def _rollup(report: Dict[str, Any]) -> Dict[str, Any]:
+    """The denormalized status columns, computed once per write so the Home
+    listing and stats never have to parse report blobs."""
     # local import: findings.py is pure and imports nothing from storage
-    from .findings import count_open
-    return count_open(report)
+    from .findings import aggregate_findings
+    agg = aggregate_findings(report)
+    decided = [(d or {}).get("decided_at", "")
+               for d in (report.get("decisions") or {}).values()]
+    return {
+        "open_findings": sum(
+            1 for f in agg["findings"] + agg["unverified"]
+            if f["decision"] == "open"),
+        "n_sheets": report.get("n_sheets", 0),
+        "checks_ok": agg["n_verified_relations"],
+        "checks_total": (agg["n_verified_relations"]
+                         + agg["n_mismatched_relations"]),
+        "last_decided_at": max(decided) if decided else None,
+    }
 
 
 def save_analysis(filename: str, content: bytes, report: Dict[str, Any]) -> str:
     """Persist a new analysis; returns its id (also stamped into the report)."""
     analysis_id = uuid.uuid4().hex[:12]
     report = {**report, "id": analysis_id}
+    roll = _rollup(report)
     with _connect() as con:
         con.execute(
-            "INSERT INTO analyses (id, filename, uploaded_at, size_bytes, sha256, content, report, open_findings) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO analyses (id, filename, uploaded_at, size_bytes, sha256, content, report, "
+            "open_findings, n_sheets, checks_ok, checks_total, last_decided_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (analysis_id, filename, _now(), len(content),
              hashlib.sha256(content).hexdigest(), content,
-             json.dumps(report, ensure_ascii=False), _open_findings(report)),
+             json.dumps(report, ensure_ascii=False),
+             roll["open_findings"], roll["n_sheets"], roll["checks_ok"],
+             roll["checks_total"], roll["last_decided_at"]),
         )
     return analysis_id
 
 
 def list_analyses() -> List[Dict[str, Any]]:
-    """Newest-first metadata for every stored analysis (no blobs).
-
-    # DEBT: json.loads() of every report blob just to read n_sheets (same
-    # in stats()). Fine at tens of analyses; at thousands the library page
-    # gets slow and memory-spiky. Fix is an n_sheets column (one ALTER +
-    # backfill) — do it when a workspace passes ~500 stored analyses.
-    """
+    """Newest-first metadata for every stored analysis — served from the
+    denormalized status columns. Report blobs are parsed only as a one-time
+    backfill for rows written before the columns existed."""
     with _connect() as con:
         rows = con.execute(
             "SELECT a.id, a.filename, a.uploaded_at, a.reran_at, a.size_bytes, "
-            "a.client, a.report, a.open_findings, "
+            "a.client, a.open_findings, a.n_sheets, a.checks_ok, "
+            "a.checks_total, a.last_decided_at, "
             "p.version AS pub_version, p.published_at AS pub_at "
             "FROM analyses a LEFT JOIN published p ON p.analysis_id = a.id "
             "ORDER BY a.uploaded_at DESC, a.id"
         ).fetchall()
         out = []
         for r in rows:
-            report = json.loads(r["report"])
-            open_findings = r["open_findings"]
-            if open_findings is None:      # row predates the column: backfill
-                open_findings = _open_findings(report)
+            r = dict(r)
+            if r["n_sheets"] is None:      # legacy row: backfill once
+                blob = con.execute("SELECT report FROM analyses WHERE id = ?",
+                                   (r["id"],)).fetchone()["report"]
+                roll = _rollup(json.loads(blob))
                 con.execute(
-                    "UPDATE analyses SET open_findings = ? WHERE id = ?",
-                    (open_findings, r["id"]))
+                    "UPDATE analyses SET open_findings = ?, n_sheets = ?, "
+                    "checks_ok = ?, checks_total = ?, last_decided_at = ? "
+                    "WHERE id = ?",
+                    (roll["open_findings"], roll["n_sheets"],
+                     roll["checks_ok"], roll["checks_total"],
+                     roll["last_decided_at"], r["id"]))
+                r.update(roll)
             out.append({
                 "id": r["id"],
                 "filename": r["filename"],
@@ -156,10 +181,12 @@ def list_analyses() -> List[Dict[str, Any]]:
                 "reran_at": r["reran_at"],
                 "size_bytes": r["size_bytes"],
                 "client": r["client"],
-                "n_sheets": report.get("n_sheets", 0),
-                "open_findings": open_findings,
+                "n_sheets": r["n_sheets"] or 0,
+                "open_findings": r["open_findings"],
+                "checks_ok": r["checks_ok"],
+                "checks_total": r["checks_total"],
                 "published_version": r["pub_version"],
-                "stale": (is_stale(report, r["pub_at"])
+                "stale": ((r["last_decided_at"] or "") > r["pub_at"]
                           if r["pub_version"] is not None else None),
             })
     return out
@@ -188,7 +215,8 @@ def stats() -> Dict[str, Any]:
     no report payloads parsed beyond the cheap ``n_sheets`` field."""
     with _connect() as con:
         rows = con.execute(
-            "SELECT uploaded_at, size_bytes, client, report FROM analyses"
+            "SELECT uploaded_at, size_bytes, client, n_sheets, report "
+            "FROM analyses"
         ).fetchall()
 
     by_day: Dict[str, int] = {}
@@ -209,10 +237,13 @@ def stats() -> Dict[str, Any]:
         label = r["client"] or "General"
         by_client[label] = by_client.get(label, 0) + 1
         total_bytes += int(r["size_bytes"] or 0)
-        try:
-            total_sheets += int(json.loads(r["report"]).get("n_sheets", 0) or 0)
-        except Exception:
-            pass
+        if r["n_sheets"] is not None:          # denormalized column
+            total_sheets += int(r["n_sheets"])
+        else:                                  # legacy row, parse once
+            try:
+                total_sheets += int(json.loads(r["report"]).get("n_sheets", 0) or 0)
+            except Exception:
+                pass
 
     days = sorted(d for d in by_day)
     return {
@@ -247,12 +278,15 @@ def get_content(analysis_id: str) -> Optional[Tuple[str, bytes]]:
 
 
 def update_report(analysis_id: str, report: Dict[str, Any]) -> bool:
+    roll = _rollup(report)
     with _connect() as con:
         cur = con.execute(
-            "UPDATE analyses SET report = ?, reran_at = ?, open_findings = ? "
+            "UPDATE analyses SET report = ?, reran_at = ?, open_findings = ?, "
+            "n_sheets = ?, checks_ok = ?, checks_total = ?, last_decided_at = ? "
             "WHERE id = ?",
             (json.dumps(report, ensure_ascii=False), _now(),
-             _open_findings(report), analysis_id),
+             roll["open_findings"], roll["n_sheets"], roll["checks_ok"],
+             roll["checks_total"], roll["last_decided_at"], analysis_id),
         )
     return cur.rowcount > 0
 

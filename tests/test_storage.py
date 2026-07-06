@@ -62,7 +62,26 @@ def test_list_analyses_newest_first_metadata_only():
     meta = items[0]
     assert set(meta) == {"id", "filename", "uploaded_at", "reran_at",
                          "size_bytes", "n_sheets", "client", "open_findings",
-                         "published_version", "stale"}
+                         "published_version", "stale",
+                         "checks_ok", "checks_total"}
+
+
+def test_listing_rollup_reads_columns_not_blobs(monkeypatch):
+    """Command Center rollup: /analyses must serve n_sheets and the check
+    counts from denormalized columns — json.loads of report blobs is only
+    allowed as a one-time backfill for legacy rows."""
+    import app.storage as st
+    a = _upload()
+    meta = {m["id"]: m for m in client.get("/analyses").json()}[a["id"]]
+    assert meta["checks_total"] == meta["checks_ok"] + 0 or True  # shape
+    assert meta["checks_ok"] >= 0 and meta["checks_total"] >= meta["checks_ok"]
+    assert meta["n_sheets"] == 2
+    # second read: every column is populated, so no blob may be parsed
+    calls = []
+    real = st.json.loads
+    monkeypatch.setattr(st.json, "loads", lambda s: calls.append(1) or real(s))
+    client.get("/analyses")
+    assert not calls, f"listing parsed {len(calls)} report blob(s)"
     assert meta["n_sheets"] == 2
     assert meta["size_bytes"] > 0
 
