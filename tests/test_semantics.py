@@ -178,3 +178,29 @@ def test_id_columns_are_never_measures():
     assert not any(n.upper().endswith("ID") for n in names)
     story = compute_story(df, schema)
     assert story["headline_measure"] == "PTS"
+
+
+def test_wide_stats_table_story_is_editorially_sane():
+    """The NBA case: wide snapshot stats. Three rules — mean-only columns
+    (AGE) never total or headline; rank columns are ordinals, not measures;
+    0/1 flags never become breakdown subjects ('1 accounts for 93%...')."""
+    import pandas as pd
+    from app.pipeline.semantics import detect_schema, compute_story
+    df = pd.DataFrame({
+        "PLAYER_NAME": [f"Joueur {i}" for i in range(24)],
+        "TEAM_ABBREVIATION": ["OKC", "GSW", "CLE", "SAS"] * 6,
+        "ACTIVE_TWITTER_LAST_YEAR": [1, 1, 0, 1] * 6,
+        "AGE": [22 + i % 12 for i in range(24)],
+        "GP": [35 + i for i in range(24)],
+        "PTS": [8.5 + i for i in range(24)],
+        "PTS_RANK": [24 - i for i in range(24)],
+    })
+    schema = detect_schema(df)
+    by_kind = {m["name"]: m["kind"] for m in schema["measures"]}
+    assert "PTS_RANK" not in by_kind            # ordinal, not a quantity
+    assert by_kind.get("AGE") != "amount"       # ages average, never total
+    story = compute_story(df, schema)
+    assert story["headline_measure"] != "AGE"
+    ids = {m["id"] for m in story["metrics"]}
+    assert "by_ACTIVE_TWITTER_LAST_YEAR" not in ids   # flags aren't subjects
+    assert "by_TEAM_ABBREVIATION" in ids              # real dims still split
