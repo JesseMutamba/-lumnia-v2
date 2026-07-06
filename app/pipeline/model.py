@@ -25,6 +25,10 @@ ROLE_PATTERNS: List[tuple] = [
         r"|\bsales\b|\bventes?\b|\bincome\b|turnover", re.IGNORECASE)),
     ("capex", re.compile(r"capex|investissement|immobilisations?",
                          re.IGNORECASE)),
+    # a budgeted/forecast line is a TARGET, not a cost — tagged before opex
+    # so "Budget OPEX" never competes with the actual OPEX series
+    ("budget", re.compile(r"budget|pr[ée]vision(nel)?s?\b|pr[ée]vus?\b"
+                          r"|forecast", re.IGNORECASE)),
     # plain "dépenses X" is usually a PARTIAL cost line; claiming it as OPEX
     # overstates margin — require an explicit opex/charges/coûts-style label
     ("opex", re.compile(
@@ -33,9 +37,11 @@ ROLE_PATTERNS: List[tuple] = [
         r"|operating\s+(costs?|expenses?)"
         r"|frais\s+(g[ée]n[ée]raux|de\s+fonctionnement)", re.IGNORECASE)),
     ("volume", re.compile(
-        r"\bcpo\b|\bffb\b|production|tonnage|\bvolume\b|quantit[ée]s?"
-        r"|r[ée]coltes?\b|\boutput\b|unit[ée]s?\s+(vendues|produites)"
-        r"|units\s+sold", re.IGNORECASE)),
+        # (?<![a-z0-9])cpo… : \b fails across "_" (CPO_Produced), so use
+        # lookarounds that treat underscores as boundaries too
+        r"(?<![a-z0-9])(?:cpo|ffb)(?![a-z0-9])|production|tonnage|\bvolume\b"
+        r"|quantit[ée]s?|r[ée]coltes?\b|harvest|\boutput\b"
+        r"|unit[ée]s?\s+(vendues|produites)|units\s+sold", re.IGNORECASE)),
     ("area", re.compile(r"hectare|\bha\b|surface|superficie|acres?\b|m²",
                         re.IGNORECASE)),
     ("headcount", re.compile(
@@ -157,6 +163,16 @@ def build_model(report_sheets) -> Optional[Dict[str, Any]]:
     vol2 = metrics.get("volume_secondary", {}).get("values")
     if vol and vol2:
         derived["volume_ratio"] = _pair(vol2, vol, lambda b, a: b / a)
+        # cost per tonne of OUTPUT (e.g. OPEX/T CPO) — the industry lens
+        # when both input and output volumes exist
+        if opx:
+            derived["opex_per_volume_out"] = _pair(opx, vol2,
+                                                   lambda o, v: o / v)
+    # actual vs budgeted cost, period by period (+% = over budget)
+    bud = metrics.get("budget", {}).get("values")
+    if opx and bud:
+        derived["opex_budget_variance_pct"] = _pair(
+            opx, bud, lambda o, b: (o - b) / b * 100)
 
     # breakdowns: the top line items already computed at extraction
     breakdowns = []
