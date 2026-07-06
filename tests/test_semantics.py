@@ -159,3 +159,22 @@ def test_iso_dates_never_day_month_swapped():
     assert coerce_date("2025-01-05") == "2025-01-05"
     assert coerce_date("2025-11-05") == "2025-11-05"
     assert coerce_date("05/01/2025") == "2025-01-05"   # 5 janvier, day-first
+
+
+def test_id_columns_are_never_measures():
+    """PLAYER_ID-style columns are labels, not quantities — summing them
+    would put a meaningless 'Total PLAYER_ID' in front of a client."""
+    import pandas as pd
+    from app.pipeline.semantics import detect_schema, compute_story
+    df = pd.DataFrame({
+        "PLAYER_ID": [201566 + i for i in range(20)],
+        "TEAM_ID": [1610612760 + i % 4 for i in range(20)],
+        "PLAYER_NAME": [f"Joueur {i}" for i in range(20)],
+        "PTS": [10.5 + i for i in range(20)],
+    })
+    schema = detect_schema(df)
+    names = {m["name"] for m in schema["measures"]}
+    assert "PTS" in names
+    assert not any(n.upper().endswith("ID") for n in names)
+    story = compute_story(df, schema)
+    assert story["headline_measure"] == "PTS"

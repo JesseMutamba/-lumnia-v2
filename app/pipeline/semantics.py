@@ -45,6 +45,9 @@ CHANGE_RX = re.compile(
 RATIO_RX = re.compile(
     r"%|percent|\bpct\b|margin|marge|ratio|score|index|indice|\brate\b|taux",
     re.IGNORECASE)
+# identifier columns: "ID", "PLAYER_ID", "code client"… — labels, never sums
+ID_NAME_RX = re.compile(r"(?:^|[_\s.\-])id(?:entifiant)?$|^id$|(?:^|[_\s.\-])"
+                        r"code(?:$|[_\s.\-])", re.IGNORECASE)
 
 _NULLISH = {"", "none", "nan", "null"}
 
@@ -102,6 +105,10 @@ def detect_schema(df: pd.DataFrame) -> Dict[str, Any]:
             if (vals.between(1900, 2100).mean() >= 0.9
                     and (vals % 1 == 0).mean() >= 0.95
                     and vals.nunique() >= 3):
+                continue
+            # *_ID columns are identifiers, not quantities — a summed
+            # PLAYER_ID is arithmetic without meaning
+            if ID_NAME_RX.search(name):
                 continue
             uniq = set(vals.unique())
             if uniq <= {0, 1}:
