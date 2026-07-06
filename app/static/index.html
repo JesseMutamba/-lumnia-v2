@@ -812,7 +812,11 @@ const STR = {
     tab_data: "Data", tab_trends: "Trends", tab_audit: "Audit", tab_actions: "Actions",
     sheets_analyzed: n => `${n} sheet${n === 1 ? "" : "s"} analyzed`,
     shared_view: "shared view", mode_exec: "Executive", mode_analyst: "Analyst",
-    btn_report: "Report", btn_share: "Share", btn_corrections: "Corrections CSV",
+    btn_report: "Report", btn_share: "Publish", btn_corrections: "Corrections CSV",
+    pub_line: (v, d) => `published v${v} · ${d}`,
+    pub_frozen: "frozen at publish — the analyst view keeps moving, this page doesn't",
+    pub_copied: (v, url) => `Published v${v} — link copied: ${url}`,
+    pub_dead: "This link is no longer active.",
     btn_findings: "Findings CSV",
     drop_big: "Drop a CSV / Excel file here, or click to browse",
     drop_hint: "Every sheet read & verified · totals and formulas checked",
@@ -1046,7 +1050,11 @@ const STR = {
     tab_data: "Données", tab_trends: "Tendances", tab_audit: "Audit", tab_actions: "À faire",
     sheets_analyzed: n => `${n} feuille${n === 1 ? "" : "s"} analysée${n === 1 ? "" : "s"}`,
     shared_view: "vue partagée", mode_exec: "Direction", mode_analyst: "Analyste",
-    btn_report: "Rapport", btn_share: "Partager", btn_corrections: "CSV corrections",
+    btn_report: "Rapport", btn_share: "Publier", btn_corrections: "CSV corrections",
+    pub_line: (v, d) => `publié v${v} · ${d}`,
+    pub_frozen: "figé à la publication — la vue analyste continue d'évoluer, pas cette page",
+    pub_copied: (v, url) => `Publié v${v} — lien copié : ${url}`,
+    pub_dead: "Ce lien n'est plus actif.",
     btn_findings: "CSV anomalies",
     drop_big: "Déposez un fichier CSV / Excel ici, ou cliquez pour parcourir",
     drop_hint: "Chaque feuille lue et vérifiée · totaux et formules contrôlés",
@@ -1288,10 +1296,13 @@ let MODE = localStorage.getItem("lumnia_mode") || "exec";
 // The active tab. The tab set adapts to what the pipeline actually found —
 // a workbook with no business model simply has no Financials tab.
 let TAB = "overview";
-// Read-only share mode: the page was opened through a /share/{token} link.
-const SHARE = location.pathname.startsWith("/share/")
+// Public published mode: the page was opened through /published/{token}/page.
+// It renders ONLY the frozen exec snapshot — the full report never loads.
+const PUB = location.pathname.startsWith("/published/")
   ? location.pathname.split("/")[2] : null;
-const API = SHARE ? `/share/${SHARE}` : "";
+// Read-only gating flag (hides upload/library/edit affordances).
+const SHARE = PUB;
+const API = "";
 
 /* ---------- brand sun ---------- */
 function sunPaths() {
@@ -1474,16 +1485,73 @@ function attachTabBar() {
 /* ---------- select + render ---------- */
 async function select(id) {
   current = id;
-  if (!SHARE) loadWorkbooks();
-  [REPORT, AUDIT] = await Promise.all(SHARE
-    ? [fetch(`${API}/report`).then(r => r.json()),
-       fetch(`${API}/findings`).then(r => r.json())]
-    : [fetch(`/analyses/${id}`).then(r => r.json()),
-       fetch(`/analyses/${id}/findings`).then(r => r.json())]);
+  loadWorkbooks();
+  [REPORT, AUDIT] = await Promise.all(
+    [fetch(`/analyses/${id}`).then(r => r.json()),
+     fetch(`/analyses/${id}/findings`).then(r => r.json())]);
   FILTER.sheets = null; FILTER.status = null; FILTER.periods = "all";
   MC_RESULTS = null; SCEN = { price: 1.0, vol: 1.0, cost: 1.0 };
   TAB = "overview";
   renderAll();
+}
+
+/* ---------- the public published page: frozen exec snapshot only -------- */
+function renderPublishedPage(snap) {
+  MODE = "exec";
+  document.body.dataset.mode = "exec";
+  const v = snap.verdict || {};
+  const head = v.mismatched ? T.vh_bad(v.mismatched)
+    : (v.unverified ? T.vh_review(v.unverified) : T.vh_ok);
+  const k = snap.kpis || {};
+  const date = (snap.published_at || "").slice(0, 10);
+  $("#topbar").innerHTML = `<div class="topbar exec">
+    <span class="tkick">${esc(snap.filename || "")} · ${T.pub_line(snap.version, date)}</span>
+    <span class="grow"></span>${langToggle()}</div>`;
+  attachLang();
+
+  const cells = [];
+  if (k.rows != null) cells.push(`<div class="kcell"><div class="kl">${T.h_rows}</div>
+    <div class="kv">${compact(k.rows)}</div><div class="ks">${T.h_tables(k.tables || 0)}</div></div>`);
+  if (k.fill_pct != null) cells.push(`<div class="kcell"><div class="kl">${T.h_complete}</div>
+    <div class="kv">${k.fill_pct}%</div><div class="ks">${T.h_filled}</div></div>`);
+  if (k.checks_total) cells.push(`<div class="kcell"><div class="kl">${T.t_verified}</div>
+    <div class="kv">${k.checks_ok}<span class="den">/${k.checks_total}</span></div>
+    <div class="ks">${T.k_recon}</div></div>`);
+  if (v.mismatched) cells.push(`<div class="kcell crit"><div class="kl">${T.k_stake}</div>
+    <div class="kv">${compact(k.at_stake ?? 0)}</div>
+    <div class="ks">${T.k_stake_sub(v.mismatched)}</div></div>`);
+
+  let chartHtml = "";
+  if (snap.chart && snap.chart.periods && snap.chart.periods.length) {
+    const c = { pseudo: true, sheet: snap.chart.sheet || snap.filename,
+      chart: { kind: "timeseries", periods: snap.chart.periods, series: [] },
+      lines: (snap.chart.series || []).map((s, i) => ({
+        label: s.label || "", values: s.values || [],
+        color: i < 2 ? SERIES_COLORS[i] : OTHER_COLOR, on: true })),
+      i: 0, range: null };
+    CHARTS = [c];
+    chartHtml = storyChartExec(c);
+  }
+
+  const steps = (snap.steps || []).map(s => s.kind === "confirm"
+    ? { t: T.nx_confirm(esc(s.sheet)),
+        s: T.nx_confirm_sub(s.n_mismatched, s.n_checked, compact(s.delta)) }
+    : { t: T.nx_eyeball(s.count), s: T.nx_eyeball_sub });
+  const stepRows = steps.length
+    ? steps.map((s, i) => `<div class="step"><span class="n">${i + 1}</span>
+        <div><b>${s.t}</b><p>${s.s}</p></div></div>`).join("")
+    : `<div class="step"><span class="n" style="color:var(--good)">✓</span>
+        <div><p>${T.nx_none}</p></div></div>`;
+
+  $("#content").innerHTML = `<section>
+    <h1 class="vhead">${esc(head)}</h1>
+    <p class="vlede">${T.meta_line(snap.n_sheets || 0, compact(k.rows || 0))} · ${T.pub_frozen}</p>
+    ${cells.length ? `<div class="kstrip">${cells.join("")}</div>` : ""}
+    <div class="execgrid">
+      <div>${chartHtml}</div>
+      <div><span class="kicker">${T.nx_kicker}</span>${stepRows}</div>
+    </div>
+  </section>`;
 }
 
 function renderEmpty() {
@@ -1833,14 +1901,19 @@ function renderProfile() {
   return `<div class="grid2">${cards.join("")}</div>`;
 }
 
-/* ---------- share: read-only link for clients ---------- */
+/* ---------- publish: frozen exec-only link for clients ---------- */
 async function shareLink() {
-  const r = await fetch(`/analyses/${current}/share`, { method: "POST" });
+  const r = await fetch(`/analyses/${current}/publish`, { method: "POST" });
+  if (r.status === 409) {   // the gate: open findings block publishing
+    setStatus((await r.json()).detail, true);
+    return;
+  }
   if (!r.ok) { setStatus(T.share_failed, true); return; }
-  const full = location.origin + (await r.json()).url;
+  const body = await r.json();
+  const full = location.origin + body.url + "/page";
   try {
     await navigator.clipboard.writeText(full);
-    setStatus(T.share_copied(full));
+    setStatus(T.pub_copied(body.version, full));
   } catch { setStatus(T.share_manual(full)); }
 }
 
@@ -3898,8 +3971,14 @@ function downloadFindings() {
 
 /* ---------- boot ---------- */
 (async function boot() {
-  if (SHARE) {           // read-only client view: one analysis, no library
-    await select("shared");
+  if (PUB) {             // public exec page: the frozen snapshot, nothing else
+    const r = await fetch(`/published/${PUB}`);
+    if (!r.ok) {
+      $("#content").innerHTML = `<div class="home-empty">
+        <h1>${T.pub_dead}</h1></div>`;
+      return;
+    }
+    renderPublishedPage(await r.json());
     return;
   }
   renderEmpty();
