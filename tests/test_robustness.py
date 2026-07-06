@@ -66,3 +66,14 @@ def test_ods_upload_analyzes():
                        files={"file": ("d.ods", buf.getvalue(), "application/octet-stream")})
     assert resp.status_code == 200, resp.text
     assert resp.json()["sheets"][0]["orientation"] == "tidy"
+
+
+def test_bom_and_cr_only_csv():
+    """UTF-8 BOM + CR-only line endings (old Mac exports): the BOM must not
+    leak into the first header cell, and every row must be read."""
+    from app.pipeline.ingest import read_upload
+    content = "﻿PLAYER,PTS\rWestbrook,31.6\rHarden,29.1\r".encode("utf-8")
+    sheets = read_upload(content, "nba.csv")
+    df = list(sheets.values())[0]
+    assert df.iloc[0, 0] == "PLAYER"          # no ﻿ prefix
+    assert len(df) == 3                        # header + 2 data rows

@@ -68,6 +68,7 @@ def _read_csv(content: bytes, name: str) -> Dict[str, pd.DataFrame]:
         dtype=object,
         sep=sep,
         engine="python",      # needed for sep sniffing / ragged rows
+        encoding="utf-8-sig",  # strip a UTF-8 BOM instead of leaking it into A1
         skip_blank_lines=False,
     )
     stem = name.rsplit("/", 1)[-1]
