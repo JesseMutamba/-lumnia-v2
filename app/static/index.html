@@ -732,6 +732,147 @@
     letter-spacing: .1em; text-transform: uppercase; color: #999;
     border-top: 1px solid #e8e8e8; padding-top: 10px; }
 
+  /* ============ analyst workbench (7a) + publish flow (8a-8c) ============ */
+  .ptabs { display: inline-flex; border: 1px solid var(--border-strong);
+    border-radius: 5px; overflow: hidden; flex: none; background: var(--card); }
+  .ptabs span { font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em;
+    text-transform: uppercase; padding: 5px 13px; cursor: pointer;
+    color: var(--ink-3); }
+  .ptabs .on { background: var(--gold); color: #fff; font-weight: 600; }
+  .ptabs span:not(.on):hover { color: var(--ink); }
+  .ptabs.dark { border-radius: 999px; border-color: var(--border-strong); }
+  .ptabs.dark span { border-radius: 999px; }
+  .ptabs.dark .on { background: var(--ink); color: #f6f3ec; }
+  .ropill { font-family: var(--mono); font-size: 8.5px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--ink-3); padding: 5px 13px;
+    border: 1px solid var(--border-strong); border-radius: 999px; }
+  .wbgrid { display: grid; grid-template-columns: 210px minmax(0, 1fr);
+    gap: 26px; align-items: start; }
+  @media (max-width: 1000px) { .wbgrid { grid-template-columns: 1fr; }
+    .rail { position: static; flex-direction: row; flex-wrap: wrap; } }
+  .rail { position: sticky; top: 16px; display: flex; flex-direction: column; }
+  .rail-item { display: flex; gap: 11px; padding: 10px 0 16px; position: relative;
+    text-decoration: none; color: inherit; }
+  .rail-item:not(:last-child)::before { content: ""; position: absolute;
+    left: 10.5px; top: 32px; bottom: -2px; width: 1px; background: var(--border); }
+  .rail-item .c { width: 22px; height: 22px; border-radius: 50%; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-size: 10.5px; border: 1px solid var(--border-strong);
+    color: var(--ink-3); background: var(--card); position: relative; z-index: 1; }
+  .rail-item:first-child .c, .rail-item.done .c { background: var(--gold);
+    border-color: var(--gold); color: #fff; }
+  .rail-item .rl { display: block; font-family: var(--mono); font-size: 9.5px;
+    letter-spacing: .1em; text-transform: uppercase; font-weight: 600;
+    color: var(--ink-2); }
+  .rail-item .rs { display: block; font-family: var(--mono); font-size: 8.5px;
+    letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3);
+    margin-top: 3px; }
+  .wjcard { scroll-margin-top: 14px; }
+  .wfrow { display: grid; grid-template-columns: 64px minmax(0, 1.6fr) 76px auto;
+    gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--hairline);
+    align-items: center; font-size: 13px; }
+  .wfrow:last-child { border-bottom: none; }
+  .wfrow .wfd { min-width: 0; line-height: 1.45; }
+  .wfrow .qsub { font-size: 11.5px; color: var(--ink-4); }
+  .wfrow .wfdec { display: flex; gap: 8px; align-items: center;
+    justify-content: flex-end; white-space: nowrap; }
+  .modchip { display: inline-flex; align-items: center; gap: 7px;
+    font-size: 12.5px; font-weight: 600; padding: 9px 14px; border-radius: 8px;
+    border: 1px solid var(--chip-bd); background: var(--chip-bg); }
+  .modchip .mck { width: 13px; height: 13px; border-radius: 4px; flex: none;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 9px; background: var(--gold); color: #fff; }
+  .modchip.off { border-style: dashed; background: transparent;
+    color: var(--ink-3); font-weight: 500; }
+  .modchip.off .mck { background: transparent; border: 1px solid var(--border-strong); }
+  .pubband { background: var(--ink); color: #f6f3ec; border-radius: 10px;
+    padding: 18px 22px; display: flex; gap: 12px; align-items: center;
+    flex-wrap: wrap; margin-top: 14px; position: relative; scroll-margin-top: 14px; }
+  .pubband .cs { letter-spacing: .14em; }
+  .pillbtn.dark { background: transparent; border-color: #4a453b; color: #cfc8b6; }
+  .pillbtn.dark:hover:not(:disabled) { border-color: #e8c15a; color: #e8c15a; }
+  .pillbtn.amber { background: #e8c15a; border-color: #e8c15a; color: #201d17;
+    font-weight: 600; }
+  .pillbtn:disabled { opacity: .45; cursor: not-allowed; }
+  .stalebar { background: var(--chip-bg); border: 1px solid var(--chip-bd);
+    border-radius: 8px; padding: 12px 16px; display: flex; gap: 10px;
+    align-items: center; flex-wrap: wrap; font-size: 13px; margin-bottom: 14px; }
+  .stalebar b { color: var(--warning); }
+  .popover { position: absolute; right: 16px; top: calc(100% + 8px); z-index: 60;
+    width: 360px; max-width: 90vw; background: #fffdf8; color: var(--ink);
+    border: 1px solid #ddd4bf; border-radius: 8px; padding: 16px 18px;
+    box-shadow: 0 1px 3px rgba(70,58,25,.3); display: none; text-align: left; }
+  .popover.open { display: block; }
+  .scrim { position: fixed; inset: 0; background: rgba(227,221,205,.82);
+    z-index: 80; display: none; align-items: flex-start; justify-content: center;
+    padding: 8vh 20px 20px; }
+  .scrim.open { display: flex; }
+  .rmodal { background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; box-shadow: 0 1px 3px rgba(70,58,25,.3);
+    padding: 30px 36px; max-width: 620px; width: 100%; }
+  .rmrow { display: grid; grid-template-columns: 20px auto minmax(0, 1fr);
+    gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--hairline);
+    align-items: baseline; font-size: 13px; }
+
+  /* ============ home: first-run + Command Center ============ */
+  body.home aside.side { display: none; }
+  body.home .app { grid-template-columns: 1fr; }
+  .cc { max-width: 1180px; margin: 14px auto 0; }
+  .cchead { font-family: var(--serif); font-size: 32px; font-weight: 600;
+    letter-spacing: -.005em; margin: 12px 0 4px; }
+  .kstrip.sm .kv { font-size: 30px; }
+  .kstrip.sm .kcell { padding: 15px 22px 17px; }
+  .kv .ksfx { font-family: var(--sans); font-size: 12.5px; font-weight: 650;
+    letter-spacing: 0; }
+  .kv .ksfx.warn { color: var(--warning); } .kv .ksfx.good { color: var(--good); }
+  .ccgrid { display: grid; grid-template-columns: 1.55fr 1fr; gap: 46px;
+    align-items: start; margin-top: 28px; }
+  @media (max-width: 1000px) { .ccgrid { grid-template-columns: 1fr; } }
+  .qrow2 { display: grid; grid-template-columns: 66px minmax(0, 1fr) auto;
+    gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--hairline);
+    align-items: center; }
+  .qrow2 .qst { font-family: var(--mono); font-size: 9.5px; font-weight: 600;
+    letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+  .qrow2 b { font-size: 13.5px; }
+  .qrow2 .qsub { font-size: 12px; color: var(--ink-4); margin-top: 2px; }
+  .pillbtn { font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em;
+    text-transform: uppercase; padding: 7px 14px; border-radius: 999px;
+    cursor: pointer; white-space: nowrap; border: 1px solid var(--border-strong);
+    background: var(--card); color: var(--ink-2); }
+  .pillbtn:hover { border-color: var(--gold); color: var(--gold); }
+  .pillbtn.gold { background: var(--gold); border-color: var(--gold); color: #fff; }
+  .pillbtn.gold:hover { background: var(--gold-strong); color: #fff; }
+  .wbrow { display: flex; gap: 12px; align-items: center; padding: 13px 0;
+    border-bottom: 1px solid var(--hairline); cursor: pointer; }
+  .wbrow:hover b { color: var(--gold); }
+  .wbrow b { font-size: 13.5px; overflow-wrap: anywhere; }
+  .wbrow .wmeta { font-family: var(--mono); font-size: 9px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--ink-3); margin-top: 3px; }
+  .schip { font-family: var(--mono); font-size: 8.5px; letter-spacing: .06em;
+    text-transform: uppercase; padding: 3px 10px; border-radius: 999px;
+    border: 1px solid; white-space: nowrap; flex: none; }
+  .schip.crit { color: var(--critical); background: var(--crit-track);
+    border-color: #ddb3ac; }
+  .schip.warn { color: var(--warning); background: var(--chip-bg);
+    border-color: var(--chip-bd); }
+  .schip.good { color: var(--good); background: #e9f2e9; border-color: #b9d4c0; }
+  .minitabs { display: inline-flex; border-radius: 999px; overflow: hidden;
+    border: 1px solid var(--ink); flex: none; }
+  .minitabs span { font-family: var(--mono); font-size: 8px; letter-spacing: .06em;
+    text-transform: uppercase; padding: 3px 10px; cursor: pointer; }
+  .minitabs .on { background: var(--ink); color: #f6f3ec; }
+  .minitabs span:not(.on) { color: var(--ink-3); }
+  .minitabs span:not(.on):hover { color: var(--ink); }
+  .upcard { border: 1.5px dashed var(--border-strong); border-radius: 12px;
+    background: var(--card); text-align: center; padding: 32px 24px;
+    cursor: pointer; transition: border-color .15s; }
+  .upcard:hover { border-color: var(--gold-strong); }
+  .step3 { display: grid; grid-template-columns: 1fr 1fr 1fr;
+    border-top: 1px solid var(--hairline); margin-top: 36px; text-align: left; }
+  .step3 > div { padding: 14px 18px 0; border-left: 1px solid var(--hairline);
+    font-size: 12.5px; color: var(--ink-2); line-height: 1.55; }
+  .step3 > div:first-child { border-left: none; padding-left: 2px; }
+
   /* empty / drop: the product promise up front */
   .home-empty { max-width: 620px; margin: 9vh auto 0; text-align: center; }
   .home-empty .sunmark { margin: 0 auto 24px; }
@@ -816,16 +957,92 @@ const STR = {
     pub_line: (v, d) => `published v${v} · ${d}`,
     pub_frozen: "frozen at publish — the analyst view keeps moving, this page doesn't",
     pub_copied: (v, url) => `Published v${v} — link copied: ${url}`,
-    pub_dead: "This link is no longer active.",
+    pub_dead: "This report is no longer shared.",
+    pub_dead_sub: "Ask the person who sent it for a new link.",
+    pub_shared: "Shared read-only",
+    // two-page split + workbench + publish flow (turns 7-9)
+    tab_workbench: "Workbench",
+    pt_analyst: "Analyst", pt_exec: "Executive",
+    ex_readonly: "Read-only",
+    ex_pub_kicker: d => `published ${d}`,
+    ex_preview_note: "preview — not published yet",
+    ex_provenance: "Prepared from the analyst's audited copy. Questions this file can't answer are listed on the analyst side, not here.",
+    pv_as_exec: "Preview as executive",
+    wj_audit: "Audit & fix", wj_profile: "Data profile",
+    wj_build: "Build dashboard",
+    wj_open: n => `${n} open`, wj_analyst_only: "analyst-only",
+    wj_gated: "gated", wj_ready: "ready", wj_done: "done",
+    wb01_t: "Findings, ranked by money at stake",
+    wb01_note: "Original file immutable — fixes apply to the corrected copy only",
+    wb_approve: "Approve fix", wb_keep: "Keep flagged",
+    wb_approved: "✓ Approved", wb_flagged: "Flagged",
+    wb_review: "Mark reviewed", wb_undo_t: "Reopen this decision",
+    wb_pass: (k, t) => `${k} of ${t} checks passed — not shown`,
+    wb_export: "Export corrected copy",
+    wb02_t: "Structure and quality",
+    wb02_chip: "Analyst-only — the executive never sees this",
+    wb02_missing: "Missing values by sheet", wb02_structure: "Structure",
+    wb02_dupes: "Duplicate rows", wb02_tables: "Tables detected",
+    wb02_of: (x, y) => `${x} in ${y} sheet${y === 1 ? "" : "s"}`,
+    wb03_t: "What the executive sees",
+    wb03_noship: "not shipped",
+    mod_verdict: "Headline verdict", mod_kpi: "KPI strip",
+    mod_chart: "Story chart", mod_steps: "Next steps",
+    mod_narr: "AI narrative", mod_recon: "Reconciliation detail",
+    mod_tiles: "tiles",
+    wb04_t: "Publish to executive",
+    wb04_gated: n => `Gated — <b style="color:#e8c15a">${n} finding${n === 1 ? "" : "s"} awaiting a decision.</b> Approve or keep flagged, then publish.`,
+    wb04_ready: "Every finding is decided — ready to publish.",
+    wb04_published: (d, v) => `Published · ${d} · v${v} — the Executive tab now shows this version.`,
+    wb04_publish: "Publish →", wb04_share: "Share link",
+    wb_stale_t: "Published view is behind.",
+    wb_stale_b: v => `Decisions are newer than v${v} — the shared link still shows the old numbers.`,
+    po_t: "Read-only share link", po_copy: "Copy",
+    po_expl: "Anyone with the link sees the Executive page only — no login, no workbench, no data profile. The link tracks the latest published version.",
+    po_revoke: "✕ Revoke link",
+    po_opened: n => `Opened ${n} time${n === 1 ? "" : "s"}`,
+    rm_t: "This is what your executive will see.",
+    rm_flag: n => `${n ? `The ${n} flagged figure${n === 1 ? " ships" : "s ship"} <b>flagged, not changed</b>. ` : ""}The audit table, data profile and reconciliation detail <b>do not ship</b>.`,
+    rm_preview: "Full preview first", rm_back: "← Back to the workbench",
     btn_findings: "Findings CSV",
     drop_big: "Drop a CSV / Excel file here, or click to browse",
     drop_hint: "Every sheet read & verified · totals and formulas checked",
-    drop_fmt: "XLSX · XLS · ODS · CSV",
+    drop_fmt: "XLSX · XLS · ODS · CSV · UP TO 25 MB",
     home_promise: "Drop a spreadsheet.<br>Get an audited answer.",
     home_lede: "Every sheet read, every total re-computed, every contradiction quantified — before a single chart is drawn.",
     trust: ["Totals & formulas checked", "French & English", "Nothing leaves your workspace"],
+    btn_choose: "Choose a file",
+    drop_anywhere: "or drag it anywhere on this page",
+    steps3: [["01", "Read", "Every sheet and table, however the file is structured."],
+             ["02", "Audit", "Totals re-computed; disagreements ranked by money at stake."],
+             ["03", "Publish", "A clean executive view your boss can read — or a link to send."]],
+    trust9: "Files stay private · original never modified · delete anytime",
+    cc_kicker: "Workspace",
+    cc_head_dec: n => n === 1 ? "One decision is waiting on you."
+      : `${n} decisions are waiting on you.`,
+    cc_head_stale: "A published view is behind the audit.",
+    cc_head_ok: "All quiet — your workspace is current.",
+    cc_workbooks: "Workbooks", cc_open: "Findings open",
+    cc_pub: "Published views",
+    cc_stale_sfx: "stale", cc_current_sfx: "current",
+    cc_attention: "Needs your attention",
+    cc_gate_row: n => `${n} finding${n === 1 ? "" : "s"} awaiting a decision — publish is gated`,
+    cc_stale_chip: "Stale",
+    cc_stale_row: "Published view is behind the audit",
+    cc_stale_sub: v => `decisions newer than v${v} — the shared link shows old numbers`,
+    cc_open_wb: "Open workbench →",
+    cc_republish: v => `Republish → v${v}`,
+    cc_done: "Done",
+    cc_new: "New analysis",
+    cc_drop_small: "Drop a spreadsheet",
+    cc_drop_sub: "Audited answer in minutes.",
+    mt_analyst: "Analyst", mt_exec: "Exec",
+    wb_audit: n => `Audit · ${n} open`,
+    wb_pub_stale: v => `Published v${v} · stale`,
+    wb_pub_ok: v => `Published v${v}`,
+    wb_clean: (k, t) => `Clean · ${k}/${t} checks`,
     sheets_read: n => `${n} sheets read`,
-    meta_line: (s, rows) => `${s} sheet${s === 1 ? "" : "s"} · ${rows} rows`,
+    meta_line: (s, rows) => `${s} sheet${s === 1 ? "" : "s"} ${rows ? `· ${rows} rows` : ""}`,
     nothing_yet: "Nothing yet.", new_upload: "New upload", nav_kicker: "Analysis",
     wb_kicker: "Workbooks", rerun: "rerun", del: "del", client_btn: "client",
     wb_general: "General",
@@ -1054,16 +1271,92 @@ const STR = {
     pub_line: (v, d) => `publié v${v} · ${d}`,
     pub_frozen: "figé à la publication — la vue analyste continue d'évoluer, pas cette page",
     pub_copied: (v, url) => `Publié v${v} — lien copié : ${url}`,
-    pub_dead: "Ce lien n'est plus actif.",
+    pub_dead: "Ce rapport n'est plus partagé.",
+    pub_dead_sub: "Demandez un nouveau lien à la personne qui l'a envoyé.",
+    pub_shared: "Partagé en lecture seule",
+    // deux pages + atelier + flux de publication (turns 7-9)
+    tab_workbench: "Atelier",
+    pt_analyst: "Analyste", pt_exec: "Direction",
+    ex_readonly: "Lecture seule",
+    ex_pub_kicker: d => `publié le ${d}`,
+    ex_preview_note: "aperçu — pas encore publié",
+    ex_provenance: "Préparé à partir de la copie auditée de l'analyste. Les questions auxquelles ce fichier ne peut pas répondre restent côté analyste.",
+    pv_as_exec: "Aperçu direction",
+    wj_audit: "Audit & corrections", wj_profile: "Profil des données",
+    wj_build: "Composer le tableau",
+    wj_open: n => `${n} ouverte${n === 1 ? "" : "s"}`, wj_analyst_only: "réservé analyste",
+    wj_gated: "bloqué", wj_ready: "prêt", wj_done: "fait",
+    wb01_t: "Anomalies, classées par montant en jeu",
+    wb01_note: "Fichier original intact — les corrections s'appliquent à la copie corrigée uniquement",
+    wb_approve: "Approuver la correction", wb_keep: "Garder signalé",
+    wb_approved: "✓ Approuvé", wb_flagged: "Signalé",
+    wb_review: "Marquer comme vu", wb_undo_t: "Rouvrir cette décision",
+    wb_pass: (k, t) => `${k} contrôles sur ${t} réussis — non affichés`,
+    wb_export: "Exporter la copie corrigée",
+    wb02_t: "Structure et qualité",
+    wb02_chip: "Réservé analyste — la direction ne voit jamais ceci",
+    wb02_missing: "Valeurs manquantes par feuille", wb02_structure: "Structure",
+    wb02_dupes: "Lignes en double", wb02_tables: "Tables détectées",
+    wb02_of: (x, y) => `${x} sur ${y} feuille${y === 1 ? "" : "s"}`,
+    wb03_t: "Ce que voit la direction",
+    wb03_noship: "non publié",
+    mod_verdict: "Verdict en une phrase", mod_kpi: "Bandeau d'indicateurs",
+    mod_chart: "Graphique clé", mod_steps: "Prochaines étapes",
+    mod_narr: "Synthèse rédigée", mod_recon: "Détail des rapprochements",
+    mod_tiles: "tuiles",
+    wb04_t: "Publier vers la direction",
+    wb04_gated: n => `Bloqué — <b style="color:#e8c15a">${n} anomalie${n === 1 ? "" : "s"} en attente de décision.</b> Approuvez ou gardez signalé, puis publiez.`,
+    wb04_ready: "Toutes les anomalies sont tranchées — prêt à publier.",
+    wb04_published: (d, v) => `Publié · ${d} · v${v} — l'onglet Direction montre cette version.`,
+    wb04_publish: "Publier →", wb04_share: "Lien de partage",
+    wb_stale_t: "La vue publiée est en retard.",
+    wb_stale_b: v => `Des décisions sont plus récentes que la v${v} — le lien partagé montre encore les anciens chiffres.`,
+    po_t: "Lien de partage lecture seule", po_copy: "Copier",
+    po_expl: "Toute personne avec ce lien voit uniquement la page Direction — pas de connexion, pas d'atelier, pas de profil de données. Le lien suit la dernière version publiée.",
+    po_revoke: "✕ Révoquer le lien",
+    po_opened: n => `Ouvert ${n} fois`,
+    rm_t: "Voici ce que verra votre direction.",
+    rm_flag: n => `${n ? `${n === 1 ? "Le chiffre signalé part" : `Les ${n} chiffres signalés partent`} <b>signalé${n === 1 ? "" : "s"}, non modifié${n === 1 ? "" : "s"}</b>. ` : ""}La table d'audit, le profil de données et le détail des rapprochements <b>ne partent pas</b>.`,
+    rm_preview: "Aperçu complet d'abord", rm_back: "← Retour à l'atelier",
     btn_findings: "CSV anomalies",
     drop_big: "Déposez un fichier CSV / Excel ici, ou cliquez pour parcourir",
     drop_hint: "Chaque feuille lue et vérifiée · totaux et formules contrôlés",
-    drop_fmt: "XLSX · XLS · ODS · CSV",
+    drop_fmt: "XLSX · XLS · ODS · CSV · MAX 25 MO",
     home_promise: "Déposez un tableur.<br>Recevez une réponse auditée.",
     home_lede: "Chaque feuille lue, chaque total recalculé, chaque contradiction quantifiée — avant même de tracer un graphique.",
     trust: ["Totaux & formules vérifiés", "Français & anglais", "Rien ne quitte votre espace"],
+    btn_choose: "Choisir un fichier",
+    drop_anywhere: "ou glissez-le n'importe où sur cette page",
+    steps3: [["01", "Lire", "Chaque feuille et tableau, quelle que soit la structure du fichier."],
+             ["02", "Auditer", "Totaux recalculés ; désaccords classés par montant en jeu."],
+             ["03", "Publier", "Une vue direction lisible — ou un lien à envoyer."]],
+    trust9: "Fichiers privés · original jamais modifié · suppression à tout moment",
+    cc_kicker: "Espace de travail",
+    cc_head_dec: n => n === 1 ? "Une décision vous attend."
+      : `${n} décisions vous attendent.`,
+    cc_head_stale: "Une vue publiée est en retard sur l'audit.",
+    cc_head_ok: "Tout est à jour dans votre espace.",
+    cc_workbooks: "Classeurs", cc_open: "Anomalies ouvertes",
+    cc_pub: "Vues publiées",
+    cc_stale_sfx: "en retard", cc_current_sfx: "à jour",
+    cc_attention: "Requiert votre attention",
+    cc_gate_row: n => `${n} anomalie${n === 1 ? "" : "s"} en attente de décision — publication bloquée`,
+    cc_stale_chip: "Retard",
+    cc_stale_row: "La vue publiée est en retard sur l'audit",
+    cc_stale_sub: v => `décisions plus récentes que la v${v} — le lien partagé montre d'anciens chiffres`,
+    cc_open_wb: "Ouvrir l'atelier →",
+    cc_republish: v => `Republier → v${v}`,
+    cc_done: "Fait",
+    cc_new: "Nouvelle analyse",
+    cc_drop_small: "Déposez un tableur",
+    cc_drop_sub: "Réponse auditée en quelques minutes.",
+    mt_analyst: "Analyste", mt_exec: "Direction",
+    wb_audit: n => `Audit · ${n} ouverte${n === 1 ? "" : "s"}`,
+    wb_pub_stale: v => `Publié v${v} · retard`,
+    wb_pub_ok: v => `Publié v${v}`,
+    wb_clean: (k, t) => `Sain · ${k}/${t} contrôles`,
     sheets_read: n => `${n} feuilles lues`,
-    meta_line: (s, rows) => `${s} feuille${s === 1 ? "" : "s"} · ${rows} lignes`,
+    meta_line: (s, rows) => `${s} feuille${s === 1 ? "" : "s"} ${rows ? `· ${rows} lignes` : ""}`,
     nothing_yet: "Aucun fichier pour l'instant.", new_upload: "Nouveau fichier",
     nav_kicker: "Analyse", wb_kicker: "Classeurs", rerun: "relancer", del: "suppr.",
     client_btn: "client", wb_general: "Général",
@@ -1295,7 +1588,13 @@ const FILTER = { sheets: null, status: null, periods: "all" };  // sheets: Set|n
 let MODE = localStorage.getItem("lumnia_mode") || "exec";
 // The active tab. The tab set adapts to what the pipeline actually found —
 // a workbook with no business model simply has no Financials tab.
-let TAB = "overview";
+let TAB = "workbench";
+// The two-page split: every workbook has an Analyst page (the workbench +
+// working tabs) and a read-only Executive page (what publish freezes).
+let PAGE = "analyst";
+// publish state for the open workbook: {published, version, published_at,
+// token, url, opened_count, stale}
+let PUBINFO = { published: false };
 // Public published mode: the page was opened through /published/{token}/page.
 // It renders ONLY the frozen exec snapshot — the full report never loads.
 const PUB = location.pathname.startsWith("/published/")
@@ -1358,15 +1657,19 @@ async function upload(file) {
     select(body.id);
   } catch (err) {
     setStatus(T.analysis_failed(err.message), true);
-    if (REPORT) renderAll(); else renderEmpty();   // never strand the skeleton
+    if (REPORT) renderAll(); else renderHomePage();  // never strand the skeleton
   }
   fileInput.value = "";
 }
 function setStatus(msg, isErr) { statusEl.textContent = msg; statusEl.className = isErr ? "err" : ""; }
 
 /* ---------- sidebar: workbooks + analysis nav ---------- */
+let WORKBOOKS = [];          // /analyses rollup rows, newest first
+let NEXT_PAGE = "analyst";   // which page a workbook opens on (analyst|exec)
+
 async function loadWorkbooks() {
   const items = await (await fetch("/analyses")).json();
+  WORKBOOKS = items;
   // group the library by client workspace; unassigned last
   const groups = new Map();
   for (const i of items) {
@@ -1390,7 +1693,7 @@ async function loadWorkbooks() {
     const act = e.target.dataset && e.target.dataset.act, id = el.dataset.id;
     if (act === "del") { e.stopPropagation();
       await fetch(`/analyses/${id}`, { method: "DELETE" });
-      if (current === id) { current = null; REPORT = null; renderEmpty(); }
+      if (current === id) { goHome(); return; }
       loadWorkbooks();
     } else if (act === "client") { e.stopPropagation();
       const cur = el.closest("#wb-list").querySelector(`.wb[data-id="${id}"]`);
@@ -1421,6 +1724,7 @@ async function loadWorkbooks() {
    actually tell. No model -> no Financials tab; nothing to simulate -> no
    What-if tab. The page never shows an empty shell. */
 const TAB_ICONS = {
+  workbench: `<svg width="14" height="14" viewBox="0 0 14 14"><path d="M2 3h10M2 7h10M2 11h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="11.4" cy="11" r="1.7" fill="currentColor"/></svg>`,
   overview: `<svg width="14" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.4" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="7" cy="7" r="1.8" fill="currentColor"/></svg>`,
   story: `<svg width="14" height="14" viewBox="0 0 14 14"><path d="M2 2.5h10M2 5.5h7M2 8.5h10M2 11.5h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
   financials: `<svg width="14" height="14" viewBox="0 0 14 14"><path d="M2 12V7.5M5.4 12V4.5M8.8 12V6M12.2 12V2.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`,
@@ -1430,20 +1734,21 @@ const TAB_ICONS = {
 };
 
 function availableTabs() {
-  const exec = MODE === "exec";
-  const t = [["overview", T.tab_overview]];
-  // the briefing tab: intake + plan + built dashboard. In the read-only
-  // share view it only appears once a dashboard was actually built.
-  if (REPORT.story && (!SHARE || (REPORT.plan && REPORT.plan.approved)))
-    t.push(["story", T.tab_story]);
+  const t = [["workbench", T.tab_workbench], ["overview", T.tab_overview]];
+  if (REPORT.story) t.push(["story", T.tab_story]);
   if (REPORT.model) t.push(["financials", T.tab_financials]);
   if (REPORT.model && REPORT.model.scenario_ready) t.push(["whatif", T.tab_whatif]);
-  t.push(["data", exec ? T.tab_trends : T.tab_data]);
-  t.push(["audit", exec ? T.tab_actions : T.tab_audit]);
+  t.push(["data", T.tab_trends]);
+  t.push(["audit", T.tab_audit]);
   return t;
 }
+function openFindingsCount() {
+  return (AUDIT.findings || []).concat(AUDIT.unverified || [])
+    .filter(f => (f.decision || "open") === "open").length;
+}
 function tabCounts() {
-  return { audit: AUDIT.n_mismatched_relations,
+  return { workbench: openFindingsCount() || null,
+           audit: AUDIT.n_mismatched_relations,
            data: CHARTS.filter(c => !c.pseudo).length || null };
 }
 
@@ -1460,13 +1765,16 @@ function setTab(id) { TAB = id; rerender(renderAll); window.scrollTo(0, 0); }
 
 function renderNav() {
   const counts = tabCounts();
-  $("#nav-analysis").innerHTML = `<span class="kicker">Analysis</span>` +
+  $("#nav-analysis").innerHTML =
+    `<div class="nav-item" id="nav-home" style="color:var(--gold)">← ${T.cc_kicker}</div>
+     <span class="kicker">Analysis</span>` +
     availableTabs().map(([id, label]) => `
       <div class="nav-item ${TAB === id ? "active" : ""}" data-tab="${id}">
         ${TAB_ICONS[id]}${label}${counts[id] != null ? `<span class="cnt">${counts[id]}</span>` : ""}
       </div>`).join("");
-  $$("#nav-analysis .nav-item").forEach(el =>
+  $$("#nav-analysis .nav-item[data-tab]").forEach(el =>
     el.addEventListener("click", () => setTab(el.dataset.tab)));
+  $("#nav-home").addEventListener("click", goHome);
 }
 
 function renderTabBar() {
@@ -1485,13 +1793,16 @@ function attachTabBar() {
 /* ---------- select + render ---------- */
 async function select(id) {
   current = id;
+  document.body.classList.remove("home");
   loadWorkbooks();
-  [REPORT, AUDIT] = await Promise.all(
+  [REPORT, AUDIT, PUBINFO] = await Promise.all(
     [fetch(`/analyses/${id}`).then(r => r.json()),
-     fetch(`/analyses/${id}/findings`).then(r => r.json())]);
+     fetch(`/analyses/${id}/findings`).then(r => r.json()),
+     fetch(`/analyses/${id}/publish`).then(r => r.json()).catch(() => ({ published: false }))]);
   FILTER.sheets = null; FILTER.status = null; FILTER.periods = "all";
   MC_RESULTS = null; SCEN = { price: 1.0, vol: 1.0, cost: 1.0 };
-  TAB = "overview";
+  PAGE = NEXT_PAGE; NEXT_PAGE = "analyst";
+  TAB = "workbench";
   renderAll();
 }
 
@@ -1505,8 +1816,9 @@ function renderPublishedPage(snap) {
   const k = snap.kpis || {};
   const date = (snap.published_at || "").slice(0, 10);
   $("#topbar").innerHTML = `<div class="topbar exec">
-    <span class="tkick">${esc(snap.filename || "")} · ${T.pub_line(snap.version, date)}</span>
-    <span class="grow"></span>${langToggle()}</div>`;
+    <span class="tkick">${T.pub_shared} · ${T.pub_line(snap.version, date)} · ${esc(snap.filename || "")}</span>
+    <span class="grow"></span>${langToggle()}
+    <span class="ropill">${T.ex_readonly}</span></div>`;
   attachLang();
 
   const cells = [];
@@ -1554,11 +1866,22 @@ function renderPublishedPage(snap) {
   </section>`;
 }
 
-function renderEmpty() {
-  document.body.dataset.mode = MODE;
+/* ---------- Home: routed by content — first-run (9b) or Command Center (9a) */
+function goHome() {
+  current = null; REPORT = null;
+  renderHomePage();
+}
+
+async function renderHomePage() {
+  document.body.dataset.mode = "exec";
+  document.body.classList.add("home");
+  await loadWorkbooks();
   $("#nav-analysis").innerHTML = "";
-  $("#wb-kicker").textContent = T.wb_kicker;
-  $("#newupload-txt").textContent = T.new_upload;
+  if (WORKBOOKS.length) renderCommandCenter();
+  else renderFirstRun();
+}
+
+function renderFirstRun() {
   $("#topbar").innerHTML = `<div class="topbar exec">
     <span class="grow"></span>${langToggle()}</div>`;
   attachLang();
@@ -1567,12 +1890,121 @@ function renderEmpty() {
     <h1>${T.home_promise}</h1>
     <p class="lede">${T.home_lede}</p>
     <div id="drop">
-      <div class="big">${T.drop_big}</div>
+      <button class="runbtn" style="max-width:200px;margin:0 auto">${T.btn_choose}</button>
+      <div style="font-size:12.5px;color:var(--ink-3);margin-top:12px">${T.drop_anywhere}</div>
       <div class="hint2">${T.drop_fmt}</div>
     </div>
-    <div class="trust">${T.trust.map(t => `<span>✓ ${t}</span>`).join("")}</div>
+    <div class="step3">${T.steps3.map(([n, t, d]) => `<div>
+      <div class="kicker" style="margin-bottom:6px">${n} · ${t}</div>${d}</div>`).join("")}</div>
+    <div class="trust" style="margin-top:26px">${T.trust9}</div>
   </div>`;
   $("#drop").addEventListener("click", () => fileInput.click());
+}
+
+function wbChip(w) {
+  if (w.open_findings > 0)
+    return `<span class="schip crit">${T.wb_audit(w.open_findings)}</span>`;
+  if (w.published_version != null)
+    return w.stale
+      ? `<span class="schip warn">${T.wb_pub_stale(w.published_version)}</span>`
+      : `<span class="schip good">✓ ${T.wb_pub_ok(w.published_version)}</span>`;
+  if (w.checks_total > 0)
+    return `<span class="schip good">✓ ${T.wb_clean(w.checks_ok, w.checks_total)}</span>`;
+  return "";
+}
+
+function renderCommandCenter() {
+  const ws = WORKBOOKS;
+  const openTotal = ws.reduce((t, w) => t + (w.open_findings || 0), 0);
+  const stakeTotal = ws.filter(w => w.open_findings > 0)
+    .reduce((t, w) => t + (w.at_stake || 0), 0);
+  const published = ws.filter(w => w.published_version != null);
+  const nStale = published.filter(w => w.stale).length;
+  const head = openTotal ? T.cc_head_dec(openTotal)
+    : nStale ? T.cc_head_stale : T.cc_head_ok;
+  const date = new Date().toLocaleDateString(LOCALE,
+    { day: "numeric", month: "long", year: "numeric" });
+
+  const strip = `<div class="kstrip sm">
+    <div class="kcell"><div class="kl">${T.cc_workbooks}</div>
+      <div class="kv">${ws.length}</div></div>
+    <div class="kcell ${openTotal ? "crit" : ""}"><div class="kl">${T.cc_open}</div>
+      <div class="kv">${openTotal}</div></div>
+    <div class="kcell"><div class="kl">${T.cc_pub}</div>
+      <div class="kv">${published.length}${published.length ? ` <span class="ksfx ${nStale ? "warn" : "good"}">· ${nStale ? T.cc_stale_sfx : T.cc_current_sfx}</span>` : ""}</div></div>
+    <div class="kcell ${stakeTotal ? "crit" : ""}"><div class="kl">${T.k_stake}</div>
+      <div class="kv">${compact(stakeTotal)}</div></div>
+  </div>`;
+
+  // the attention queue: gated publishes first, then stale published views
+  const rows = [];
+  for (const w of ws.filter(x => x.open_findings > 0))
+    rows.push(`<div class="qrow2" data-open="${esc(w.id)}">
+      <span class="qst" style="color:var(--critical)">✕ ${T.sb_fail}</span>
+      <div><b>${T.cc_gate_row(w.open_findings)}</b>
+        <div class="qsub">${esc(w.filename.slice(0, 44))}${w.at_stake ? ` · <b style="color:var(--critical)">${compact(w.at_stake)}</b> ${T.ac_stake}` : ""}</div></div>
+      <button class="pillbtn gold" data-open="${esc(w.id)}">${T.cc_open_wb}</button>
+    </div>`);
+  for (const w of ws.filter(x => x.published_version != null && x.stale))
+    rows.push(`<div class="qrow2" data-stale="${esc(w.id)}">
+      <span class="qst" style="color:var(--warning)">⚠ ${T.cc_stale_chip}</span>
+      <div><b>${T.cc_stale_row}</b>
+        <div class="qsub">${esc(w.filename.slice(0, 44))} · ${T.cc_stale_sub(w.published_version)}</div></div>
+      ${w.open_findings ? `<button class="pillbtn" data-open="${esc(w.id)}">${T.cc_open_wb}</button>`
+        : `<button class="pillbtn" data-repub="${esc(w.id)}">${T.cc_republish(w.published_version + 1)}</button>`}
+    </div>`);
+  const queue = rows.length ? `<span class="kicker">${T.cc_attention}</span>
+    <div style="border-top:1px solid var(--border-strong)">${rows.join("")}</div>` : "";
+
+  const list = ws.map(w => `<div class="wbrow" data-open="${esc(w.id)}">
+      <div style="min-width:0;flex:1"><b>${esc(w.filename)}</b>
+        <div class="wmeta">${T.meta_line(w.n_sheets, "")}· ${esc((w.uploaded_at || "").slice(0, 10))}</div></div>
+      ${wbChip(w)}
+      <span class="minitabs"><span class="on" data-open="${esc(w.id)}">${T.mt_analyst}</span><span data-exec="${esc(w.id)}">${T.mt_exec}</span></span>
+    </div>`).join("");
+
+  $("#topbar").innerHTML = `<div class="topbar exec">
+    <span class="tkick">${T.cc_kicker} · ${date}</span>
+    <span class="grow"></span>${langToggle()}</div>`;
+  attachLang();
+  $("#content").innerHTML = `<div class="cc">
+    <h1 class="cchead">${head}</h1>
+    ${strip}
+    <div class="ccgrid">
+      <div>${queue}
+        <span class="kicker" style="display:block;margin-top:${rows.length ? 30 : 0}px">${T.cc_workbooks}</span>
+        <div style="border-top:1px solid var(--border-strong)">${list}</div>
+      </div>
+      <div><span class="kicker">${T.cc_new}</span>
+        <div class="upcard" id="drop" style="margin-top:10px">
+          <svg width="26" height="26" viewBox="-50 -50 100 100" aria-hidden="true">${sunPaths()}</svg>
+          <div style="font-family:var(--serif);font-size:17px;font-weight:600;margin-top:8px">${T.cc_drop_small}</div>
+          <div style="font-size:12px;color:var(--ink-3);margin-top:3px">${T.cc_drop_sub}</div>
+          <div class="hint2" style="margin-top:10px">${T.drop_fmt}</div>
+        </div>
+        <p class="chcap" style="margin-top:14px">${T.home_lede}</p>
+      </div>
+    </div>
+  </div>`;
+  $("#drop").addEventListener("click", () => fileInput.click());
+  $$("#content [data-open]").forEach(el => el.addEventListener("click", e => {
+    e.stopPropagation(); NEXT_PAGE = "analyst"; select(el.dataset.open);
+  }));
+  $$("#content [data-exec]").forEach(el => el.addEventListener("click", e => {
+    e.stopPropagation(); NEXT_PAGE = "exec"; select(el.dataset.exec);
+  }));
+  $$("#content [data-repub]").forEach(el => el.addEventListener("click", async e => {
+    e.stopPropagation();
+    el.disabled = true;
+    const r = await fetch(`/analyses/${el.dataset.repub}/publish`, { method: "POST" });
+    if (r.ok) {
+      const b = await r.json();
+      const row = el.closest(".qrow2");
+      row.querySelector(".qst").outerHTML = `<span class="qst" style="color:var(--good)">✓ ${T.cc_done}</span>`;
+      el.outerHTML = `<span class="schip good">✓ ${T.wb_pub_ok(b.version)}</span>`;
+      loadWorkbooks();
+    } else { el.disabled = false; setStatus((await r.json()).detail || "!", true); }
+  }));
 }
 
 function langToggle() {
@@ -1586,63 +2018,55 @@ function attachLang() {
   }));
 }
 
+/* the ANALYST | EXECUTIVE page tabs: gold segments on the analyst page,
+   dark pill on the executive page (per turn 7) */
+function pageTabs(dark) {
+  return `<span class="ptabs ${dark ? "dark" : ""}">
+    <span class="${PAGE === "analyst" ? "on" : ""}" data-page="analyst">${T.pt_analyst}</span>
+    <span class="${PAGE === "exec" ? "on" : ""}" data-page="exec">${T.pt_exec}</span></span>`;
+}
+function attachPageTabs() {
+  $$(".ptabs [data-page]").forEach(b => b.addEventListener("click", () => {
+    if (b.dataset.page !== PAGE) { PAGE = b.dataset.page; rerender(renderAll); }
+  }));
+}
+
 function renderAll() {
   const r = REPORT, a = AUDIT;
   SHEET_IDX = {}; r.sheets.forEach((s, i) => { SHEET_IDX[s.name] = i; });
   CHARTS = collectCharts(r);
-  const exec = MODE === "exec";
-  document.body.dataset.mode = MODE;
-  if (!availableTabs().some(([id]) => id === TAB)) TAB = "overview";
+  if (PAGE === "exec") { renderExecutivePage(); return; }
+  MODE = "analyst";
+  document.body.dataset.mode = "analyst";
+  document.body.classList.remove("home");
+  if (!availableTabs().some(([id]) => id === TAB)) TAB = "workbench";
 
   renderNav();
   $("#wb-kicker").textContent = T.wb_kicker;
   $("#newupload-txt").textContent = T.new_upload;
-  const modeToggle = `<span class="modes">
-      <button data-mode="exec" class="${exec ? "on" : ""}">${T.mode_exec}</button>
-      <button data-mode="analyst" class="${exec ? "" : "on"}">${T.mode_analyst}</button>
-    </span>`;
-  const date = new Date().toLocaleDateString(LOCALE,
-    { day: "numeric", month: "long", year: "numeric" });
-  $("#topbar").innerHTML = exec
-    // executive: an editorial kicker line — the headline lives in the content
-    ? `<div class="topbar exec">
-        <span class="tkick">${esc(r.filename)} · ${date} · ${T.sheets_read(kpiData().extracted)}${SHARE ? ` · ${T.shared_view}` : ""}</span>
-        <span class="grow"></span>
-        ${langToggle()}${modeToggle}
-        <button class="btn" id="print-report">⎙&nbsp; ${T.btn_report}</button>
-        ${SHARE ? "" : `<button class="btn" id="share-link">↗&nbsp; ${T.btn_share}</button>`}
-      </div>`
-    // analyst: dense header — filename + meta + working buttons
-    : `<div class="topbar">
-        <h2>${esc(r.filename)}</h2>
-        <span class="sub">${T.meta_line(r.n_sheets, compact(kpiData().recs))}${SHARE ? ` · ${T.shared_view}` : ""}</span>
-        <span class="grow"></span>
-        ${langToggle()}${modeToggle}
-        <button class="btn" id="print-report">⎙&nbsp; ${T.btn_report}</button>
-        ${SHARE ? "" : `<button class="btn" id="share-link">↗&nbsp; ${T.btn_share}</button>
-        <button class="btn" id="dl-corrections">⤓&nbsp; ${T.btn_corrections}</button>
-        <button class="btn" id="dl-findings">⤓&nbsp; ${T.btn_findings}</button>`}
-      </div>`;
-  attachLang();
-  $$(".modes:not(.langs) button").forEach(b => b.addEventListener("click", () => {
-    MODE = b.dataset.mode; localStorage.setItem("lumnia_mode", MODE);
-    rerender(renderAll);
-  }));
+  $("#topbar").innerHTML = `<div class="topbar">
+      <h2>${esc(r.filename)}</h2>
+      <span class="sub">${T.meta_line(r.n_sheets, compact(kpiData().recs))}</span>
+      <span class="grow"></span>
+      ${langToggle()}${pageTabs(false)}
+      <a class="seeall" id="preview-exec" style="font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap">◉ ${T.pv_as_exec}</a>
+      <button class="btn" id="print-report">⎙&nbsp; ${T.btn_report}</button>
+      <button class="btn" id="dl-corrections">⤓&nbsp; ${T.btn_corrections}</button>
+      <button class="btn" id="dl-findings">⤓&nbsp; ${T.btn_findings}</button>
+    </div>`;
+  attachLang(); attachPageTabs();
+  $("#preview-exec").addEventListener("click", () => {
+    PAGE = "exec"; rerender(renderAll);
+  });
   $("#print-report").addEventListener("click", printReport);
-  const dlc = $("#dl-corrections");
-  if (dlc) dlc.addEventListener("click", downloadCorrections);
-  const dlf = $("#dl-findings");
-  if (dlf) dlf.addEventListener("click", downloadFindings);
-  const shr = $("#share-link");
-  if (shr) shr.addEventListener("click", shareLink);
+  $("#dl-corrections").addEventListener("click", downloadCorrections);
+  $("#dl-findings").addEventListener("click", downloadFindings);
 
   let body = "";
-  if (TAB === "overview") {
-    body = exec
-      // executive: verdict headline, lede, KPI strip, story chart, next steps
-      ? `<section id="sec-overview">${renderExecOverview()}${renderNarrative()}</section>`
-      // analyst: stat bar + dense working grid
-      : `<section id="sec-overview">${renderStatbar()}${renderAnalystOverview()}</section>`;
+  if (TAB === "workbench") {
+    body = renderWorkbench();
+  } else if (TAB === "overview") {
+    body = `<section id="sec-overview">${renderStatbar()}${renderAnalystOverview()}</section>`;
   } else if (TAB === "story") {
     body = renderStory();
   } else if (TAB === "financials") {
@@ -1650,23 +2074,313 @@ function renderAll() {
   } else if (TAB === "whatif") {
     body = renderScenario() + renderMC();
   } else if (TAB === "data") {
-    body = (exec ? "" : renderFilters()) +
-      `<section id="sec-charts"><span class="kicker">${exec ? T.ch_trends : T.ch_kicker}</span>${renderChartGrid()}</section>` +
-      ((!exec || !r.model) ? `<section id="sec-profile"><span class="kicker">${T.pf_kicker}</span>${renderProfile()}</section>` : "") +
-      (exec ? "" : `<section id="sec-sheets"><span class="kicker">${T.sh_kicker(r.n_sheets)}</span>${renderSheets()}</section>`);
+    body = renderFilters() +
+      `<section id="sec-charts"><span class="kicker">${T.ch_trends}</span>${renderChartGrid()}</section>` +
+      `<section id="sec-profile"><span class="kicker">${T.pf_kicker}</span>${renderProfile()}</section>` +
+      `<section id="sec-sheets"><span class="kicker">${T.sh_kicker(r.n_sheets)}</span>${renderSheets()}</section>`;
   } else if (TAB === "audit") {
-    body = exec
-      ? `<section id="sec-audit">${renderActionList()}${renderExecDownloads()}</section>`
-      : (renderFilters() +
-         `<section id="sec-audit"><span class="kicker">${T.tab_audit}</span>${renderHighlights()}${renderLeaderboards()}${renderFindingsTable()}</section>`);
+    body = renderFilters() +
+      `<section id="sec-audit"><span class="kicker">${T.tab_audit}</span>${renderHighlights()}${renderLeaderboards()}${renderFindingsTable()}</section>`;
   }
   $("#content").innerHTML = renderTabBar() + body;
 
   attachTabBar(); attachFilters(); attachCharts(); attachFindingRows();
   attachBarRows(); attachScenario(); attachMC(); attachNarrative();
-  attachStory();
-  const dlx = $("#dl-corrections-exec");
-  if (dlx) dlx.addEventListener("click", downloadCorrections);
+  attachStory(); attachWorkbench();
+}
+
+/* ---------- the Executive page (7d/7e): read-only, zero controls -------- */
+function renderExecutivePage() {
+  MODE = "exec";
+  document.body.dataset.mode = "exec";
+  document.body.classList.add("home");     // the downstream view: no sidebar
+  const pubDate = PUBINFO.published
+    ? new Date(PUBINFO.published_at).toLocaleDateString(LOCALE,
+        { day: "numeric", month: "long", year: "numeric" }) : null;
+  $("#topbar").innerHTML = `<div class="topbar exec">
+    <span class="tkick">${esc(REPORT.filename)} · ${pubDate
+      ? T.ex_pub_kicker(esc(pubDate)) : T.ex_preview_note}</span>
+    <span class="grow"></span>
+    ${langToggle()}${pageTabs(true)}
+    <span class="ropill">${T.ex_readonly}</span>
+  </div>`;
+  attachLang(); attachPageTabs();
+  const plan = REPORT.plan;
+  const inner = (plan && plan.approved)
+    ? renderStoryDashExec(storyMetricMap(),
+        plan.approved.filter(id => storyMetricMap()[id]))
+    : `<section>${renderExecOverview()}</section>`;
+  $("#content").innerHTML = `${inner}
+    <p class="chcap" style="margin-top:34px;border-top:1px solid var(--hairline);padding-top:12px;max-width:64ch">${T.ex_provenance}</p>`;
+}
+
+/* ---------- the Analyst workbench (7a): four jobs, one rail -------------- */
+function decisionCell(f) {
+  const d = f.decision || "open";
+  if (d === "approved")
+    return `<span class="schip good">${T.wb_approved}</span>
+      <button class="iconbtn" data-dec="open" data-fid="${esc(f.id)}" title="${T.wb_undo_t}">↺</button>`;
+  if (d === "flagged")
+    return `<span class="schip warn">${T.wb_flagged}</span>
+      <button class="iconbtn" data-dec="open" data-fid="${esc(f.id)}" title="${T.wb_undo_t}">↺</button>`;
+  if (f.status === "unverified")
+    return `<button class="pillbtn" data-dec="flagged" data-fid="${esc(f.id)}">${T.wb_review}</button>`;
+  return `<button class="pillbtn gold" data-dec="approved" data-fid="${esc(f.id)}">${T.wb_approve}</button>
+    <button class="pillbtn" data-dec="flagged" data-fid="${esc(f.id)}">${T.wb_keep}</button>`;
+}
+
+function renderWorkbench() {
+  const nOpen = openFindingsCount();
+  const pub = PUBINFO.published;
+
+  // 01 — audit & fix
+  const rows = AUDIT.findings.map(f => {
+    const worst = (f.mismatches || [])[0] || {};
+    return `<div class="wfrow">
+      <span class="ast bad">✕ ${T.sb_fail}</span>
+      <div class="wfd"><b>${esc(f.sheet)}</b> — ${esc(plainFormula(f))}
+        <div class="qsub">${T.a_off(f.n_mismatched, f.n_checked)}${worst.row != null ? ` · ${T.row_w} ${worst.row}` : ""}</div></div>
+      <span class="adelta bad">${compact(f.total_abs_delta)}</span>
+      <span class="wfdec">${decisionCell(f)}</span>
+    </div>`;
+  }).concat(AUDIT.unverified.length ? [(() => {
+    // ONE row for the unverified group — "quick manual glance" is one act,
+    // so reviewing it decides every unverified entry in a single batch
+    const allIds = AUDIT.unverified.map(f => f.id).join(",");
+    const nOpenUnv = AUDIT.unverified
+      .filter(f => (f.decision || "open") === "open").length;
+    const cell = nOpenUnv
+      ? `<button class="pillbtn" data-dec="flagged" data-fid="${esc(allIds)}">${T.wb_review}</button>`
+      : `<span class="schip warn">${T.wb_flagged}</span>
+         <button class="iconbtn" data-dec="open" data-fid="${esc(allIds)}" title="${T.wb_undo_t}">↺</button>`;
+    return `<div class="wfrow">
+      <span class="ast warn">? ${T.sb_unv}</span>
+      <div class="wfd"><b>${T.a_eyeball}</b>
+        <div class="qsub">${T.a_unv(AUDIT.n_unverified_relations)}</div></div>
+      <span class="adelta">—</span>
+      <span class="wfdec">${cell}</span>
+    </div>`;
+  })()] : []).join("");
+  const card01 = `<div class="card wjcard" id="wj-1">
+    <div class="card-head"><span class="cs">01 · ${T.wj_audit}</span>
+      <span class="ct">${T.wb01_t}</span><span class="grow"></span>
+      <button class="btn" id="wb-export">⤓ ${T.wb_export}</button></div>
+    <div class="rfoot" style="margin:2px 0 10px">${T.wb01_note}</div>
+    ${rows || `<div class="muted" style="padding:14px 0">${T.a_none_txt}</div>`}
+    ${AUDIT.n_verified_relations ? `<div class="rfoot" style="color:var(--good);margin-top:12px">✓ ${T.wb_pass(AUDIT.n_verified_relations, AUDIT.n_verified_relations + AUDIT.n_mismatched_relations)}</div>` : ""}
+  </div>`;
+
+  // 02 — data profile (never ships)
+  const es = collectEda();
+  const bySheet = es.map(({ sheet, eda }) => {
+    const cells = (eda.row_count || 0) * (eda.column_count || 0);
+    let nulls = 0;
+    for (const i of Object.values(eda.missingness || {})) nulls += i.count || 0;
+    return { sheet, pct: cells ? nulls / cells * 100 : 0 };
+  }).sort((a, b) => b.pct - a.pct).slice(0, 4);
+  const missRows = bySheet.map((s, k) => `<div class="prow2">
+      <span class="pl2" style="font-family:var(--mono);font-size:10px;text-transform:uppercase">${esc(s.sheet.trim().slice(0, 20))}</span>
+      <span class="pp2">${s.pct.toFixed(0)}%</span>
+      <span class="ptrack"><span style="width:${Math.min(100, s.pct).toFixed(0)}%;background:${["#a8821f", "#c2a960", "#d5c391", "#d5c391"][k]}"></span></span>
+    </div>`).join("");
+  const wf = workbookFill();
+  const nTables = es.length;
+  const structure = [
+    [T.wb02_dupes, `${wf.dupes}`],
+    [T.wb02_tables, T.wb02_of(nTables, REPORT.n_sheets)],
+  ].map(([l, v]) => `<div class="prow2" style="grid-template-columns:1fr auto">
+      <span class="pl2">${l}</span><b style="font-variant-numeric:tabular-nums">${v}</b></div>`).join("");
+  const card02 = `<div class="card wjcard" id="wj-2">
+    <div class="card-head"><span class="cs">02 · ${T.wj_profile}</span>
+      <span class="ct">${T.wb02_t}</span><span class="grow"></span>
+      <span class="vbadge" style="border-style:dashed">${T.wb02_chip}</span></div>
+    <div class="grid2" style="margin-top:10px">
+      <div><div class="psub">${T.wb02_missing}</div>${missRows}</div>
+      <div><div class="psub">${T.wb02_structure}</div>${structure}</div>
+    </div>
+  </div>`;
+
+  // 03 — what the executive sees (true shipping state, no fake toggles)
+  const vis = visCharts().filter(c => !c.pseudo);
+  const primary = vis.filter(c => c.chart.kind === "timeseries")
+    .sort((x, y) => y.chart.periods.length - x.chart.periods.length)[0];
+  const nSteps = Math.min(4, AUDIT.findings.length
+    + (AUDIT.n_unverified_relations ? 1 : 0));
+  const mods = [
+    [T.mod_verdict, true, ""],
+    [T.mod_kpi, true, "4 " + T.mod_tiles],
+    [T.mod_chart, !!primary, primary ? esc(primary.sheet.trim().slice(0, 18)) : ""],
+    [T.mod_steps, nSteps > 0, String(nSteps)],
+    [T.mod_narr, false, T.wb03_noship],
+    [T.mod_recon, false, T.wj_analyst_only],
+  ];
+  const modChips = mods.map(([label, ships, note]) => `
+    <span class="modchip ${ships ? "on" : "off"}">
+      <span class="mck">${ships ? "✓" : ""}</span> ${label}${note ? ` <span class="cs">· ${note}</span>` : ""}</span>`).join("");
+  const card03 = `<div class="card wjcard" id="wj-3">
+    <div class="card-head"><span class="cs">03 · ${T.wj_build}</span>
+      <span class="ct">${T.wb03_t}</span><span class="grow"></span>
+      <a class="seeall" id="wb-edit-brief" style="font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase">✎ ${T.st_edit_link}</a></div>
+    <div class="chiprow" style="margin-top:12px">${modChips}</div>
+  </div>`;
+
+  // 04 — publish band (the gate made visible) + stale banner + popover
+  const pubDate = pub ? new Date(PUBINFO.published_at)
+    .toLocaleDateString(LOCALE, { day: "numeric", month: "long", year: "numeric" }) : null;
+  const staleBanner = (pub && PUBINFO.stale) ? `<div class="stalebar">
+      <b>⚠ ${T.wb_stale_t}</b> ${T.wb_stale_b(PUBINFO.version)}
+      <span class="grow"></span>
+      <button class="pillbtn gold" id="wb-republish" ${nOpen ? "disabled" : ""}>${T.cc_republish(PUBINFO.version + 1)}</button>
+    </div>` : "";
+  const bandMsg = pub
+    ? `<span style="color:#7fb069;font-weight:600">✓ ${T.wb04_published(esc(pubDate), PUBINFO.version)}</span>`
+    : nOpen
+      ? T.wb04_gated(nOpen)
+      : `<span style="color:#e8c15a">${T.wb04_ready}</span>`;
+  const band = `<div class="pubband" id="wj-4">
+    <div><div class="cs" style="color:#8a8271">04 · ${T.wb04_t}</div>
+      <div style="margin-top:4px;font-size:13.5px">${bandMsg}</div></div>
+    <span class="grow"></span>
+    <button class="pillbtn dark" id="wb-preview">◉ ${T.pv_as_exec}</button>
+    ${pub ? `<button class="pillbtn amber" id="wb-share">⧉ ${T.wb04_share}</button>` : ""}
+    ${pub ? "" : `<button class="pillbtn ${nOpen ? "dark" : "gold"}" id="wb-publish" ${nOpen ? "disabled" : ""}>${T.wb04_publish}</button>`}
+    <div class="popover" id="share-pop">
+      <div class="kicker">${T.po_t}</div>
+      <div style="display:flex;gap:8px;margin:10px 0">
+        <input class="binput" id="share-url" readonly style="font-family:var(--mono);font-size:11px" value="${pub ? esc(location.origin + PUBINFO.url + "/page") : ""}">
+        <button class="pillbtn gold" id="share-copy">${T.po_copy}</button></div>
+      <div class="chcap">${T.po_expl}</div>
+      <div style="display:flex;margin-top:12px;align-items:baseline;gap:12px">
+        <a class="seeall" id="share-revoke" style="color:var(--critical);font-size:11.5px">${T.po_revoke}</a>
+        <span style="flex:1"></span>
+        <span class="cs" style="font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)">${T.po_opened(PUBINFO.opened_count || 0)}</span></div>
+    </div>
+  </div>`;
+
+  // the workflow rail
+  const rail = [
+    ["#wj-1", "1", T.wj_audit, nOpen
+      ? `<span style="color:var(--critical)">${T.wj_open(nOpen)}</span>`
+      : `<span style="color:var(--good)">✓ ${T.wj_done}</span>`, !nOpen],
+    ["#wj-2", "2", T.wj_profile, T.wj_analyst_only, false],
+    ["#wj-3", "3", T.wj_build, T.wj_ready, false],
+    ["#wj-4", "4", T.wb04_t, pub
+      ? `<span style="color:var(--good)">✓ v${PUBINFO.version}${PUBINFO.stale ? ` · <span style="color:var(--warning)">${T.cc_stale_sfx}</span>` : ""}</span>`
+      : nOpen ? `<span style="color:var(--warning)">${T.wj_gated}</span>`
+              : `<span style="color:var(--good)">${T.wj_ready}</span>`, false],
+  ].map(([href, n, label, status, done]) => `
+    <a class="rail-item ${done ? "done" : ""}" href="${href}">
+      <span class="c">${done ? "✓" : n}</span>
+      <span><span class="rl">${label}</span><span class="rs">${status}</span></span>
+    </a>`).join("");
+
+  return `<section id="sec-workbench"><div class="wbgrid">
+    <div class="rail">${rail}</div>
+    <div>${staleBanner}${card01}${card02}${card03}${band}</div>
+  </div></section>
+  ${renderReviewModal(mods, nSteps)}`;
+}
+
+/* the 8a review sheet: see what ships before it ships */
+function renderReviewModal(mods, nSteps) {
+  const m = AUDIT.n_mismatched_relations, u = AUDIT.n_unverified_relations;
+  const head = m ? T.vh_bad(m) : (u ? T.vh_review(u) : T.vh_ok);
+  const shipRows = mods.filter(x => x[1]).map(([label, _, note]) => `
+    <div class="rmrow"><span style="color:var(--good);font-family:var(--mono)">✓</span>
+      <b>${label}</b><span class="cs">${label === T.mod_verdict ? `“${esc(head)}”` : note}</span></div>`).join("");
+  const nFlagged = (AUDIT.findings || []).concat(AUDIT.unverified || [])
+    .filter(f => f.decision === "flagged").length;
+  return `<div class="scrim" id="review-scrim">
+    <div class="rmodal">
+      <div class="kicker">${T.wb04_t}</div>
+      <h2 style="font-family:var(--serif);font-size:26px;font-weight:600;margin:8px 0 14px">${T.rm_t}</h2>
+      <div style="border-top:1px solid var(--hairline)">${shipRows}</div>
+      <div class="rmrow" style="align-items:start"><span style="color:var(--warning)">⚑</span>
+        <span style="grid-column:2/4;font-size:12.5px;line-height:1.6;color:var(--ink-2)">${T.rm_flag(nFlagged)}</span></div>
+      <div style="display:flex;gap:14px;align-items:center;margin-top:22px;flex-wrap:wrap">
+        <button class="runbtn" id="rm-publish" style="max-width:170px;margin:0">${T.wb04_publish}</button>
+        <button class="pillbtn" id="rm-preview">◉ ${T.rm_preview}</button>
+        <span class="grow"></span>
+        <a class="seeall" id="rm-back">${T.rm_back}</a>
+      </div>
+    </div>
+  </div>`;
+}
+
+async function refreshWorkbookState() {
+  [AUDIT, PUBINFO] = await Promise.all([
+    fetch(`/analyses/${current}/findings`).then(r => r.json()),
+    fetch(`/analyses/${current}/publish`).then(r => r.json())]);
+  loadWorkbooks();
+}
+
+function attachWorkbench() {
+  if (TAB !== "workbench" || !$("#sec-workbench")) return;
+  $$("#sec-workbench [data-dec]").forEach(b => b.addEventListener("click", async () => {
+    b.disabled = true;
+    // data-fid may carry several ids (the grouped unverified row)
+    const decisions = {};
+    b.dataset.fid.split(",").forEach(fid => { decisions[fid] = b.dataset.dec; });
+    const r = await fetch(`/analyses/${current}/decisions`, { method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ decisions }) });
+    if (!r.ok) { b.disabled = false;
+      setStatus((await r.json()).detail || "!", true); return; }
+    await refreshWorkbookState();
+    rerender(renderAll);
+  }));
+  const exp = $("#wb-export");
+  if (exp) exp.addEventListener("click", downloadCorrections);
+  const eb = $("#wb-edit-brief");
+  if (eb) eb.addEventListener("click", () => setTab("story"));
+  const pv = $("#wb-preview");
+  if (pv) pv.addEventListener("click", () => { PAGE = "exec"; rerender(renderAll); });
+  const doPublish = async btn => {
+    btn.disabled = true;
+    const r = await fetch(`/analyses/${current}/publish`, { method: "POST" });
+    if (!r.ok) { btn.disabled = false;
+      setStatus((await r.json()).detail || "!", true); return; }
+    await refreshWorkbookState();
+    rerender(renderAll);
+  };
+  const pubBtn = $("#wb-publish");
+  if (pubBtn) pubBtn.addEventListener("click", () =>
+    $("#review-scrim").classList.add("open"));
+  const rp = $("#wb-republish");
+  if (rp) rp.addEventListener("click", () => doPublish(rp));
+  const rmPub = $("#rm-publish");
+  if (rmPub) rmPub.addEventListener("click", () => doPublish(rmPub));
+  const rmPrev = $("#rm-preview");
+  if (rmPrev) rmPrev.addEventListener("click", () => {
+    $("#review-scrim").classList.remove("open");
+    PAGE = "exec"; rerender(renderAll);
+  });
+  const rmBack = $("#rm-back");
+  if (rmBack) rmBack.addEventListener("click", () =>
+    $("#review-scrim").classList.remove("open"));
+  const scrim = $("#review-scrim");
+  if (scrim) scrim.addEventListener("click", e => {
+    if (e.target === scrim) scrim.classList.remove("open");
+  });
+  const share = $("#wb-share");
+  if (share) share.addEventListener("click", e => {
+    e.stopPropagation();
+    $("#share-pop").classList.toggle("open");
+  });
+  const pop = $("#share-pop");
+  if (pop) pop.addEventListener("click", e => e.stopPropagation());
+  const cp = $("#share-copy");
+  if (cp) cp.addEventListener("click", async () => {
+    const url = $("#share-url").value;
+    try { await navigator.clipboard.writeText(url); setStatus(T.share_copied(url)); }
+    catch { setStatus(T.share_manual(url)); }
+  });
+  const rv = $("#share-revoke");
+  if (rv) rv.addEventListener("click", async () => {
+    await fetch(`/analyses/${current}/publish`, { method: "DELETE" });
+    await refreshWorkbookState();
+    rerender(renderAll);
+  });
 }
 
 /* ---------- filters ---------- */
@@ -1901,21 +2615,7 @@ function renderProfile() {
   return `<div class="grid2">${cards.join("")}</div>`;
 }
 
-/* ---------- publish: frozen exec-only link for clients ---------- */
-async function shareLink() {
-  const r = await fetch(`/analyses/${current}/publish`, { method: "POST" });
-  if (r.status === 409) {   // the gate: open findings block publishing
-    setStatus((await r.json()).detail, true);
-    return;
-  }
-  if (!r.ok) { setStatus(T.share_failed, true); return; }
-  const body = await r.json();
-  const full = location.origin + body.url + "/page";
-  try {
-    await navigator.clipboard.writeText(full);
-    setStatus(T.pub_copied(body.version, full));
-  } catch { setStatus(T.share_manual(full)); }
-}
+/* publishing now lives in the workbench's 04 band (attachWorkbench) */
 
 /* ---------- redesigned overview: executive (editorial) ---------- */
 const titleCase = s => String(s).toLowerCase()
@@ -2759,7 +3459,7 @@ function renderStoryDashExec(metricById, approved) {
     <div style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap">
       <span class="kicker">${esc(T.st_brief_line(brief.role, cad))} · ${esc((REPORT.story.sheet || "").trim())}</span>
       <span class="grow"></span>
-      ${SHARE ? "" : `<button class="iconbtn" id="bf-edit">${T.st_edit}</button>
+      ${(SHARE || PAGE === "exec") ? "" : `<button class="iconbtn" id="bf-edit">${T.st_edit}</button>
         <button class="iconbtn" id="plan-reopen">${T.st_replan}</button>`}
     </div>
     <h1 class="vhead">${esc(head)}</h1>
@@ -3972,22 +4672,26 @@ function downloadFindings() {
 /* ---------- boot ---------- */
 (async function boot() {
   if (PUB) {             // public exec page: the frozen snapshot, nothing else
+    document.body.classList.add("home");
     const r = await fetch(`/published/${PUB}`);
-    if (!r.ok) {
+    if (!r.ok) {         // revoked or unknown token (8c)
       $("#content").innerHTML = `<div class="home-empty">
-        <h1>${T.pub_dead}</h1></div>`;
+        <svg class="sunmark" width="30" height="30" viewBox="-50 -50 100 100" aria-hidden="true">${sunPaths()}</svg>
+        <h1 style="font-size:22px">${T.pub_dead}</h1>
+        <p class="lede">${T.pub_dead_sub}</p></div>`;
       return;
     }
     renderPublishedPage(await r.json());
     return;
   }
-  renderEmpty();
   fetch("/health").then(r => r.json())
     .then(h => { NARR_READY = !!h.narrative_ready; })
     .catch(() => {});
-  await loadWorkbooks();
-  const first = $("#wb-list .wb");
-  if (first) select(first.dataset.id);
+  // land on the workspace: Command Center when workbooks exist, the
+  // first-run promise when none — a workbook opens only when chosen
+  await renderHomePage();
+  $(".brand").style.cursor = "pointer";
+  $(".brand").addEventListener("click", goHome);
 })();
 </script>
 </body>
