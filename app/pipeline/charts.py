@@ -81,7 +81,9 @@ def timeseries_chart(periods: List[object],
         "other": other,
         "truncated": truncated,
     }
-    if axis == "year" and len(ranked) <= MAX_FULL_SERIES:
+    # small charts keep EVERY series so the business-model layer can
+    # role-tag them — year axes for projections, date axes for actuals
+    if len(ranked) <= MAX_FULL_SERIES:
         out["series_all"] = [{"label": str(label), "values": row(vals)}
                              for label, vals, _ in ranked]
     return out

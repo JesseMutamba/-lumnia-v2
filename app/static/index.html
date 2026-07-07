@@ -969,6 +969,12 @@ const pctFmt = (v, d = 0) => new Intl.NumberFormat(LOCALE, { maximumFractionDigi
 const STR = {
   en: {
     tab_overview: "Overview", tab_financials: "Financials", tab_whatif: "What-if",
+    tab_production: "Production",
+    pr_kicker: "Production — monthly actuals",
+    pr_total: l => `Total ${l}`, pr_ratio: "Avg conversion rate",
+    pr_peak: "Peak period", pr_chart: "Monthly volumes",
+    pr_ratio_chart: "Conversion rate by period",
+    pr_avg: p => `average ${p}`, pr_src: s => `from ${s}`,
     tab_data: "Data", tab_trends: "Trends", tab_audit: "Audit", tab_actions: "Actions",
     sheets_analyzed: n => `${n} sheet${n === 1 ? "" : "s"} analyzed`,
     shared_view: "shared view", mode_exec: "Executive", mode_analyst: "Analyst",
@@ -1316,6 +1322,12 @@ const STR = {
   },
   fr: {
     tab_overview: "Aperçu", tab_financials: "Finances", tab_whatif: "Scénarios",
+    tab_production: "Production",
+    pr_kicker: "Production — réalisations mensuelles",
+    pr_total: l => `Total ${l}`, pr_ratio: "Taux de conversion moyen",
+    pr_peak: "Période de pointe", pr_chart: "Volumes mensuels",
+    pr_ratio_chart: "Taux de conversion par période",
+    pr_avg: p => `moyenne ${p}`, pr_src: s => `depuis ${s}`,
     tab_data: "Données", tab_trends: "Tendances", tab_audit: "Audit", tab_actions: "À faire",
     sheets_analyzed: n => `${n} feuille${n === 1 ? "" : "s"} analysée${n === 1 ? "" : "s"}`,
     shared_view: "vue partagée", mode_exec: "Direction", mode_analyst: "Analyste",
@@ -1814,6 +1826,7 @@ const TAB_ICONS = {
   story: `<svg width="14" height="14" viewBox="0 0 14 14"><path d="M2 2.5h10M2 5.5h7M2 8.5h10M2 11.5h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
   financials: `<svg width="14" height="14" viewBox="0 0 14 14"><path d="M2 12V7.5M5.4 12V4.5M8.8 12V6M12.2 12V2.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`,
   whatif: `<svg width="14" height="14" viewBox="0 0 14 14"><path d="M2 10.5c2.4 0 3.4-6.5 6-6.5M2 4c2.4 0 3.4 6.5 6 6.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M9.5 4H12v2.5M9.5 10.5H12V8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  production: `<svg width="14" height="14" viewBox="0 0 14 14"><path d="M2 12V8l3 2V8l3 2V8l4-2.5V12z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M10.5 5.5V2.8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>`,
   data: `<svg width="14" height="14" viewBox="0 0 14 14"><path d="M1.5 11l3.4-4 2.7 2.3 4.9-6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   audit: `<svg width="14" height="14" viewBox="0 0 14 14"><path d="M2.5 7.4l3 3L11.5 4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
 };
@@ -1822,9 +1835,13 @@ function availableTabs() {
   const t = [["workbench", T.tab_workbench], ["overview", T.tab_overview]];
   if (REPORT.story) t.push(["story", T.tab_story]);
   // year series without recognized roles still get the Financials tab: the
-  // mapping card there is HOW the analyst lights it
-  if (REPORT.model || mappableSeries().length)
+  // mapping card there is HOW the analyst lights it (a monthly-only model
+  // has no projections — Production carries it instead)
+  if ((REPORT.model && Object.keys(REPORT.model.metrics || {}).length)
+      || mappableSeries().length)
     t.push(["financials", T.tab_financials]);
+  if (REPORT.model && REPORT.model.monthly)
+    t.push(["production", T.tab_production]);
   if (REPORT.model && REPORT.model.scenario_ready) t.push(["whatif", T.tab_whatif]);
   t.push(["data", T.tab_trends]);
   t.push(["audit", T.tab_audit]);
@@ -2175,6 +2192,8 @@ function renderAll() {
     body = renderStory();
   } else if (TAB === "financials") {
     body = renderFinancials();
+  } else if (TAB === "production") {
+    body = renderProduction();
   } else if (TAB === "whatif") {
     body = renderScenario() + renderMC();
   } else if (TAB === "data") {
@@ -3825,7 +3844,7 @@ const ROLE_LABELS = T.roles;
 
 function renderFinancials() {
   const m = REPORT.model;
-  if (!m) return mappableSeries().length
+  if (!m || !Object.keys(m.metrics || {}).length) return mappableSeries().length
     ? `<section id="sec-financials"><span class="kicker">${T.fin_kicker}</span>
         <p class="chcap" style="max-width:56ch">${T.mp_none}</p>
         ${mappingCard()}</section>`
@@ -3944,6 +3963,57 @@ function renderFinancials() {
     ${finTable(m)}
     ${bds ? `<div class="grid2" style="margin-top:14px">${bds}</div>` : ""}
     ${mappingCard()}
+  </section>`;
+}
+
+/* ---------- production: monthly actuals from date-axis matrices --------- */
+function renderProduction() {
+  const mo = REPORT.model && REPORT.model.monthly;
+  if (!mo) return "";
+  const sum = a => a.reduce((t, v) => t + (v ?? 0), 0);
+  const met = mo.metrics;
+
+  const stats = Object.entries(met).map(([role, s]) =>
+    `<span>${T.pr_total(ROLE_LABELS[role] || role)} <b>${compact(sum(s.values))}</b></span>`);
+  const vr = mo.derived.volume_ratio;
+  let avg = null;
+  if (vr) {
+    const vals = vr.filter(v => v != null);
+    if (vals.length) avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+    if (avg != null)
+      stats.push(`<span>${T.pr_ratio} <b>${(avg * 100).toFixed(1)}%</b></span>`);
+  }
+  const prim = met.volume || Object.values(met)[0];
+  if (prim) {
+    let pi = -1, pv = -Infinity;
+    prim.values.forEach((v, i) => { if (v != null && v > pv) { pv = v; pi = i; } });
+    if (pi >= 0) stats.push(`<span>${T.pr_peak} <b>${esc(String(mo.periods[pi]))}</b>
+      <span class="muted">(${compact(pv)})</span></span>`);
+  }
+
+  const lines = Object.entries(met).map(([role, s], k) => ({
+    label: `${ROLE_LABELS[role] || role} — ${s.label.slice(0, 26)}`,
+    values: s.values, color: SERIES_COLORS[k % SERIES_COLORS.length], on: true,
+  }));
+  const volChart = { pseudo: true, sheet: T.pr_chart,
+    loc: T.pr_src(String(mo.source_sheet || "").trim()),
+    chart: { kind: "timeseries", periods: mo.periods, series: [], other: null,
+             truncated: false }, lines, i: CHARTS.length, range: null };
+  CHARTS.push(volChart);
+
+  let ratioCard = "";
+  if (vr && vr.some(v => v != null)) {
+    const rc = { pseudo: true, sheet: T.pr_ratio_chart,
+      loc: avg != null ? T.pr_avg(`${(avg * 100).toFixed(1)}%`) : null,
+      chart: { kind: "profile", x: mo.periods,
+               y: vr.map(v => v != null ? +(v * 100).toFixed(2) : 0) },
+      i: CHARTS.length, range: null };
+    CHARTS.push(rc);
+    ratioCard = chartCard(rc, false);
+  }
+  return `<section id="sec-production"><span class="kicker">${T.pr_kicker}</span>
+    ${stats.length ? `<div class="statbar">${stats.join("")}</div>` : ""}
+    <div class="grid2">${chartCard(volChart, false)}${ratioCard}</div>
   </section>`;
 }
 
