@@ -67,6 +67,9 @@ class AnalyzeResponse(BaseModel):
     # Publish lifecycle — persisted per-finding decisions keyed by the
     # stable finding id: {fid: {"decision": ..., "decided_at": iso}}
     decisions: Optional[Dict[str, Any]] = None
+    # Config-first mapping: pinned role -> series references, provenance
+    # (manual/inherited) and the reconciliation result that admitted it
+    mapping: Optional[Dict[str, Any]] = None
 
 
 class AnalysisMeta(BaseModel):

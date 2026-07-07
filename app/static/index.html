@@ -1104,7 +1104,18 @@ const STR = {
     fin_since: (pc, p) => `${pc}% since ${p}`,
     roles: { revenue: "Revenue", opex: "Operating costs", capex: "Investment",
       budget: "Budget", volume: "Volume", volume_secondary: "Volume (output)",
-      area: "Area", headcount: "Headcount", price: "Price" },
+      area: "Area", headcount: "Headcount", price: "Price",
+      margin: "Margin (check only)" },
+    mp_title: "Series mapping",
+    mp_sub: "which series carries each role — pinned beats guessed",
+    mp_none: "No financial roles were recognized in this file. Pin the series manually and this page lights up — the mapping is checked against the file's own totals before it is trusted.",
+    mp_edit: "Map series", mp_save: "Save mapping", mp_cancel: "Cancel",
+    mp_clear: "Remove mapping", mp_auto: "(auto)",
+    mp_saved: "Mapping saved — model rebuilt.",
+    mp_chip_manual: "pinned manually",
+    mp_chip_inherited: f => `inherited from ${f}`,
+    mp_verified: "verified in data", mp_unverified: "no witness — unverified",
+    mp_err: "Mapping refused",
     fin_budget_at: p => `vs budget · ${p}`, fin_over: "over", fin_under: "under",
     fin_table: "Cost & production — full table",
     fin_table_sub: "every detected series and derived indicator, by period",
@@ -1440,7 +1451,18 @@ const STR = {
     fin_since: (pc, p) => `${pc} % depuis ${p}`,
     roles: { revenue: "Revenus", opex: "Charges", capex: "Investissements",
       budget: "Budget", volume: "Volume", volume_secondary: "Volume (sortie)",
-      area: "Surface", headcount: "Effectifs", price: "Prix" },
+      area: "Surface", headcount: "Effectifs", price: "Prix",
+      margin: "Marge (contrôle seul)" },
+    mp_title: "Correspondance des séries",
+    mp_sub: "quelle série porte chaque rôle — épinglé vaut mieux que deviné",
+    mp_none: "Aucun rôle financier reconnu dans ce fichier. Épinglez les séries manuellement et cette page s'allume — la correspondance est vérifiée contre les totaux du fichier avant d'être acceptée.",
+    mp_edit: "Associer les séries", mp_save: "Enregistrer", mp_cancel: "Annuler",
+    mp_clear: "Retirer", mp_auto: "(auto)",
+    mp_saved: "Correspondance enregistrée — modèle recalculé.",
+    mp_chip_manual: "épinglé manuellement",
+    mp_chip_inherited: f => `hérité de ${f}`,
+    mp_verified: "vérifié dans les données", mp_unverified: "sans témoin — non vérifié",
+    mp_err: "Correspondance refusée",
     fin_budget_at: p => `vs budget · ${p}`, fin_over: "au-dessus", fin_under: "en dessous",
     fin_table: "Coûts & production — tableau complet",
     fin_table_sub: "chaque série détectée et indicateur dérivé, par période",
@@ -1799,11 +1821,29 @@ const TAB_ICONS = {
 function availableTabs() {
   const t = [["workbench", T.tab_workbench], ["overview", T.tab_overview]];
   if (REPORT.story) t.push(["story", T.tab_story]);
-  if (REPORT.model) t.push(["financials", T.tab_financials]);
+  // year series without recognized roles still get the Financials tab: the
+  // mapping card there is HOW the analyst lights it
+  if (REPORT.model || mappableSeries().length)
+    t.push(["financials", T.tab_financials]);
   if (REPORT.model && REPORT.model.scenario_ready) t.push(["whatif", T.tab_whatif]);
   t.push(["data", T.tab_trends]);
   t.push(["audit", T.tab_audit]);
   return t;
+}
+
+/* the mapping's address space: every year-axis series in the workbook */
+function mappableSeries() {
+  const out = [];
+  for (const s of REPORT.sheets || []) {
+    const grab = t => {
+      const c = t && t.summary && t.summary.chart;
+      if (c && c.kind === "timeseries" && c.axis === "year" && c.series_all)
+        for (const se of c.series_all) out.push({ sheet: s.name, label: se.label });
+    };
+    grab(s.tidy);
+    for (const p of s.panels || []) grab(p.tidy);
+  }
+  return out;
 }
 function openFindingsCount() {
   return (AUDIT.findings || []).concat(AUDIT.unverified || [])
@@ -1864,6 +1904,7 @@ async function select(id) {
      fetch(`/analyses/${id}/publish`).then(r => r.json()).catch(() => ({ published: false }))]);
   FILTER.sheets = null; FILTER.status = null; FILTER.periods = "all";
   MC_RESULTS = null; SCEN = { price: 1.0, vol: 1.0, cost: 1.0, ext: 1.0 };
+  MAP_EDIT = false;
   PAGE = NEXT_PAGE; NEXT_PAGE = "analyst";
   TAB = "workbench";
   renderAll();
@@ -2149,7 +2190,7 @@ function renderAll() {
 
   attachTabBar(); attachFilters(); attachCharts(); attachFindingRows();
   attachBarRows(); attachScenario(); attachMC(); attachNarrative();
-  attachStory(); attachWorkbench();
+  attachStory(); attachWorkbench(); attachMapping();
 }
 
 /* ---------- the Executive page (7d/7e): read-only, zero controls -------- */
@@ -3784,7 +3825,11 @@ const ROLE_LABELS = T.roles;
 
 function renderFinancials() {
   const m = REPORT.model;
-  if (!m) return "";
+  if (!m) return mappableSeries().length
+    ? `<section id="sec-financials"><span class="kicker">${T.fin_kicker}</span>
+        <p class="chcap" style="max-width:56ch">${T.mp_none}</p>
+        ${mappingCard()}</section>`
+    : "";
   const sum = a => a.reduce((t, v) => t + (v ?? 0), 0);
   const lastIdx = a => { for (let i = a.length - 1; i >= 0; i--) if (a[i] != null) return i; return -1; };
   const met = m.metrics;
@@ -3898,7 +3943,107 @@ function renderFinancials() {
     ${unitCard || convCard ? `<div class="grid2" style="margin-top:14px">${unitCard}${convCard}</div>` : ""}
     ${finTable(m)}
     ${bds ? `<div class="grid2" style="margin-top:14px">${bds}</div>` : ""}
+    ${mappingCard()}
   </section>`;
+}
+
+/* ---------- config-first mapping: pin role -> series, gated by checks --- */
+let MAP_EDIT = false;
+
+function mappingCard() {
+  const avail = mappableSeries();
+  if (!avail.length) return "";
+  const mp = REPORT.mapping;
+  const prov = mp ? (mp.provenance || {}) : null;
+  const rec = mp ? (mp.reconciliation || {}) : null;
+  const chip = !mp ? ""
+    : prov.kind === "inherited"
+      ? `<span class="schip good">${T.mp_chip_inherited(esc(String(prov.from || "").slice(0, 26)))}</span>`
+      : `<span class="schip good">${T.mp_chip_manual}</span>`;
+  const recChip = !mp ? "" : rec.ok === true
+    ? `<span class="schip good">✓ ${T.mp_verified}</span>`
+    : `<span class="schip warn">${T.mp_unverified}</span>`;
+
+  const current = {};
+  if (mp && mp.roles)
+    for (const [role, ref] of Object.entries(mp.roles)) current[role] = ref.label;
+  else if (REPORT.model)
+    for (const [role, s] of Object.entries(REPORT.model.metrics)) current[role] = s.label;
+
+  let body;
+  if (!MAP_EDIT) {
+    const rows = Object.entries(current).map(([role, label]) => `
+      <div class="bar-row" style="display:flex;gap:10px;align-items:baseline">
+        <span class="bl" style="min-width:150px">${ROLE_LABELS[role] || role}</span>
+        <span class="bv">${esc(String(label).slice(0, 36))}</span></div>`).join("");
+    body = rows +
+      `<div style="margin-top:10px"><button class="iconbtn" id="mp-edit">${T.mp_edit}</button>
+       ${mp ? `<button class="iconbtn" id="mp-clear">${T.mp_clear}</button>` : ""}</div>`;
+  } else {
+    const opts = sel => `<option value="">${T.mp_auto}</option>` + avail.map(a =>
+      `<option value="${esc(a.sheet)}|||${esc(a.label)}"${sel === a.label ? " selected" : ""}>${
+        esc(String(a.label).slice(0, 36))} — ${esc(String(a.sheet).slice(0, 18))}</option>`).join("");
+    const roles = ["revenue", "opex", "budget", "volume", "volume_secondary",
+                   "price", "capex", "area", "margin"];
+    body = roles.map(role => `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <span class="sln" style="min-width:150px">${ROLE_LABELS[role] || role}</span>
+        <select data-mprole="${role}" style="flex:1;font:inherit;font-size:12.5px;padding:5px 8px;
+          background:var(--card);border:1px solid var(--border);border-radius:6px;color:var(--ink)">${
+          opts(current[role])}</select></div>`).join("") +
+      `<div id="mp-error" class="chcap" style="color:var(--critical)"></div>
+       <div style="margin-top:10px;display:flex;gap:8px">
+         <button class="runbtn" id="mp-save" style="max-width:220px">${T.mp_save}</button>
+         <button class="iconbtn" id="mp-cancel">${T.mp_cancel}</button></div>`;
+  }
+  const recDetail = mp && rec.checks && rec.checks.length
+    ? `<div class="chcap" style="margin-top:8px">${rec.checks.map(c =>
+        `${c.ok ? "✓" : "✕"} ${esc(c.detail)} · Δ ${(c.max_rel_delta * 100).toFixed(2)}%`).join(" &nbsp;·&nbsp; ")}</div>`
+    : "";
+  return `<div class="card" style="margin-top:14px"><div class="card-head">
+      <span class="ct">${T.mp_title}</span><span class="cs">${T.mp_sub}</span>
+      <span style="flex:1"></span>${chip}${recChip}</div>
+    <div style="margin-top:10px">${body}</div>${recDetail}</div>`;
+}
+
+function attachMapping() {
+  const on = (id, fn) => { const el = $(id); if (el) el.addEventListener("click", fn); };
+  on("#mp-edit", () => { MAP_EDIT = true; renderAll(); });
+  on("#mp-cancel", () => { MAP_EDIT = false; renderAll(); });
+  on("#mp-clear", async () => {
+    const out = await fetch(`/analyses/${current}/mapping`, { method: "DELETE" })
+      .then(r => r.json());
+    REPORT.mapping = null; REPORT.model = out.model; MAP_EDIT = false;
+    renderAll();
+  });
+  on("#mp-save", async () => {
+    const mapping = {};
+    $$("select[data-mprole]").forEach(sel => {
+      if (!sel.value) return;
+      const [sheet, label] = sel.value.split("|||");
+      mapping[sel.dataset.mprole] = { sheet, label };
+    });
+    if (!Object.keys(mapping).length) return;
+    const res = await fetch(`/analyses/${current}/mapping`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mapping }) });
+    if (res.ok) {
+      const out = await res.json();
+      REPORT.model = out.model; REPORT.mapping = out.mapping;
+      MAP_EDIT = false;
+      renderAll();
+      setStatus(T.mp_saved);
+    } else {
+      const err = await res.json().catch(() => ({}));
+      const d = err.detail;
+      const msg = typeof d === "string" ? d
+        : d && d.reconciliation
+          ? d.reconciliation.checks.filter(c => c.ok === false)
+              .map(c => `${c.detail} — Δ ${(c.max_rel_delta * 100).toFixed(1)}%`).join("; ")
+          : "";
+      const el = $("#mp-error");
+      if (el) el.textContent = `${T.mp_err}${msg ? ": " + msg : ""}`;
+    }
+  });
 }
 
 /* every detected series + derived indicator, one row each, periods across —

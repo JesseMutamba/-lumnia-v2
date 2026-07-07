@@ -85,6 +85,7 @@ def _connect() -> sqlite3.Connection:
         "ALTER TABLE analyses ADD COLUMN checks_total INTEGER",
         "ALTER TABLE analyses ADD COLUMN last_decided_at TEXT",
         "ALTER TABLE analyses ADD COLUMN at_stake REAL",
+        "ALTER TABLE analyses ADD COLUMN mapping TEXT",
     ):
         try:
             con.execute(migration)
@@ -135,15 +136,17 @@ def save_analysis(filename: str, content: bytes, report: Dict[str, Any]) -> str:
     report = {**report, "id": analysis_id}
     roll = _rollup(report)
     with _connect() as con:
+        mapping = report.get("mapping")
         con.execute(
             "INSERT INTO analyses (id, filename, uploaded_at, size_bytes, sha256, content, report, "
-            "open_findings, n_sheets, checks_ok, checks_total, last_decided_at, at_stake) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "open_findings, n_sheets, checks_ok, checks_total, last_decided_at, at_stake, mapping) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (analysis_id, filename, _now(), len(content),
              hashlib.sha256(content).hexdigest(), content,
              json.dumps(report, ensure_ascii=False),
              roll["open_findings"], roll["n_sheets"], roll["checks_ok"],
-             roll["checks_total"], roll["last_decided_at"], roll["at_stake"]),
+             roll["checks_total"], roll["last_decided_at"], roll["at_stake"],
+             json.dumps(mapping, ensure_ascii=False) if mapping else None),
         )
     return analysis_id
 
@@ -282,17 +285,37 @@ def get_content(analysis_id: str) -> Optional[Tuple[str, bytes]]:
 
 def update_report(analysis_id: str, report: Dict[str, Any]) -> bool:
     roll = _rollup(report)
+    mapping = report.get("mapping")
     with _connect() as con:
         cur = con.execute(
             "UPDATE analyses SET report = ?, reran_at = ?, open_findings = ?, "
             "n_sheets = ?, checks_ok = ?, checks_total = ?, last_decided_at = ?, "
-            "at_stake = ? WHERE id = ?",
+            "at_stake = ?, mapping = ? WHERE id = ?",
             (json.dumps(report, ensure_ascii=False), _now(),
              roll["open_findings"], roll["n_sheets"], roll["checks_ok"],
              roll["checks_total"], roll["last_decided_at"], roll["at_stake"],
+             json.dumps(mapping, ensure_ascii=False) if mapping else None,
              analysis_id),
         )
     return cur.rowcount > 0
+
+
+def recent_mappings(limit: int = 20) -> List[Dict[str, Any]]:
+    """Latest stored mappings (denormalized column — no blob parsing),
+    newest first: candidates for inheriting onto a fresh upload."""
+    with _connect() as con:
+        rows = con.execute(
+            "SELECT id, filename, mapping FROM analyses "
+            "WHERE mapping IS NOT NULL ORDER BY uploaded_at DESC LIMIT ?",
+            (limit,)).fetchall()
+    out = []
+    for r in rows:
+        try:
+            out.append({"id": r["id"], "filename": r["filename"],
+                        "mapping": json.loads(r["mapping"])})
+        except (TypeError, ValueError):
+            continue                     # a corrupt row must not block uploads
+    return out
 
 
 def delete_analysis(analysis_id: str) -> bool:
