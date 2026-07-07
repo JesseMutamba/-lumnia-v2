@@ -762,14 +762,12 @@
   .ptabs.dark { border-radius: 999px; border-color: var(--border-strong); }
   .ptabs.dark span { border-radius: 999px; }
   .ptabs.dark .on { background: var(--ink); color: #f6f3ec; }
-  .ropill { font-family: var(--mono); font-size: 8.5px; letter-spacing: .1em;
+  /* the exec header pills share one treatment (Read-only badge + the exec
+     voice fig-chip that carries open reviews, never the headline) */
+  .ropill, .figchip { font-family: var(--mono); font-size: 8.5px; letter-spacing: .1em;
     text-transform: uppercase; color: var(--ink-3); padding: 5px 13px;
     border: 1px solid var(--border-strong); border-radius: 999px; }
-  /* exec voice: open reviews ride a chip, never the headline */
-  .figchip { font-family: var(--mono); font-size: 8.5px; letter-spacing: .1em;
-    text-transform: uppercase; color: var(--ink-3); padding: 5px 13px;
-    border: 1px solid var(--border-strong); border-radius: 999px;
-    text-decoration: none; white-space: nowrap; }
+  .figchip { text-decoration: none; white-space: nowrap; }
   .figchip.crit { color: var(--critical); border-color: var(--critical); }
   a.figchip { cursor: pointer; }
   a.figchip:hover { background: var(--card); }
@@ -1003,20 +1001,23 @@ const STR = {
     pv_as_exec: "Preview as executive",
     // exec voice: business terms only — figures, never file mechanics
     xt_costs: "Cost of production",
-    xt_costs_kicker: "Cost of production — computed from the audited figures",
+    xt_costs_kicker: "Cost of production · revenue, costs and unit economics by period",
+    fin_traj_x: "Financial trajectory",
     xh_chip: (n, amt) => `${n} figure${n === 1 ? "" : "s"} under review · ${amt}`,
     xh_chip_unv: n => `${n} ${n === 1 ? "total" : "totals"} awaiting confirmation`,
     xh_head_review: n => `${n} figure${n === 1 ? "" : "s"} to settle before these numbers are final.`,
+    xh_head_verify: n => `${n} ${n === 1 ? "total" : "totals"} to confirm before these numbers are final.`,
     xh_head_ok: "The figures are internally consistent.",
     xh_gaps_t: "What these figures can't answer yet",
     xh_status: { answerable: "answerable", partial: "partially answerable",
       unanswerable: "can't be answered from the current data",
       unmatched: "couldn't be matched to the data" },
-    xl_rev: (l, va, a, vb, b) => `${l} is projected to grow from ${va} (${a}) to ${vb} (${b}).`,
+    xl_rev: (l, up, va, a, vb, b) => `${l} ${up ? "grows" : "declines"} from ${va} (${a}) to ${vb} (${b}).`,
     xl_margin: (p, per) => `Operating margin reaches ${p} by ${per}.`,
     xl_capex: (t, pk) => `Total investment of ${t} peaks in ${pk}.`,
     xl_trend: (l, up, p, per) => `${l} is ${up ? "up" : "down"} ${p} as of ${per}.`,
     xl_review: (n, amt) => `${n} reported figure${n === 1 ? "" : "s"} disagree${n === 1 ? "s" : ""} with the rest of the numbers (worth ${amt}) and ${n === 1 ? "is" : "are"} under review.`,
+    xl_unv: n => `${n} total${n === 1 ? "" : "s"} still need a manual check; every other cross-check passed.`,
     xl_ok: n => `All ${n} automated cross-checks on these figures passed.`,
     xs_resolve: n => `Settle the ${n} figure${n === 1 ? "" : "s"} under review`,
     xs_resolve_sub: amt => `Disagreements worth ${amt} between reported totals — your analyst resolves them in the workbench, and this page updates.`,
@@ -1388,20 +1389,23 @@ const STR = {
     pv_as_exec: "Aperçu direction",
     // voix direction : uniquement le langage métier — les chiffres, jamais la mécanique du fichier
     xt_costs: "Coûts de production",
-    xt_costs_kicker: "Coûts de production — calculés à partir des chiffres audités",
+    xt_costs_kicker: "Coûts de production · revenus, charges et économie unitaire par période",
+    fin_traj_x: "Trajectoire financière",
     xh_chip: (n, amt) => `${n} chiffre${n === 1 ? "" : "s"} à l'étude · ${amt}`,
     xh_chip_unv: n => `${n} ${n === 1 ? "total" : "totaux"} à confirmer`,
     xh_head_review: n => `${n} chiffre${n === 1 ? "" : "s"} à trancher avant que ces montants soient définitifs.`,
+    xh_head_verify: n => `${n} ${n === 1 ? "total" : "totaux"} à confirmer avant que ces montants soient définitifs.`,
     xh_head_ok: "Les chiffres sont cohérents entre eux.",
     xh_gaps_t: "Ce que ces chiffres ne peuvent pas encore répondre",
     xh_status: { answerable: "répondable", partial: "partiellement répondable",
       unanswerable: "sans réponse avec les données actuelles",
       unmatched: "n'a pas pu être rapproché des données" },
-    xl_rev: (l, va, a, vb, b) => `${l} devrait passer de ${va} (${a}) à ${vb} (${b}).`,
+    xl_rev: (l, up, va, a, vb, b) => `${l} ${up ? "progresse de" : "recule de"} ${va} (${a}) à ${vb} (${b}).`,
     xl_margin: (p, per) => `La marge opérationnelle atteint ${p} d'ici ${per}.`,
     xl_capex: (t, pk) => `Un investissement total de ${t}, avec un pic en ${pk}.`,
     xl_trend: (l, up, p, per) => `${l} est en ${up ? "hausse" : "baisse"} de ${p} en ${per}.`,
     xl_review: (n, amt) => `${n} chiffre${n === 1 ? "" : "s"} déclaré${n === 1 ? "" : "s"} ne concorde${n === 1 ? "" : "nt"} pas avec le reste des montants (${amt} en jeu) — à l'étude.`,
+    xl_unv: n => `${n} total${n === 1 ? "" : "aux"} restent à vérifier manuellement ; tous les autres recoupements sont concluants.`,
     xl_ok: n => `Les ${n} recoupements automatiques de ces chiffres sont concluants.`,
     xs_resolve: n => `Trancher ${n === 1 ? "le chiffre" : `les ${n} chiffres`} à l'étude`,
     xs_resolve_sub: amt => `Des écarts de ${amt} entre les totaux déclarés — votre analyste les tranche dans l'atelier, et cette page se met à jour.`,
@@ -2285,7 +2289,9 @@ function renderAll() {
   attachStory(); attachWorkbench(); attachMapping();
 }
 
-/* ---------- the Executive page (7d/7e): read-only, zero controls -------- */
+/* ---------- the Executive page (7d/7e): read-only over the audited data —
+   no edit/map/decision controls; What-if levers stay interactive (they only
+   explore, they never mutate the stored figures) ---------------------------- */
 function renderExecutivePage() {
   MODE = "exec";
   document.body.dataset.mode = "exec";
@@ -2303,9 +2309,14 @@ function renderExecutivePage() {
   attachLang(); attachPageTabs();
   const tabs = execAvailableTabs();
   if (!tabs.some(([id]) => id === EXEC_TAB)) EXEC_TAB = "overview";
-  const tabBar = tabs.length > 1
+  // the contradiction fig-chip rides the tab row so the trust signal is on
+  // EVERY exec tab, not just the overview body (right-aligned via margin,
+  // not the .grow spacer which is only styled inside .topbar/.card-head)
+  const chip = execFigChip();
+  const tabBar = (tabs.length > 1 || chip)
     ? `<div class="tabs">${tabs.map(([id, label]) => `
-        <button class="tabbtn ${EXEC_TAB === id ? "on" : ""}" data-xtab="${id}">${label}</button>`).join("")}</div>`
+        <button class="tabbtn ${EXEC_TAB === id ? "on" : ""}" data-xtab="${id}">${label}</button>`).join("")}
+        ${chip ? `<span style="margin-left:auto;align-self:center">${chip}</span>` : ""}</div>`
     : "";
   const plan = REPORT.plan;
   // Overview: a workbook with a business model gets the full financial
@@ -2318,13 +2329,13 @@ function renderExecutivePage() {
     inner = renderProduction();
   } else if (EXEC_TAB === "whatif") {
     inner = renderScenario() + renderMC();
+  } else if (REPORT.model && Object.keys(REPORT.model.metrics || {}).length) {
+    inner = renderExecDashboard();
+  } else if (plan && plan.approved) {
+    const smap = storyMetricMap();
+    inner = renderStoryDashExec(smap, plan.approved.filter(id => smap[id]));
   } else {
-    inner = (REPORT.model && Object.keys(REPORT.model.metrics || {}).length)
-      ? renderExecDashboard()
-      : (plan && plan.approved)
-        ? renderStoryDashExec(storyMetricMap(),
-            plan.approved.filter(id => storyMetricMap()[id]))
-        : `<section>${renderExecOverview()}</section>`;
+    inner = `<section>${renderExecOverview()}</section>`;
   }
   $("#content").innerHTML = `${tabBar}${inner}
     <p class="chcap" style="margin-top:34px;border-top:1px solid var(--hairline);padding-top:12px;max-width:64ch">${T.ex_provenance}</p>`;
@@ -2866,9 +2877,8 @@ function workbookFill() {
 }
 
 function renderExecOverview() {
-  const a = AUDIT, m = a.n_mismatched_relations, u = a.n_unverified_relations;
-  const head = m ? T.xh_head_review(m)
-    : (u ? T.xh_head_review(u) : T.xh_head_ok);
+  const a = AUDIT, m = a.n_mismatched_relations;
+  const head = execHead(null, null);
   const vis = visCharts().filter(c => !c.pseudo);
   const primary = vis.filter(c => c.chart.kind === "timeseries")
     .sort((x, y) => y.chart.periods.length - x.chart.periods.length)[0];
@@ -2901,10 +2911,7 @@ function renderExecOverview() {
         <div><b>${s.t}</b><p>${s.s}</p></div></div>`).join("")
     : `<div class="step"><span class="n" style="color:var(--good)">✓</span>
         <div><p>${T.nx_none}</p></div></div>`;
-  return `<div style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap">
-      <span class="grow"></span>${execFigChip()}
-    </div>
-    <h1 class="vhead">${head}</h1>
+  return `<h1 class="vhead">${head}</h1>
     <p class="vlede">${execLede()}</p>
     ${strip}
     <div class="execgrid">
@@ -2956,8 +2963,10 @@ function execLede() {
     if (rev) {
       const fi = rev.values.findIndex(v => v != null);
       const [lv, li] = lastOf(rev.values);
+      // direction is read from the data — never assert growth on a decline
       if (fi >= 0 && li > fi)
         parts.push(T.xl_rev(esc(titleCase(String(rev.label).slice(0, 34))),
+          lv >= rev.values[fi],
           compact(rev.values[fi]), esc(String(m.periods[fi])),
           compact(lv), esc(String(m.periods[li]))));
     }
@@ -2989,13 +2998,30 @@ function execLede() {
     }
   }
   if (!parts.length) {
-    // nothing to narrate but the figures' own reliability
+    // nothing to narrate but the figures' own reliability — and unverified
+    // totals are unconfirmed, NOT contradicted; keep them distinct
     const mN = AUDIT.n_mismatched_relations;
     if (mN) parts.push(T.xl_review(mN, compact(AUDIT.total_abs_delta)));
+    else if (AUDIT.n_unverified_relations)
+      parts.push(T.xl_unv(AUDIT.n_unverified_relations));
     else if (AUDIT.n_verified_relations)
       parts.push(T.xl_ok(AUDIT.n_verified_relations));
   }
   return parts.join(" ");
+}
+
+/* exec voice: one headline policy, shared by all three exec bodies — growth
+   verdict leads; contradictions and unverified totals are distinct and ride
+   the fig-chip, never conflated. growthPct is a signed % or null. */
+function execHead(growthPct, label) {
+  if (growthPct != null)
+    return T.bh_trend(titleCase(String(label).slice(0, 44)),
+      growthPct >= 0, pctFmt(Math.abs(growthPct)));
+  if (AUDIT.n_mismatched_relations)
+    return T.xh_head_review(AUDIT.n_mismatched_relations);
+  if (AUDIT.n_unverified_relations)
+    return T.xh_head_verify(AUDIT.n_unverified_relations);
+  return T.xh_head_ok;
 }
 
 function storyChartExec(c) {
@@ -3763,12 +3789,7 @@ function renderExecDashboard() {
       ga = m.periods[fi]; gb = m.periods[li];
     }
   }
-  const mN = AUDIT.n_mismatched_relations, uN = AUDIT.n_unverified_relations;
-  const head = growth != null
-    ? T.bh_trend(titleCase(String(rev.label).slice(0, 44)),
-        growth >= 0, pctFmt(Math.abs(growth)))
-    : mN ? T.xh_head_review(mN)
-    : (uN ? T.xh_head_review(uN) : T.xh_head_ok);
+  const head = execHead(growth, rev && rev.label);
 
   // ---- KPI strip: the four strongest facts the model holds --------------
   const cells = [];
@@ -3842,7 +3863,7 @@ function renderExecDashboard() {
       label: `${ROLE_LABELS[role] || role} — ${s.label.slice(0, 22)}`,
       values: s.values, color: SERIES_COLORS[k % SERIES_COLORS.length], on: true }));
     if (lines.length) blocks.push(execLines(T.xd_monthly,
-      T.xd_monthly_sub(esc(String(mo.source_sheet || "").trim())), mo.periods, lines));
+      null, mo.periods, lines));   // no source-sheet name on the exec page
   }
   const rows = [];
   for (let i = 0; i < blocks.length; i += 2)   // a lone block keeps its lane
@@ -3876,10 +3897,7 @@ function renderExecDashboard() {
   const kick = brief.role
     ? `${esc(T.st_brief_line(brief.role, cad))} · ${range}` : range;
   return `<section id="sec-story">
-    <div style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap">
-      <span class="kicker">${kick}</span>
-      <span class="grow"></span>${execFigChip()}
-    </div>
+    <span class="kicker">${kick}</span>
     <h1 class="vhead">${esc(head)}</h1>
     <p class="vlede">${execLede()}</p>
     ${cells.length ? `<div class="kstrip">${cells.join("")}</div>` : ""}
@@ -3920,12 +3938,7 @@ function renderStoryDashExec(metricById, approved) {
     }
   }
   // exec voice: the business verdict leads; open reviews ride the fig-chip
-  const mN = AUDIT.n_mismatched_relations, uN = AUDIT.n_unverified_relations;
-  const head = changePct != null
-    ? T.bh_trend(titleCase(String(trend.measure).slice(0, 44)),
-        changePct >= 0, pctFmt(Math.abs(changePct)))
-    : mN ? T.xh_head_review(mN)
-    : (uN ? T.xh_head_review(uN) : T.xh_head_ok);
+  const head = execHead(changePct, trend && trend.measure);
 
   const cells = [];
   if (changePct != null)
@@ -3999,8 +4012,7 @@ function renderStoryDashExec(metricById, approved) {
   return `<section id="sec-story">
     <div style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap">
       <span class="kicker">${esc(T.st_brief_line(brief.role, cad))}</span>
-      <span class="grow"></span>${execFigChip()}
-      ${(SHARE || PAGE === "exec") ? "" : `<button class="iconbtn" id="bf-edit">${T.st_edit}</button>
+      ${(SHARE || PAGE === "exec") ? "" : `<span style="flex:1"></span><button class="iconbtn" id="bf-edit">${T.st_edit}</button>
         <button class="iconbtn" id="plan-reopen">${T.st_replan}</button>`}
     </div>
     <h1 class="vhead">${esc(head)}</h1>
@@ -4275,7 +4287,9 @@ function renderFinancials(execView) {
     label: `${ROLE_LABELS[role] || role} — ${s.label.slice(0, 26)}`,
     values: s.values, color: SERIES_COLORS[k % SERIES_COLORS.length], on: true,
   }));
-  const traj = { pseudo: true, sheet: T.fin_traj(m.source_sheet.trim()), loc: null,
+  // exec page shows no source-sheet name; the analyst keeps the provenance
+  const traj = { pseudo: true, loc: null,
+    sheet: execView ? T.fin_traj_x : T.fin_traj(m.source_sheet.trim()),
     chart: { kind: "timeseries", periods: m.periods, series: [], other: null,
              truncated: false }, lines, i: CHARTS.length, range: null };
   CHARTS.push(traj);
@@ -4377,7 +4391,7 @@ function renderProduction() {
     values: s.values, color: SERIES_COLORS[k % SERIES_COLORS.length], on: true,
   }));
   const volChart = { pseudo: true, sheet: T.pr_chart,
-    loc: T.pr_src(String(mo.source_sheet || "").trim()),
+    loc: PAGE === "exec" ? null : T.pr_src(String(mo.source_sheet || "").trim()),
     chart: { kind: "timeseries", periods: mo.periods, series: [], other: null,
              truncated: false }, lines, i: CHARTS.length, range: null };
   CHARTS.push(volChart);
@@ -5220,7 +5234,9 @@ function svgProfile(c) {
 }
 
 function attachCharts() {
-  $$(".lg").forEach(lg => lg.addEventListener("click", () => {
+  // only legends wired to a real CHARTS entry toggle; bare .lg swatches in
+  // exec-dashboard and scenario legends carry no data-chart and are inert
+  $$(".lg[data-chart]").forEach(lg => lg.addEventListener("click", () => {
     const c = CHARTS[+lg.dataset.chart], s = c.lines[+lg.dataset.k];
     s.on = !s.on;
     $$(`.chart-card[data-chart="${c.i}"]`).forEach(card => {
