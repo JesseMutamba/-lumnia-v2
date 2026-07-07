@@ -96,6 +96,49 @@ def test_snapshot_is_exec_only_no_analyst_leakage():
     assert "Machettes" not in json.dumps(snap, ensure_ascii=False)
 
 
+def _model_book() -> bytes:
+    """A year cross-tab (lights the business model) PLUS a cost line-item
+    sheet whose labels (e.g. 'Machettes') must NOT reach the public snapshot
+    — the published dashboard freezes aggregates, never raw line items."""
+    recap = pd.DataFrame([
+        [None, 2025, 2026, 2027],
+        ["REVENUES BRUTS", 200, 400, 800],
+        ["DEPENSES OPEX", 90, 150, 240],
+        ["HECTARES", 50, 80, 120],
+    ])
+    costs = pd.DataFrame([
+        ["Description", "Qté", "Montant"],
+        ["Machettes", 5, 40],
+        ["Pelles", 4, 32],
+        ["TOTAL", 9, 72],
+    ])
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as xw:
+        recap.to_excel(xw, sheet_name="RECAP", header=False, index=False)
+        costs.to_excel(xw, sheet_name="COSTS", header=False, index=False)
+    return buf.getvalue()
+
+
+def test_snapshot_carries_model_but_not_raw_line_items():
+    r = client.post("/analyze", files={
+        "file": ("montage.xlsx", _model_book() + b"m", "application/octet-stream")})
+    aid = r.json()["id"]
+    _decide_all(aid)
+    token = client.post(f"/analyses/{aid}/publish").json()["token"]
+    snap = client.get(f"/published/{token}").json()
+    # the aggregate business model is frozen so the public page renders it
+    assert snap["model"] is not None
+    assert snap["model"]["metrics"]["revenue"]["values"] == [200, 400, 800]
+    assert snap["model"]["derived"]["margin_pct"]
+    # audit counts ride along for the trust chip / verdict
+    assert "n_mismatched_relations" in snap["audit"]
+    # raw line items are stripped: no breakdowns key, and no item label leaks
+    assert "breakdowns" not in snap["model"]
+    assert "Machettes" not in json.dumps(snap, ensure_ascii=False)
+    # the exec-only guarantee still holds
+    assert not set(_walk_keys(snap)) & ANALYST_ONLY_KEYS
+
+
 def test_old_share_endpoints_are_gone():
     a = _an(b"c")
     assert client.post(f"/analyses/{a['id']}/share").status_code == 404

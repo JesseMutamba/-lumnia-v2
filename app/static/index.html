@@ -2006,62 +2006,48 @@ async function select(id) {
 
 /* ---------- the public published page: frozen exec snapshot only -------- */
 function renderPublishedPage(snap) {
+  // The public link renders the SAME business-voice dashboard as the in-app
+  // exec preview: hydrate the globals the exec renderers read from the frozen
+  // snapshot, then delegate to renderExecDashboard / renderExecOverview.
+  // Everything is aggregate (model series, derived indicators, audit counts) —
+  // the snapshot carries no sheets, findings, or line-item breakdowns.
   MODE = "exec";
   document.body.dataset.mode = "exec";
-  const v = snap.verdict || {};
-  const head = v.mismatched ? T.vh_bad(v.mismatched)
-    : (v.unverified ? T.vh_review(v.unverified) : T.vh_ok);
-  const k = snap.kpis || {};
-  const date = (snap.published_at || "").slice(0, 10);
-  $("#topbar").innerHTML = `<div class="topbar exec">
-    <span class="tkick">${T.pub_shared} · ${T.pub_line(snap.version, date)} · ${esc(snap.filename || "")}</span>
-    <span class="grow"></span>${langToggle()}
-    <span class="ropill">${T.ex_readonly}</span></div>`;
-  attachLang();
-
-  const cells = [];
-  if (k.rows != null) cells.push(`<div class="kcell"><div class="kl">${T.h_rows}</div>
-    <div class="kv">${compact(k.rows)}</div><div class="ks">${T.h_tables(k.tables || 0)}</div></div>`);
-  if (k.fill_pct != null) cells.push(`<div class="kcell"><div class="kl">${T.h_complete}</div>
-    <div class="kv">${k.fill_pct}%</div><div class="ks">${T.h_filled}</div></div>`);
-  if (k.checks_total) cells.push(`<div class="kcell"><div class="kl">${T.t_verified}</div>
-    <div class="kv">${k.checks_ok}<span class="den">/${k.checks_total}</span></div>
-    <div class="ks">${T.k_recon}</div></div>`);
-  if (v.mismatched) cells.push(`<div class="kcell crit"><div class="kl">${T.k_stake}</div>
-    <div class="kv">${compact(k.at_stake ?? 0)}</div>
-    <div class="ks">${T.k_stake_sub(v.mismatched)}</div></div>`);
-
-  let chartHtml = "";
-  if (snap.chart && snap.chart.periods && snap.chart.periods.length) {
-    const c = { pseudo: true, sheet: snap.chart.sheet || snap.filename,
+  document.body.classList.add("home");
+  REPORT = { filename: snap.filename, n_sheets: snap.n_sheets,
+             model: snap.model || null, sheets: [], plan: null, brief: null };
+  const ad = snap.audit || {};
+  AUDIT = { n_mismatched_relations: ad.n_mismatched_relations || 0,
+            n_unverified_relations: ad.n_unverified_relations || 0,
+            n_verified_relations: ad.n_verified_relations || 0,
+            total_abs_delta: ad.total_abs_delta || 0,
+            findings: [], unverified: [] };
+  // seed CHARTS: the model dashboard pushes its own pseudo charts during
+  // render; the model-less overview needs the frozen story chart to draw
+  CHARTS = [];
+  if (snap.chart && (snap.chart.periods || []).length) {
+    CHARTS = [{ pseudo: true, sheet: snap.chart.sheet || snap.filename,
       chart: { kind: "timeseries", periods: snap.chart.periods, series: [] },
       lines: (snap.chart.series || []).map((s, i) => ({
         label: s.label || "", values: s.values || [],
         color: i < 2 ? SERIES_COLORS[i] : OTHER_COLOR, on: true })),
-      i: 0, range: null };
-    CHARTS = [c];
-    chartHtml = storyChartExec(c);
+      i: 0, range: null }];
   }
+  SHEET_IDX = {};
 
-  const steps = (snap.steps || []).map(s => s.kind === "confirm"
-    ? { t: T.nx_confirm(esc(s.sheet)),
-        s: T.nx_confirm_sub(s.n_mismatched, s.n_checked, compact(s.delta)) }
-    : { t: T.nx_eyeball(s.count), s: T.nx_eyeball_sub });
-  const stepRows = steps.length
-    ? steps.map((s, i) => `<div class="step"><span class="n">${i + 1}</span>
-        <div><b>${s.t}</b><p>${s.s}</p></div></div>`).join("")
-    : `<div class="step"><span class="n" style="color:var(--good)">✓</span>
-        <div><p>${T.nx_none}</p></div></div>`;
+  const date = (snap.published_at || "").slice(0, 10);
+  $("#topbar").innerHTML = `<div class="topbar exec">
+    <span class="tkick">${T.pub_shared} · ${T.pub_line(snap.version, date)}</span>
+    <span class="grow"></span>${langToggle()}
+    ${execFigChip()}<span class="ropill">${T.ex_readonly}</span></div>`;
+  attachLang();
 
-  $("#content").innerHTML = `<section>
-    <h1 class="vhead">${esc(head)}</h1>
-    <p class="vlede">${T.meta_line(snap.n_sheets || 0, compact(k.rows || 0))} · ${T.pub_frozen}</p>
-    ${cells.length ? `<div class="kstrip">${cells.join("")}</div>` : ""}
-    <div class="execgrid">
-      <div>${chartHtml}</div>
-      <div><span class="kicker">${T.nx_kicker}</span>${stepRows}</div>
-    </div>
-  </section>`;
+  const inner = (REPORT.model && Object.keys(REPORT.model.metrics || {}).length)
+    ? renderExecDashboard()
+    : `<section>${renderExecOverview()}</section>`;
+  $("#content").innerHTML = `${inner}
+    <p class="chcap" style="margin-top:34px;border-top:1px solid var(--hairline);padding-top:12px;max-width:64ch">${T.pub_frozen} · ${T.ex_provenance}</p>`;
+  attachCharts();
 }
 
 /* ---------- Home: routed by content — first-run (9b) or Command Center (9a) */
