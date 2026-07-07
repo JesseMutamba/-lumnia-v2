@@ -61,6 +61,12 @@ def test_model_derives_margin_and_unit_costs():
     assert m["derived"]["opex_per_volume"] == [6, 4.5, 3.75, 3]
 
 
+def test_model_derives_opex_per_area():
+    m = _analyze(_year_book())["model"]
+    # OPEX per managed hectare — cost intensity of the land under management
+    assert m["derived"]["opex_per_area"] == [1.2, 1.125, 1.25, 1.5]
+
+
 def test_model_breakdown_excludes_totals_row():
     m = _analyze(_year_book())["model"]
     bd = next(b for b in m["breakdowns"] if b["sheet"] == "COSTS")
