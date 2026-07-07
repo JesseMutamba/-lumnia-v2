@@ -68,6 +68,23 @@ def test_monthly_block_is_none_without_date_matrices():
     assert rep["model"].get("monthly") is None
 
 
+def test_subtotal_line_carries_a_role_only_when_alone():
+    """'SOUS-TOTAL CAPEX' with unmatched component rows IS the capex
+    series; a TOTAL row beside real candidates stays excluded."""
+    recap = pd.DataFrame([
+        ["RECAP", None, None, None, None],
+        [None, 2025, 2026, 2027, 2028],
+        ["REVENUES BRUTS", 100, 200, 400, 800],
+        ["SOUS-TOTAL CAPEX", 90, 60, 40, 20],          # only capex-ish label
+        ["DEVELOPPEMENT NOUVELLES PLANTATIONS", 70, 40, 30, 15],
+        ["PRODUCTION FFB", 10, 20, 40, 80],
+        ["TOTAL PRODUCTION", 12, 24, 48, 96],          # aggregate: excluded
+    ])
+    m = _analyze(_book(("RECAP", recap)))["model"]
+    assert m["metrics"]["capex"]["label"] == "SOUS-TOTAL CAPEX"
+    assert m["metrics"]["volume"]["label"] == "PRODUCTION FFB"
+
+
 def test_projections_and_actuals_coexist():
     recap = pd.DataFrame([
         ["PROJECTIONS", None, None, None, None],
