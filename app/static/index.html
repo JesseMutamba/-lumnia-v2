@@ -1840,6 +1840,7 @@ function setStatus(msg, isErr) { statusEl.textContent = msg; statusEl.className 
 let WORKBOOKS = [];          // /analyses rollup rows, newest first
 let NEXT_PAGE = "analyst";   // which page a workbook opens on (analyst|exec)
 let EXEC_TAB = "overview";   // which module the executive page shows
+let PUB_CHART = null;        // the published page's one frozen story chart
 
 async function loadWorkbooks() {
   const items = await (await fetch("/analyses")).json();
@@ -2011,7 +2012,7 @@ function renderPublishedPage(snap) {
   // snapshot, then delegate to renderExecDashboard / renderExecOverview.
   // Everything is aggregate (model series, derived indicators, audit counts) —
   // the snapshot carries no sheets, findings, or line-item breakdowns.
-  MODE = "exec";
+  MODE = "exec"; PAGE = "exec";   // exec-page suppressions apply (no sheet names)
   document.body.dataset.mode = "exec";
   document.body.classList.add("home");
   REPORT = { filename: snap.filename, n_sheets: snap.n_sheets,
@@ -2022,32 +2023,25 @@ function renderPublishedPage(snap) {
             n_verified_relations: ad.n_verified_relations || 0,
             total_abs_delta: ad.total_abs_delta || 0,
             findings: [], unverified: [] };
-  // seed CHARTS: the model dashboard pushes its own pseudo charts during
-  // render; the model-less overview needs the frozen story chart to draw
-  CHARTS = [];
-  if (snap.chart && (snap.chart.periods || []).length) {
-    CHARTS = [{ pseudo: true, sheet: snap.chart.sheet || snap.filename,
-      chart: { kind: "timeseries", periods: snap.chart.periods, series: [] },
-      lines: (snap.chart.series || []).map((s, i) => ({
-        label: s.label || "", values: s.values || [],
-        color: i < 2 ? SERIES_COLORS[i] : OTHER_COLOR, on: true })),
-      i: 0, range: null }];
-  }
   SHEET_IDX = {};
+  // the model dashboard draws its own pseudo charts; a model-less file needs
+  // the frozen story chart — renderExecBody re-seeds it into CHARTS each render
+  PUB_CHART = (snap.chart && (snap.chart.periods || []).length)
+    ? { pseudo: true, sheet: "",
+        chart: { kind: "timeseries", periods: snap.chart.periods, series: [] },
+        lines: (snap.chart.series || []).map((s, i) => ({
+          label: s.label || "", values: s.values || [],
+          color: i < 2 ? SERIES_COLORS[i] : OTHER_COLOR, on: true })),
+        i: 0, range: null }
+    : null;
 
   const date = (snap.published_at || "").slice(0, 10);
   $("#topbar").innerHTML = `<div class="topbar exec">
     <span class="tkick">${T.pub_shared} · ${T.pub_line(snap.version, date)}</span>
     <span class="grow"></span>${langToggle()}
-    ${execFigChip()}<span class="ropill">${T.ex_readonly}</span></div>`;
+    <span class="ropill">${T.ex_readonly}</span></div>`;
   attachLang();
-
-  const inner = (REPORT.model && Object.keys(REPORT.model.metrics || {}).length)
-    ? renderExecDashboard()
-    : `<section>${renderExecOverview()}</section>`;
-  $("#content").innerHTML = `${inner}
-    <p class="chcap" style="margin-top:34px;border-top:1px solid var(--hairline);padding-top:12px;max-width:64ch">${T.pub_frozen} · ${T.ex_provenance}</p>`;
-  attachCharts();
+  renderExecBody(`${T.pub_frozen} · ${T.ex_provenance}`);
 }
 
 /* ---------- Home: routed by content — first-run (9b) or Command Center (9a) */
@@ -2293,6 +2287,19 @@ function renderExecutivePage() {
     <span class="ropill">${T.ex_readonly}</span>
   </div>`;
   attachLang(); attachPageTabs();
+  renderExecBody(T.ex_provenance);
+}
+
+/* The exec dashboard body + tab suite — shared by the in-app preview and the
+   public /published page so the two can never drift. Reads REPORT.model /
+   AUDIT (the published page hydrates these from the frozen snapshot); a tab
+   click re-renders ONLY this body, never the whole app. */
+function renderExecBody(footer) {
+  // rebuild CHARTS from a clean base each render (pseudo charts are pushed
+  // during render and must not accumulate across tab switches); the published
+  // page seeds its one frozen story chart via PUB_CHART
+  CHARTS = collectCharts(REPORT);
+  if (PUB_CHART) { PUB_CHART.i = CHARTS.length; CHARTS.push(PUB_CHART); }
   const tabs = execAvailableTabs();
   if (!tabs.some(([id]) => id === EXEC_TAB)) EXEC_TAB = "overview";
   // the contradiction fig-chip rides the tab row so the trust signal is on
@@ -2324,10 +2331,11 @@ function renderExecutivePage() {
     inner = `<section>${renderExecOverview()}</section>`;
   }
   $("#content").innerHTML = `${tabBar}${inner}
-    <p class="chcap" style="margin-top:34px;border-top:1px solid var(--hairline);padding-top:12px;max-width:64ch">${T.ex_provenance}</p>`;
+    <p class="chcap" style="margin-top:34px;border-top:1px solid var(--hairline);padding-top:12px;max-width:64ch">${footer}</p>`;
   $$("#content [data-xtab]").forEach(b => b.addEventListener("click", () => {
     if (b.dataset.xtab !== EXEC_TAB) {
-      EXEC_TAB = b.dataset.xtab; rerender(renderAll); window.scrollTo(0, 0);
+      EXEC_TAB = b.dataset.xtab; rerender(() => renderExecBody(footer));
+      window.scrollTo(0, 0);
     }
   }));
   attachFigChip(); attachCharts(); attachScenario(); attachMC();
