@@ -1122,6 +1122,15 @@ const STR = {
     mp_chip_inherited: f => `inherited from ${f}`,
     mp_verified: "verified in data", mp_unverified: "no witness — unverified",
     mp_err: "Mapping refused",
+    xd_rev: "Projected revenue", xd_over: (a, b) => `${a} → ${b}`,
+    xd_growth: p => `+${p} over the period`,
+    xd_capex: "Total investment", xd_capex_peak: p => `peak year ${p}`,
+    xd_opex: p => `Operating costs · ${p}`,
+    xd_margin_t: "Operating margin %", xd_margin_sub: "revenue − costs, by period",
+    xd_ramp: l => `Ramp-up — ${l}`, xd_ramp_sub: "per period",
+    xd_cvr: "Investment vs revenue", xd_cvr_sub: "both series, same axis",
+    xd_peak: l => `Peak ${l}`,
+    xd_monthly: "Monthly actuals", xd_monthly_sub: s => `from ${s}`,
     fin_budget_at: p => `vs budget · ${p}`, fin_over: "over", fin_under: "under",
     fin_table: "Cost & production — full table",
     fin_table_sub: "every detected series and derived indicator, by period",
@@ -1475,6 +1484,15 @@ const STR = {
     mp_chip_inherited: f => `hérité de ${f}`,
     mp_verified: "vérifié dans les données", mp_unverified: "sans témoin — non vérifié",
     mp_err: "Correspondance refusée",
+    xd_rev: "Revenus projetés", xd_over: (a, b) => `${a} → ${b}`,
+    xd_growth: p => `+${p} sur la période`,
+    xd_capex: "Investissement total", xd_capex_peak: p => `pic en ${p}`,
+    xd_opex: p => `Charges · ${p}`,
+    xd_margin_t: "Marge opérationnelle %", xd_margin_sub: "revenus − charges, par période",
+    xd_ramp: l => `Montée en puissance — ${l}`, xd_ramp_sub: "par période",
+    xd_cvr: "Investissement vs revenus", xd_cvr_sub: "les deux séries, même axe",
+    xd_peak: l => `Pic ${l}`,
+    xd_monthly: "Réalisations mensuelles", xd_monthly_sub: s => `depuis ${s}`,
     fin_budget_at: p => `vs budget · ${p}`, fin_over: "au-dessus", fin_under: "en dessous",
     fin_table: "Coûts & production — tableau complet",
     fin_table_sub: "chaque série détectée et indicateur dérivé, par période",
@@ -2229,10 +2247,14 @@ function renderExecutivePage() {
   </div>`;
   attachLang(); attachPageTabs();
   const plan = REPORT.plan;
-  const inner = (plan && plan.approved)
-    ? renderStoryDashExec(storyMetricMap(),
-        plan.approved.filter(id => storyMetricMap()[id]))
-    : `<section>${renderExecOverview()}</section>`;
+  // a workbook with a business model gets the full financial dashboard;
+  // everything else keeps the editorial brief view / audit overview
+  const inner = (REPORT.model && Object.keys(REPORT.model.metrics || {}).length)
+    ? renderExecDashboard()
+    : (plan && plan.approved)
+      ? renderStoryDashExec(storyMetricMap(),
+          plan.approved.filter(id => storyMetricMap()[id]))
+      : `<section>${renderExecOverview()}</section>`;
   $("#content").innerHTML = `${inner}
     <p class="chcap" style="margin-top:34px;border-top:1px solid var(--hairline);padding-top:12px;max-width:64ch">${T.ex_provenance}</p>`;
 }
@@ -3524,6 +3546,172 @@ function trendExecChart(m) {
     i: CHARTS.length, range: null };
   CHARTS.push(c);
   return storyChartExec(c);
+}
+
+/* ---------- the rebuilt Executive page: the model IS the dashboard ------ */
+function execBlock(title, sub, inner, cap) {
+  return `<div class="storyblock">
+    <div class="card-head"><span class="stt">${title}</span>
+      ${sub ? `<span class="cs">${sub}</span>` : ""}</div>
+    <div class="plot">${inner}</div>
+    ${cap ? `<p class="chcap" style="max-width:54ch">${cap}</p>` : ""}
+  </div>`;
+}
+function execBars(title, sub, x, y, cap) {
+  const c = { pseudo: true, i: CHARTS.length, range: null,
+    chart: { kind: "profile", x, y: y.map(v => v ?? 0) } };
+  CHARTS.push(c);
+  return execBlock(title, sub, svgProfile(c), cap);
+}
+function execLines(title, sub, periods, lines, cap) {
+  const c = { pseudo: true, i: CHARTS.length, range: null, lines,
+    chart: { kind: "timeseries", periods, series: [], other: null, truncated: false } };
+  CHARTS.push(c);
+  const legend = lines.length > 1 ? `<div class="legend">${lines.map(l =>
+    `<span class="lg"><span class="sw" style="background:${l.color}"></span>${esc(l.label.slice(0, 28))}</span>`).join("")}</div>` : "";
+  return execBlock(title, sub, svgTimeseries(c) + legend, cap);
+}
+
+function renderExecDashboard() {
+  const m = REPORT.model, met = m.metrics, D = m.derived;
+  const plan = REPORT.plan, brief = REPORT.brief || {};
+  const sum = a => a.reduce((t, v) => t + (v ?? 0), 0);
+  const lastOf = a => { for (let i = a.length - 1; i >= 0; i--)
+    if (a[i] != null) return [a[i], i]; return [null, -1]; };
+
+  // ---- headline: unfixed contradictions outrank growth ------------------
+  const rev = met.revenue;
+  let growth = null, ga = null, gb = null;
+  if (rev) {
+    const fi = rev.values.findIndex(v => v != null);
+    const [lv, li] = lastOf(rev.values);
+    if (fi >= 0 && li > fi && rev.values[fi]) {
+      growth = (lv / rev.values[fi] - 1) * 100;
+      ga = m.periods[fi]; gb = m.periods[li];
+    }
+  }
+  const mN = AUDIT.n_mismatched_relations, uN = AUDIT.n_unverified_relations;
+  const head = mN ? T.vh_bad(mN)
+    : growth != null
+      ? T.bh_trend(titleCase(String(rev.label).slice(0, 44)),
+          growth >= 0, pctFmt(Math.abs(growth)))
+      : (uN ? T.vh_review(uN) : T.vh_ok);
+
+  // ---- KPI strip: the four strongest facts the model holds --------------
+  const cells = [];
+  if (rev) cells.push(`<div class="kcell"><div class="kl">${T.xd_rev}</div>
+    <div class="kv">${compact(sum(rev.values))}</div>
+    <div class="ks">${growth != null
+      ? `${T.xd_growth(pctFmt(Math.abs(growth)))} · ${T.xd_over(esc(String(ga)), esc(String(gb)))}`
+      : esc(rev.label.slice(0, 30))}</div></div>`);
+  const mp = D.margin_pct && lastOf(D.margin_pct);
+  if (mp && mp[0] != null)
+    cells.push(`<div class="kcell"><div class="kl">${T.der_margin_pct}</div>
+      <div class="kv">${mp[0].toFixed(0)}%</div>
+      <div class="ks">${esc(String(m.periods[mp[1]]))}</div></div>`);
+  if (met.capex) {
+    const v = met.capex.values;
+    const pk = v.indexOf(Math.max(...v.filter(x => x != null)));
+    cells.push(`<div class="kcell"><div class="kl">${T.xd_capex}</div>
+      <div class="kv">${compact(sum(v))}</div>
+      <div class="ks">${pk >= 0 ? T.xd_capex_peak(esc(String(m.periods[pk]))) : ""}</div></div>`);
+  }
+  const cuOut = D.opex_per_volume_out;
+  const cu = (cuOut || D.opex_per_volume) && lastOf(cuOut || D.opex_per_volume);
+  if (cu && cu[0] != null) {
+    const cuVol = cuOut ? met.volume_secondary : met.volume;
+    cells.push(`<div class="kcell"><div class="kl">${cuOut ? T.der_opex_per_volume_out : T.der_opex_per_volume}</div>
+      <div class="kv">${compact(cu[0])}</div>
+      <div class="ks">${esc(String(m.periods[cu[1]]))} · ${esc(cuVol.label.slice(0, 22))}</div></div>`);
+  } else if (met.opex) {
+    const [ov, oi] = lastOf(met.opex.values);
+    if (ov != null) cells.push(`<div class="kcell"><div class="kl">${T.xd_opex(esc(String(m.periods[oi])))}</div>
+      <div class="kv">${compact(ov)}</div>
+      <div class="ks">${esc(met.opex.label.slice(0, 30))}</div></div>`);
+  }
+  const bv = D.opex_budget_variance_pct && lastOf(D.opex_budget_variance_pct);
+  if (bv && bv[0] != null)
+    cells.push(`<div class="kcell ${bv[0] > 0 ? "crit" : ""}"><div class="kl">${T.der_opex_budget_variance_pct}</div>
+      <div class="kv">${bv[0] >= 0 ? "+" : "−"}${Math.abs(bv[0]).toFixed(1)}%</div>
+      <div class="ks">${esc(String(m.periods[bv[1]]))} · ${bv[0] > 0 ? T.fin_over : T.fin_under}</div></div>`);
+  if (met.area && cells.length < 4) {
+    const v = met.area.values;
+    const pk = v.indexOf(Math.max(...v.filter(x => x != null)));
+    if (pk >= 0) cells.push(`<div class="kcell"><div class="kl">${T.xd_peak(esc(met.area.label.slice(0, 20)))}</div>
+      <div class="kv">${esc(String(m.periods[pk]))}</div>
+      <div class="ks">${compact(v[pk])}</div></div>`);
+  }
+  cells.length = Math.min(cells.length, 4);
+
+  // ---- charts: everything the model can draw, nothing it can't ----------
+  const blocks = [];
+  if (rev) blocks.push(trendExecChart({ measure: rev.label,
+    rows: m.periods.map((p, i) => ({ period: p, value: rev.values[i] })) }));
+  const ramp = met.area || (rev ? met.volume : null);
+  if (ramp) blocks.push(execBars(esc(titleCase(T.xd_ramp(ramp.label.slice(0, 26)))),
+    T.xd_ramp_sub, m.periods, ramp.values));
+  if (met.capex && rev) blocks.push(execLines(T.xd_cvr, T.xd_cvr_sub, m.periods, [
+    { label: `${ROLE_LABELS.revenue} — ${rev.label.slice(0, 22)}`,
+      values: rev.values, color: SERIES_COLORS[0], on: true },
+    { label: `${ROLE_LABELS.capex} — ${met.capex.label.slice(0, 22)}`,
+      values: met.capex.values, color: SERIES_COLORS[2], on: true },
+  ]));
+  if (D.margin_pct && D.margin_pct.some(v => v != null))
+    blocks.push(execBars(T.xd_margin_t, T.xd_margin_sub, m.periods,
+      D.margin_pct.map(v => v != null ? +v.toFixed(1) : null)));
+  if (!rev && met.volume)          // volume-only books still get their story
+    blocks.push(execLines(esc(titleCase(met.volume.label.slice(0, 30))), null,
+      m.periods, [{ label: met.volume.label, values: met.volume.values,
+                    color: SERIES_COLORS[0], on: true }]));
+  if (m.monthly) {
+    const mo = m.monthly;
+    const lines = Object.entries(mo.metrics).map(([role, s], k) => ({
+      label: `${ROLE_LABELS[role] || role} — ${s.label.slice(0, 22)}`,
+      values: s.values, color: SERIES_COLORS[k % SERIES_COLORS.length], on: true }));
+    if (lines.length) blocks.push(execLines(T.xd_monthly,
+      T.xd_monthly_sub(esc(String(mo.source_sheet || "").trim())), mo.periods, lines));
+  }
+  const rows = [];
+  for (let i = 0; i < blocks.length; i += 2)   // a lone block keeps its lane
+    rows.push(`<div class="grid2" style="margin-top:${i ? 26 : 0}px">${blocks[i]}${blocks[i + 1] || "<div></div>"}</div>`);
+
+  // ---- next steps + honest gaps, from the audit and the brief ------------
+  let recs = [];
+  if (plan && plan.approved) {
+    const metricById = storyMetricMap();
+    recs = storyRecs(metricById, plan.approved.filter(id => metricById[id]))
+      .map(r => ({ t: r.text, s: r.because }));
+  }
+  if (!recs.length) recs = execSteps().map(s => ({ t: s.t, s: s.s }));
+  const stepRows = recs.length
+    ? recs.map((r, i) => `<div class="step"><span class="n">${i + 1}</span>
+        <div><b>${esc(r.t)}</b><p>${esc(r.s)}</p></div></div>`).join("")
+    : `<div class="step"><span class="n" style="color:var(--good)">✓</span>
+        <div><p>${T.nx_none}</p></div></div>`;
+  const misses = plan && plan.approved
+    ? plan.questions.filter(q => q.status === "unanswerable"
+        || q.status === "unmatched" || (q.status === "partial" && q.missing.length))
+    : [];
+  const gaps = misses.length ? `<div style="margin-top:24px"><span class="kicker">${T.st_gaps_t}</span>
+      ${misses.map(q => `<p class="chcap" style="max-width:46ch"><b>${esc(q.question)}</b> —
+        ${T.st_status[q.status]}${q.missing[0] ? ` · ${T.st_needs(esc(q.missing[0].requires))}` : ""}</p>`).join("")}</div>` : "";
+
+  const cad = T.st_cadences[brief.cadence]
+    ? T.st_cadences[brief.cadence].toLowerCase() : brief.cadence;
+  const kick = brief.role
+    ? `${esc(T.st_brief_line(brief.role, cad))} · ${esc(String(m.source_sheet || "").trim())}`
+    : esc(String(m.source_sheet || "").trim());
+  return `<section id="sec-story">
+    <span class="kicker">${kick}</span>
+    <h1 class="vhead">${esc(head)}</h1>
+    <p class="vlede">${execSummary()}</p>
+    ${cells.length ? `<div class="kstrip">${cells.join("")}</div>` : ""}
+    ${rows.join("")}
+    <div class="execgrid" style="margin-top:30px">
+      <div>${gaps}</div>
+      <div><span class="kicker">${T.nx_kicker}</span>${stepRows}</div>
+    </div>
+  </section>`;
 }
 
 function renderStoryDashExec(metricById, approved) {

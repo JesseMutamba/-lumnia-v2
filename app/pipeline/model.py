@@ -93,20 +93,24 @@ def _tag_roles(chart: dict) -> Dict[str, dict]:
     matches: Dict[str, List[dict]] = {}
     for s in chart["series_all"]:
         label = s["label"]
-        if DERIVED_SERIES_RX.search(str(label)):
-            continue
         for role, rx in ROLE_PATTERNS:
             if rx.search(label):
                 total = sum(abs(v) for v in s["values"] if v is not None)
                 matches.setdefault(role, []).append(
-                    {"label": label, "values": s["values"], "_total": total})
+                    {"label": label, "values": s["values"], "_total": total,
+                     "_derived": bool(DERIVED_SERIES_RX.search(str(label)))})
                 break
     roles: Dict[str, dict] = {}
     for role, cands in matches.items():
-        cands.sort(key=lambda c: -c["_total"])
-        roles[role] = cands[0]
-        if role == "volume" and len(cands) > 1 and cands[1]["_total"] > 0:
-            roles["volume_secondary"] = cands[1]
+        # a TOTAL/CUMUL line only carries a role when no clean series
+        # claims it — "SOUS-TOTAL CAPEX" as the lone capex line is the
+        # honest total; "TOTAL PRODUCTION" beside real production rows
+        # is an aggregate that would double-count
+        clean = [c for c in cands if not c["_derived"]]
+        pick = sorted(clean or cands, key=lambda c: -c["_total"])
+        roles[role] = pick[0]
+        if role == "volume" and len(pick) > 1 and pick[1]["_total"] > 0:
+            roles["volume_secondary"] = pick[1]
     return roles
 
 
