@@ -3530,27 +3530,37 @@ function renderStoryDashExec(metricById, approved) {
   const plan = REPORT.plan, brief = REPORT.brief || {};
   const sel = approved.map(k => metricById[k]).filter(Boolean);
   const first = id => sel.find(m => m.id === id);
-  const trend = first("trend"), mv = first("movers");
+  const mv = first("movers");
   const by = sel.find(m => m.id && m.id.startsWith("by_") && m.rows && m.rows.length >= 2);
 
-  // the headline is the trend, spoken as a sentence
-  let head = "", changePct = null, pa = null, pb = null;
+  // no trend in the approved plan? the model's financial trajectory (when
+  // the workbook has one) carries the page — the brief may anchor on a
+  // line-item sheet while the RECAP projections hold the real story
+  let trend = first("trend");
+  if (!trend && REPORT.model && (REPORT.model.periods || []).length >= 3) {
+    const met = REPORT.model.metrics;
+    const src = met.revenue || met.volume;
+    if (src) trend = { id: "trend", measure: src.label, grain: "year",
+      rows: REPORT.model.periods.map((p, i) =>
+        ({ period: p, value: src.values[i] })) };
+  }
+
+  let changePct = null, pa = null, pb = null;
   if (trend && trend.rows.length >= 2) {
     const a = trend.rows.find(r => r.value != null);
     const b = [...trend.rows].reverse().find(r => r.value != null);
     if (a && b && a !== b && a.value) {
       changePct = (b.value / a.value - 1) * 100;
       pa = a.period; pb = b.period;
-      head = T.bh_trend(titleCase(String(trend.measure).slice(0, 44)),
-        changePct >= 0, pctFmt(Math.abs(changePct)));
     }
   }
-  if (!head) {
-    // no trend to speak about: the audit verdict is the honest headline —
-    // never promote a takeaway fragment to a sentence it can't carry
-    const mN = AUDIT.n_mismatched_relations, uN = AUDIT.n_unverified_relations;
-    head = mN ? T.vh_bad(mN) : (uN ? T.vh_review(uN) : T.vh_ok);
-  }
+  // unfixed contradictions outrank growth: nothing headlines past the audit
+  const mN = AUDIT.n_mismatched_relations, uN = AUDIT.n_unverified_relations;
+  const head = mN ? T.vh_bad(mN)
+    : changePct != null
+      ? T.bh_trend(titleCase(String(trend.measure).slice(0, 44)),
+          changePct >= 0, pctFmt(Math.abs(changePct)))
+      : (uN ? T.vh_review(uN) : T.vh_ok);
 
   const cells = [];
   if (changePct != null)
