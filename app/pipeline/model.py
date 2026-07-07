@@ -51,6 +51,11 @@ ROLE_PATTERNS: List[tuple] = [
 
 MAX_BREAKDOWNS = 6
 
+# TOTAL/CUMUL series are aggregates of the others — never a role series
+# (same rule as build_matrix_semantics, which imports its copy from here)
+DERIVED_SERIES_RX = re.compile(r"total|cumul|sous.?tot|grand.?tot",
+                               re.IGNORECASE)
+
 
 def _tidies(report_sheets) -> List[tuple]:
     """(sheet_name, panel_label, tidy_dict) for every extracted table."""
@@ -88,6 +93,8 @@ def _tag_roles(chart: dict) -> Dict[str, dict]:
     matches: Dict[str, List[dict]] = {}
     for s in chart["series_all"]:
         label = s["label"]
+        if DERIVED_SERIES_RX.search(str(label)):
+            continue
         for role, rx in ROLE_PATTERNS:
             if rx.search(label):
                 total = sum(abs(v) for v in s["values"] if v is not None)
@@ -145,11 +152,44 @@ def derive_metrics(metrics: Dict[str, dict]) -> Dict[str, Any]:
     return derived
 
 
+def _monthly_block(report_sheets) -> Optional[Dict[str, Any]]:
+    """Actuals: the date-axis chart where the most roles tag — volumes in,
+    volumes out, per period — with the same derived arithmetic (the monthly
+    conversion ratio IS the extraction rate). None when nothing tags."""
+    best = None
+    for name, _, tidy in _tidies(report_sheets):
+        ch = (tidy.get("summary") or {}).get("chart")
+        if not (ch and ch.get("kind") == "timeseries"
+                and ch.get("axis") != "year" and ch.get("series_all")):
+            continue
+        roles = _tag_roles(ch)
+        if roles and (best is None or len(roles) > len(best[2])):
+            best = (name, ch, roles)
+    if best is None:
+        return None
+    name, ch, roles = best
+    metrics = {
+        role: {"label": s["label"], "sheet": name, "values": s["values"]}
+        for role, s in roles.items()
+    }
+    return {"periods": [str(p) for p in ch["periods"]],
+            "source_sheet": name,
+            "metrics": metrics,
+            "derived": derive_metrics(metrics)}
+
+
 def build_model(report_sheets) -> Optional[Dict[str, Any]]:
     """Assemble the business model, or ``None`` when nothing role-tags."""
     charts = _year_charts(report_sheets)
+    monthly = _monthly_block(report_sheets)
     if not charts:
-        return None
+        if monthly is None:
+            return None
+        # actuals with no projections: the Production view still deserves
+        # a model — there is just nothing to simulate
+        return {"periods": [], "source_sheet": None, "metrics": {},
+                "derived": {}, "breakdowns": [], "scenario_ready": False,
+                "monthly": monthly}
 
     # spine = the year chart where the most roles were found
     best_sheet, best_roles, best_chart = None, {}, None
@@ -197,4 +237,5 @@ def build_model(report_sheets) -> Optional[Dict[str, Any]]:
         # scenario/simulation math needs a revenue line; cost levers appear
         # only when a cost series was actually found
         "scenario_ready": bool(metrics.get("revenue")),
+        "monthly": monthly,
     }
