@@ -694,6 +694,76 @@ def _drop_dashboard_deliverable(con: sqlite3.Connection,
                 "AND source_ref = ?", (analysis_id,))
 
 
+def _files_dir() -> Path:
+    """Deliverable file bytes live on the app's disk, next to the DB.
+    Keeping bytes off the app server is a Series B problem."""
+    return Path(os.environ.get("LUMNIA_FILES", "data/files"))
+
+
+def add_file_deliverable(client_name: str, filename: str, content: bytes,
+                         group: Optional[str] = None,
+                         title: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Store a turned-in file (.xlsx/.pdf/...) as a kind='file' deliverable.
+    Re-delivering the same title for the same client bumps the version on
+    the SAME row and replaces the stored bytes — one deliverable, n versions,
+    exactly like a republished dashboard."""
+    c = ensure_client(client_name)
+    if c is None:
+        return None
+    safe = os.path.basename(filename or "").replace("..", "_").strip()
+    if not safe:
+        return None
+    title = (title or "").strip() or safe.rsplit(".", 1)[0]
+    group = (group or "").strip() or None
+    now = _now()
+
+    with _connect() as con:
+        row = con.execute(
+            "SELECT id, version, source_ref FROM deliverables "
+            "WHERE client_id = ? AND kind = 'file' AND title = ?",
+            (c["id"], title)).fetchone()
+        did = row["id"] if row else uuid.uuid4().hex[:12]
+        version = (row["version"] + 1) if row else 1
+        rel = f"{c['id']}/{did}/v{version}-{safe}"
+        path = _files_dir() / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+        if row:
+            con.execute(
+                "UPDATE deliverables SET version = ?, published_at = ?, "
+                "grp = ?, source_ref = ? WHERE id = ?",
+                (version, now, group, rel, did))
+            if row["source_ref"] != rel:      # drop the superseded bytes
+                old = _files_dir() / row["source_ref"]
+                try:
+                    old.unlink()
+                except OSError:
+                    pass                      # a stray old file must not 500
+        else:
+            con.execute(
+                "INSERT INTO deliverables (id, client_id, title, kind, grp, "
+                "version, published_at, status, source_ref, created_at) "
+                "VALUES (?, ?, ?, 'file', ?, ?, ?, NULL, ?, ?)",
+                (did, c["id"], title, group, version, now, rel, now))
+    return {"id": did, "title": title, "version": version}
+
+
+def file_deliverable_path(deliverable_id: str) -> Optional[Tuple[Path, str]]:
+    """(absolute path, original filename) for a signed file read — None when
+    the row or the bytes are gone."""
+    with _connect() as con:
+        row = con.execute(
+            "SELECT source_ref FROM deliverables WHERE id = ? "
+            "AND kind = 'file'", (deliverable_id,)).fetchone()
+    if row is None:
+        return None
+    path = _files_dir() / row["source_ref"]
+    if not path.is_file():
+        return None
+    name = path.name.split("-", 1)[-1] if "-" in path.name else path.name
+    return path, name
+
+
 def list_deliverables(client_id: str) -> List[Dict[str, Any]]:
     """A client's turned-in work, newest first within each group. NEVER
     includes source_ref — ids in, curated payloads out."""
@@ -718,9 +788,10 @@ def get_deliverable(client_id: str, deliverable_id: str) -> Optional[Dict[str, A
         if row is None:
             return None
         out = dict(row)
+        source_ref = out.pop("source_ref")    # storage keys never leave here
         if out["kind"] == "dashboard":
             snap = con.execute("SELECT snapshot FROM published "
                                "WHERE analysis_id = ?",
-                               (out.pop("source_ref"),)).fetchone()
+                               (source_ref,)).fetchone()
             out["snapshot"] = json.loads(snap["snapshot"]) if snap else None
     return out
