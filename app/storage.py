@@ -63,6 +63,19 @@ CREATE TABLE IF NOT EXISTS published (
 )
 """
 
+# Client report portals: one unguessable token per client. The token — not
+# the client name — is the credential, so a portal cannot be enumerated by
+# guessing a slug. A portal owns nothing: it is a live VIEW over whichever of
+# the client's analyses are published RIGHT NOW, read from the frozen exec
+# snapshots, so it inherits the publish path's leak-proofing exactly.
+_SCHEMA_PORTALS = """
+CREATE TABLE IF NOT EXISTS portals (
+    client      TEXT PRIMARY KEY,
+    token       TEXT NOT NULL,
+    created_at  TEXT NOT NULL
+)
+"""
+
 
 def _db_path() -> Path:
     return Path(os.environ.get("LUMNIA_DB", "data/lumnia.db"))
@@ -76,6 +89,7 @@ def _connect() -> sqlite3.Connection:
     con.execute(_SCHEMA)
     con.execute(_SCHEMA_SHARES)
     con.execute(_SCHEMA_PUBLISHED)
+    con.execute(_SCHEMA_PORTALS)
     for migration in (                # migrate DBs created before the column
         "ALTER TABLE analyses ADD COLUMN sha256 TEXT",
         "ALTER TABLE analyses ADD COLUMN client TEXT",
@@ -395,3 +409,91 @@ def is_stale(report: Dict[str, Any], published_at: str) -> bool:
     """A published copy is stale once ANY decision postdates it."""
     return any((d or {}).get("decided_at", "") > published_at
                for d in (report.get("decisions") or {}).values())
+
+
+# --- client report portals -------------------------------------------------
+# A portal is a stable, unguessable link that lists a client's *currently
+# published* dashboards. It stores no snapshot of its own; every read is
+# recomputed from the live `published` rows, so publish/revoke show through
+# immediately and no analyst material can leak (the exec snapshot is all it
+# ever reads).
+
+def ensure_portal(client: str) -> Optional[Dict[str, Any]]:
+    """Mint (or return the existing) portal token for a client. The token is
+    stable — enabling twice yields the same shareable link."""
+    client = (client or "").strip()
+    if not client:
+        return None
+    with _connect() as con:
+        row = con.execute("SELECT token, created_at FROM portals WHERE client = ?",
+                          (client,)).fetchone()
+        if row:
+            return {"client": client, "token": row["token"],
+                    "created_at": row["created_at"]}
+        token = secrets.token_urlsafe(16)
+        created_at = _now()
+        con.execute("INSERT INTO portals (client, token, created_at) "
+                    "VALUES (?, ?, ?)", (client, token, created_at))
+    return {"client": client, "token": token, "created_at": created_at}
+
+
+def portal_by_client(client: str) -> Optional[Dict[str, Any]]:
+    """The portal token for a client, if one has been enabled."""
+    client = (client or "").strip()
+    with _connect() as con:
+        row = con.execute("SELECT token, created_at FROM portals WHERE client = ?",
+                          (client,)).fetchone()
+    return {"client": client, "token": row["token"],
+            "created_at": row["created_at"]} if row else None
+
+
+def revoke_portal(client: str) -> bool:
+    """Drop a client's portal; the shared link dies immediately."""
+    client = (client or "").strip()
+    with _connect() as con:
+        cur = con.execute("DELETE FROM portals WHERE client = ?", (client,))
+    return cur.rowcount > 0
+
+
+# exec-safe fields lifted verbatim from the frozen snapshot — nothing else
+# from a snapshot ever enters a portal listing
+_PORTAL_SNAPSHOT_FIELDS = ("filename", "verdict", "kpis", "n_sheets")
+
+
+def open_portal(token: str) -> Optional[Dict[str, Any]]:
+    """Resolve a portal token to its client's currently-published dashboards.
+
+    Each entry is built ONLY from the frozen exec snapshot plus that
+    dashboard's own public token — the live report is never touched, so this
+    path inherits the publish path's leak-proofing. Returns None for an
+    unknown token."""
+    with _connect() as con:
+        prow = con.execute("SELECT client FROM portals WHERE token = ?",
+                           (token,)).fetchone()
+        if prow is None:
+            return None
+        client = prow["client"]
+        rows = con.execute(
+            "SELECT p.token AS pub_token, p.version, p.published_at, p.snapshot "
+            "FROM published p JOIN analyses a ON a.id = p.analysis_id "
+            "WHERE a.client = ? ORDER BY p.published_at DESC, p.token",
+            (client,)).fetchall()
+
+    dashboards: List[Dict[str, Any]] = []
+    for r in rows:
+        snap = json.loads(r["snapshot"])
+        entry = {f: snap.get(f) for f in _PORTAL_SNAPSHOT_FIELDS}
+        entry.update({"version": r["version"],
+                      "published_at": r["published_at"],
+                      "token": r["pub_token"],
+                      "url": f"/published/{r['pub_token']}"})
+        dashboards.append(entry)
+    return {"client": client, "count": len(dashboards),
+            "dashboards": dashboards}
+
+
+def portal_token_exists(token: str) -> bool:
+    """Liveness check for serving the public portal page."""
+    with _connect() as con:
+        return con.execute("SELECT 1 FROM portals WHERE token = ?",
+                           (token,)).fetchone() is not None

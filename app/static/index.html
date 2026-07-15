@@ -875,6 +875,15 @@
   .schip.warn { color: var(--warning); background: var(--chip-bg);
     border-color: var(--chip-bd); }
   .schip.good { color: var(--good); background: #e9f2e9; border-color: #b9d4c0; }
+  /* client portal: dashboard cards reuse .wbrow, made into links */
+  .portal .wbrow { text-decoration: none; color: inherit; }
+  .portal .popen { font-family: var(--mono); font-size: 9px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--ink-3); flex: none; }
+  .portal .wbrow:hover .popen { color: var(--gold); }
+  .wb-group .pbtn { float: right; font-family: var(--mono); font-size: 8.5px;
+    letter-spacing: .1em; text-transform: uppercase; color: var(--gold);
+    background: none; border: none; cursor: pointer; padding: 0; }
+  .wb-group .pbtn:hover { color: var(--gold-strong); text-decoration: underline; }
   .minitabs { display: inline-flex; border-radius: 999px; overflow: hidden;
     border: 1px solid var(--ink); flex: none; }
   .minitabs span { font-family: var(--mono); font-size: 8px; letter-spacing: .06em;
@@ -1328,6 +1337,23 @@ const STR = {
     tr_prof_cap: (x, v) => `“${x}” carries the peak (${v}).`,
     fin_rfoot: (k, n, v) => `top ${k} of ${n} line items · remaining ${n - k} = ${v}`,
     mc_range: (a, b) => `80% of outcomes land between <b>${a}</b> and <b>${b}</b>.`,
+    // client report portals
+    portal_kicker: "Client portal",
+    portal_sub: "Published dashboards — read-only, always current.",
+    portal_count: n => `${n} dashboard${n === 1 ? "" : "s"}`,
+    portal_empty: "No dashboards have been published for this client yet.",
+    portal_empty_sub: "New reports appear here the moment they're published.",
+    portal_pub: (v, d) => `v${v} · ${d}`,
+    portal_checks: (k, t) => `${k}/${t} checks reconciled`,
+    portal_open: "Open",
+    portal_dead: "This portal link is no longer active.",
+    portal_dead_sub: "Ask the person who sent it for a new link.",
+    portal_v_clean: "reconciled",
+    portal_v_review: n => `${n} to review`,
+    portal_v_flag: n => `${n} flagged`,
+    portal_btn: "portal",
+    portal_copied: url => `Portal link copied · ${url}`,
+    portal_enabling: "Enabling portal…",
   },
   fr: {
     tab_overview: "Aperçu", tab_financials: "Finances", tab_whatif: "Scénarios",
@@ -1690,6 +1716,23 @@ const STR = {
     tr_prof_cap: (x, v) => `« ${x} » porte le pic (${v}).`,
     fin_rfoot: (k, n, v) => `${k} premiers postes sur ${n} · reste ${n - k} = ${v}`,
     mc_range: (a, b) => `80 % des résultats se situent entre <b>${a}</b> et <b>${b}</b>.`,
+    // portails de rapports client
+    portal_kicker: "Portail client",
+    portal_sub: "Tableaux de bord publiés — lecture seule, toujours à jour.",
+    portal_count: n => `${n} tableau${n === 1 ? "" : "x"} de bord`,
+    portal_empty: "Aucun tableau de bord n'a encore été publié pour ce client.",
+    portal_empty_sub: "Les nouveaux rapports apparaissent ici dès leur publication.",
+    portal_pub: (v, d) => `v${v} · ${d}`,
+    portal_checks: (k, t) => `${k}/${t} contrôles rapprochés`,
+    portal_open: "Ouvrir",
+    portal_dead: "Ce lien de portail n'est plus actif.",
+    portal_dead_sub: "Demandez un nouveau lien à la personne qui vous l'a envoyé.",
+    portal_v_clean: "rapproché",
+    portal_v_review: n => `${n} à revoir`,
+    portal_v_flag: n => `${n} signalé${n === 1 ? "" : "s"}`,
+    portal_btn: "portail",
+    portal_copied: url => `Lien du portail copié · ${url}`,
+    portal_enabling: "Activation du portail…",
   },
 };
 const T = STR[LANG];
@@ -1714,8 +1757,12 @@ let PUBINFO = { published: false };
 // It renders ONLY the frozen exec snapshot — the full report never loads.
 const PUB = location.pathname.startsWith("/published/")
   ? location.pathname.split("/")[2] : null;
+// Public client-portal mode: /portal/{token}/page. Lists a client's
+// currently-published dashboards; never loads any report either.
+const PORTAL = location.pathname.startsWith("/portal/")
+  ? location.pathname.split("/")[2] : null;
 // Read-only gating flag (hides upload/library/edit affordances).
-const SHARE = PUB;
+const SHARE = PUB || PORTAL;
 const API = "";
 
 /* ---------- brand sun ---------- */
@@ -1801,9 +1848,20 @@ async function loadWorkbooks() {
         <span><button data-act="client">${T.client_btn}</button><button data-act="rerun">${T.rerun}</button><button data-act="del">${T.del}</button></span></div>
     </div>`;
   $("#wb-list").innerHTML = items.length ? ordered.map(key => `
-      ${groups.size > 1 || key ? `<div class="wb-group">${esc(key || T.wb_general)}</div>` : ""}
+      ${groups.size > 1 || key ? `<div class="wb-group">${esc(key || T.wb_general)}${key ? `<button class="pbtn" data-portal="${esc(key)}">⧉ ${T.portal_btn}</button>` : ""}</div>` : ""}
       ${groups.get(key).map(wbRow).join("")}`).join("")
     : `<div class="muted" style="font-size:12px;padding:0 10px">${T.nothing_yet}</div>`;
+  $$("#wb-list [data-portal]").forEach(el => el.addEventListener("click", async e => {
+    e.stopPropagation();
+    const client = el.dataset.portal;
+    setStatus(T.portal_enabling);
+    const r = await fetch(`/clients/${encodeURIComponent(client)}/portal`,
+      { method: "POST" });
+    if (!r.ok) { setStatus((await r.json()).detail || "!", true); return; }
+    const url = location.origin + (await r.json()).url + "/page";
+    try { await navigator.clipboard.writeText(url); } catch (_) {}
+    setStatus(T.portal_copied(url));
+  }));
   $$("#wb-list .wb").forEach(el => el.addEventListener("click", async e => {
     const act = e.target.dataset && e.target.dataset.act, id = el.dataset.id;
     if (act === "del") { e.stopPropagation();
@@ -2002,6 +2060,56 @@ function renderPublishedPage(snap) {
       <div>${chartHtml}</div>
       <div><span class="kicker">${T.nx_kicker}</span>${stepRows}</div>
     </div>
+  </section>`;
+}
+
+/* ---------- Public client portal: /portal/{token}/page.
+   Lists this client's CURRENTLY-published dashboards, each linking to the
+   existing exec page. Built only from the portal listing (frozen snapshots) —
+   no report ever loads here. */
+function renderPortalPage(view) {
+  MODE = "exec";
+  document.body.dataset.mode = "exec";
+  const client = view.client || "";
+  $("#topbar").innerHTML = `<div class="topbar exec">
+    <span class="tkick">${T.portal_kicker} · ${esc(client)}</span>
+    <span class="grow"></span>${langToggle()}
+    <span class="ropill">${T.ex_readonly}</span></div>`;
+  attachLang();
+
+  const cards = (view.dashboards || []).map(d => {
+    const v = d.verdict || {}, k = d.kpis || {};
+    const date = (d.published_at || "").slice(0, 10);
+    // honest chip: only claim "reconciled" when checks actually ran
+    const chip = v.mismatched
+      ? `<span class="schip crit">${T.portal_v_flag(v.mismatched)}</span>`
+      : v.unverified
+        ? `<span class="schip warn">${T.portal_v_review(v.unverified)}</span>`
+        : k.checks_total
+          ? `<span class="schip good">✓ ${T.portal_v_clean}</span>`
+          : "";
+    const checks = k.checks_total
+      ? ` · ${T.portal_checks(k.checks_ok, k.checks_total)}` : "";
+    return `<a class="wbrow" href="${esc(d.url)}/page">
+      <div style="min-width:0;flex:1"><b>${esc(d.filename || "")}</b>
+        <div class="wmeta">${T.portal_pub(d.version, date)}${checks}</div></div>
+      ${chip}
+      <span class="popen">${T.portal_open} →</span>
+    </a>`;
+  }).join("");
+
+  const body = view.count
+    ? `<div style="border-top:1px solid var(--border-strong);margin-top:18px">${cards}</div>`
+    : `<div class="home-empty" style="padding-top:24px">
+        <svg class="sunmark" width="28" height="28" viewBox="-50 -50 100 100" aria-hidden="true">${sunPaths()}</svg>
+        <h2 style="font-family:var(--serif);font-weight:600;font-size:20px">${T.portal_empty}</h2>
+        <p class="lede">${T.portal_empty_sub}</p></div>`;
+
+  $("#content").innerHTML = `<section class="portal">
+    <span class="kicker">${T.portal_kicker}</span>
+    <h1 class="vhead" style="margin-top:6px">${esc(client)}</h1>
+    <p class="vlede">${T.portal_sub} · ${T.portal_count(view.count)}</p>
+    ${body}
   </section>`;
 }
 
@@ -5380,6 +5488,19 @@ function downloadFindings() {
       return;
     }
     renderPublishedPage(await r.json());
+    return;
+  }
+  if (PORTAL) {          // public client portal: a live index, no report loads
+    document.body.classList.add("home");
+    const r = await fetch(`/portal/${PORTAL}`);
+    if (!r.ok) {         // revoked or unknown token
+      $("#content").innerHTML = `<div class="home-empty">
+        <svg class="sunmark" width="30" height="30" viewBox="-50 -50 100 100" aria-hidden="true">${sunPaths()}</svg>
+        <h1 style="font-size:22px">${T.portal_dead}</h1>
+        <p class="lede">${T.portal_dead_sub}</p></div>`;
+      return;
+    }
+    renderPortalPage(await r.json());
     return;
   }
   fetch("/health").then(r => r.json())

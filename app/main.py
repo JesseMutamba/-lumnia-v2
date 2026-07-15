@@ -68,11 +68,13 @@ async def require_password(request: Request, call_next):
     """
     if auth.password() is None or request.url.path in auth.PUBLIC_PATHS \
             or request.url.path.startswith("/published/") \
+            or request.url.path.startswith("/portal/") \
             or request.url.path.startswith("/share/"):
-        # /published/{token} is deliberately public: the unguessable token IS
-        # the credential, and the only thing behind it is the frozen
-        # exec-only snapshot. /share/ stays listed so retired links get an
-        # honest 404 instead of a login wall.
+        # /published/{token} and /portal/{token} are deliberately public: the
+        # unguessable token IS the credential, and the only thing behind it is
+        # frozen exec-only material. Enabling/revoking a portal lives under
+        # /clients/... and stays gated. /share/ stays listed so retired links
+        # get an honest 404 instead of a login wall.
         return await call_next(request)
     if auth.valid_token(request.cookies.get(auth.COOKIE)):
         return await call_next(request)
@@ -570,6 +572,59 @@ def published_snapshot(token: str) -> dict:
 def published_page(token: str) -> FileResponse:
     """PUBLIC. The executive page shell; it fetches the snapshot above."""
     if not storage.published_token_exists(token):
+        raise HTTPException(status_code=404,
+                            detail="This link is no longer active.")
+    return FileResponse(_INDEX, media_type="text/html",
+                        headers={"Cache-Control": "no-cache"})
+
+
+# --- client report portals -------------------------------------------------
+# Enabling/revoking a portal is analyst work (gated under /clients). Reading
+# one is public: the unguessable token is the credential, and the payload is
+# assembled only from frozen exec snapshots.
+
+@app.post("/clients/{client}/portal")
+def enable_portal(client: str) -> dict:
+    """Mint (or return) the client's shareable portal link. The token is
+    stable, so a client's link never changes once shared."""
+    info = storage.ensure_portal(client)
+    if info is None:
+        raise HTTPException(status_code=422, detail="Client name is required.")
+    return {**info, "url": f"/portal/{info['token']}"}
+
+
+@app.get("/clients/{client}/portal")
+def portal_status(client: str) -> dict:
+    """Portal state for the client group header: enabled + shareable link."""
+    info = storage.portal_by_client(client)
+    if info is None:
+        return {"enabled": False}
+    return {"enabled": True, **info, "url": f"/portal/{info['token']}"}
+
+
+@app.delete("/clients/{client}/portal")
+def disable_portal(client: str) -> dict:
+    """Drop the client's portal; the shared link dies immediately."""
+    return {"revoked": storage.revoke_portal(client)}
+
+
+@app.get("/portal/{token}")
+def portal_snapshot(token: str) -> dict:
+    """PUBLIC. A client's currently-published dashboards, recomputed live from
+    the frozen exec snapshots. This handler never reads a full report, so
+    analyst-only material cannot leak through it, and an unpublished analysis
+    is simply absent."""
+    view = storage.open_portal(token)
+    if view is None:
+        raise HTTPException(status_code=404,
+                            detail="This link is no longer active.")
+    return view
+
+
+@app.get("/portal/{token}/page", include_in_schema=False)
+def portal_page(token: str) -> FileResponse:
+    """PUBLIC. The portal page shell; it fetches the listing above."""
+    if not storage.portal_token_exists(token):
         raise HTTPException(status_code=404,
                             detail="This link is no longer active.")
     return FileResponse(_INDEX, media_type="text/html",
