@@ -45,10 +45,11 @@ def test_non_months_never_become_dates():
         assert cell_kind(raw) != DATE, raw
 
 
-def _actuals_book() -> bytes:
+def _actuals_book(with_budget: bool = False) -> bytes:
     """The anchor shape: a metric column, month-name TEXT headers, a section
     band row, and a trailing quarter-total column that must not become a
-    period."""
+    period. With ``with_budget``, a year-axis BUDGET sheet rides along so the
+    actual-vs-budget unit-cost comparison can derive."""
     rows = [
         ["Actuals — Q1 2026", None, None, None, None],
         [None, None, None, None, None],
@@ -63,9 +64,19 @@ def _actuals_book() -> bytes:
         # dollar values must never out-tag the true tonnage rows
         ["Cost / tonne CPO (USD/t)", 887.5, 965.7, 832.4, None],
     ]
+    budget = [
+        ["Metric", 2025, 2026, 2027],
+        ["FFB produced (t)", 3000, 3200, 4500],
+        ["CPO produced (t)", 650, 700, 990],
+        ["OPEX — production cost (USD)", 351000, 378000, 534600],
+    ]
     buf = io.BytesIO()
-    pd.DataFrame(rows).to_excel(buf, sheet_name="Actuals", header=False,
-                                index=False, engine="openpyxl")
+    with pd.ExcelWriter(buf, engine="openpyxl") as w:
+        pd.DataFrame(rows).to_excel(w, sheet_name="Actuals", header=False,
+                                    index=False)
+        if with_budget:
+            pd.DataFrame(budget).to_excel(w, sheet_name="BUDGET 2025-2027",
+                                          header=False, index=False)
     return buf.getvalue()
 
 
@@ -90,3 +101,23 @@ def test_actuals_sheet_lights_the_monthly_block():
     out = mo["derived"]["opex_per_volume_out"]
     assert out[0] == round(14200 / 16, 4)
     assert out[2] == round(15400 / 18.5, 4)
+    # no budget sheet in the workbook -> no vs-budget claim, honestly absent
+    assert "unit_cost_budget" not in mo
+
+
+def test_monthly_unit_cost_compares_against_the_budget_year():
+    r = client.post("/analyze", files={
+        "file": ("model.xlsx", _actuals_book(with_budget=True),
+                 "application/octet-stream")})
+    assert r.status_code == 200, r.text
+    mo = r.json()["model"]["monthly"]
+    ub = mo.get("unit_cost_budget")
+    assert ub is not None, "vs-budget block missing"
+    # target = the BUDGET sheet's own unit cost for the actuals' year
+    assert ub["target"] == round(378000 / 700, 4)          # 540.0 for 2026
+    assert ub["target_period"] == "2026"
+    assert ub["basis"] == "opex_per_volume_out"
+    # per-month variance, computed by the pipeline — never by the frontend
+    assert ub["variance_pct"][0] == round((14200 / 16 - 540) / 540 * 100, 1)
+    assert ub["variance_pct"][2] == round(
+        (15400 / 18.5 - 540) / 540 * 100, 1)

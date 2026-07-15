@@ -990,6 +990,11 @@ const STR = {
     pr_peak: "Peak period", pr_chart: "Monthly volumes",
     pr_ratio_chart: "Conversion rate by period",
     pr_avg: p => `average ${p}`, pr_src: s => `from ${s}`,
+    pr_cost_chart: "Cost per tonne — actual vs budget",
+    pr_cost_target: (t, y) => `budget target ${t} (${y})`,
+    pr_budget_line: y => `Budget ${y}`,
+    pr_vs_budget: (p, y) => p == null ? "" :
+      `${p > 0 ? "▲" : "▼"} ${Math.abs(p)}% vs budget ${y}`,
     tab_data: "Data", tab_trends: "Trends", tab_audit: "Audit", tab_actions: "Actions",
     sheets_analyzed: n => `${n} sheet${n === 1 ? "" : "s"} analyzed`,
     shared_view: "shared view", mode_exec: "Executive", mode_analyst: "Analyst",
@@ -1401,6 +1406,11 @@ const STR = {
     pr_peak: "Période de pointe", pr_chart: "Volumes mensuels",
     pr_ratio_chart: "Taux de conversion par période",
     pr_avg: p => `moyenne ${p}`, pr_src: s => `depuis ${s}`,
+    pr_cost_chart: "Coût par tonne — réel vs budget",
+    pr_cost_target: (t, y) => `cible budget ${t} (${y})`,
+    pr_budget_line: y => `Budget ${y}`,
+    pr_vs_budget: (p, y) => p == null ? "" :
+      `${p > 0 ? "▲" : "▼"} ${Math.abs(p)} % vs budget ${y}`,
     tab_data: "Données", tab_trends: "Tendances", tab_audit: "Audit", tab_actions: "À faire",
     sheets_analyzed: n => `${n} feuille${n === 1 ? "" : "s"} analysée${n === 1 ? "" : "s"}`,
     shared_view: "vue partagée", mode_exec: "Direction", mode_analyst: "Analyste",
@@ -4592,6 +4602,8 @@ function renderFinancials(execView) {
 }
 
 /* ---------- production: monthly actuals from date-axis matrices --------- */
+const derLabel = k => T["der_" + k] || k;
+
 function renderProduction() {
   const mo = REPORT.model && REPORT.model.monthly;
   if (!mo) return "";
@@ -4636,9 +4648,39 @@ function renderProduction() {
     CHARTS.push(rc);
     ratioCard = chartCard(rc, false);
   }
+
+  // actual $/t against the plan — everything here is pipeline-computed
+  // (mo.derived + mo.unit_cost_budget); this block only formats it
+  let costCard = "";
+  const ub = mo.unit_cost_budget;
+  if (ub) {
+    const actual = mo.derived[ub.basis];
+    const lastIdx = actual.map((v, i) => v != null ? i : -1)
+      .reduce((a, b) => Math.max(a, b), -1);
+    if (lastIdx >= 0) {
+      const pct = ub.variance_pct[lastIdx];
+      const over = pct != null && pct > 0;
+      stats.push(`<span>${derLabel(ub.basis)} <b>${compact(actual[lastIdx])}</b>
+        <b style="color:var(--${over ? "critical" : "good"})">${T.pr_vs_budget(pct, ub.target_period)}</b></span>`);
+    }
+    const cc = { pseudo: true, sheet: T.pr_cost_chart,
+      loc: T.pr_cost_target(compact(ub.target), ub.target_period),
+      chart: { kind: "timeseries", periods: mo.periods, series: [],
+               other: null, truncated: false },
+      lines: [
+        { label: derLabel(ub.basis), values: actual,
+          color: SERIES_COLORS[0], on: true },
+        { label: T.pr_budget_line(ub.target_period),
+          values: mo.periods.map(() => ub.target),
+          color: OTHER_COLOR, on: true },
+      ], i: CHARTS.length, range: null };
+    CHARTS.push(cc);
+    costCard = chartCard(cc, false);
+  }
+
   return `<section id="sec-production"><span class="kicker">${T.pr_kicker}</span>
     ${stats.length ? `<div class="statbar">${stats.join("")}</div>` : ""}
-    <div class="grid2">${chartCard(volChart, false)}${ratioCard}</div>
+    <div class="grid2">${chartCard(volChart, false)}${ratioCard}${costCard}</div>
   </section>`;
 }
 
