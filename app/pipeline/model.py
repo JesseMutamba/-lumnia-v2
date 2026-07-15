@@ -66,6 +66,12 @@ RATE_SERIES_RX = re.compile(
     r"(t|tonnes?|kg|km|l|unit[ée]?s?|ha|hectares?|m²|jour|day|head|t[êe]te)s?\b",
     re.IGNORECASE)
 
+# The actual-vs-budget comparison only renders when the year spine really IS
+# a plan — an honest "vs budget" claim needs a budget-shaped source, not any
+# historical year series that happens to share the axis.
+BUDGET_SHEET_RX = re.compile(r"budget|pr[ée]vision(nel)?s?|forecast|\bplan\b",
+                             re.IGNORECASE)
+
 
 def _tidies(report_sheets) -> List[tuple]:
     """(sheet_name, panel_label, tidy_dict) for every extracted table."""
@@ -170,6 +176,36 @@ def derive_metrics(metrics: Dict[str, dict]) -> Dict[str, Any]:
     return derived
 
 
+def _unit_cost_budget(periods: List[str], year_derived: Dict[str, Any],
+                      monthly: Dict[str, Any],
+                      spine_sheet: Optional[str]) -> Optional[Dict[str, Any]]:
+    """The "$/t actual vs budget" comparison, computed HERE so the frontend
+    only formats: the budget-year unit cost for the actuals' year is the
+    target, and each month carries its variance. None unless the year spine
+    is a budget-shaped sheet AND both sides derive the same unit-cost basis."""
+    if not spine_sheet or not BUDGET_SHEET_RX.search(str(spine_sheet)):
+        return None
+    mo_d = monthly.get("derived") or {}
+    basis = next((b for b in ("opex_per_volume_out", "opex_per_volume")
+                  if mo_d.get(b) and year_derived.get(b)), None)
+    if basis is None:
+        return None
+    years = [p[:4] for p in monthly.get("periods", []) if len(p) >= 4]
+    if not years or len(set(years)) != 1 or years[0] not in periods:
+        return None                    # actuals must sit inside ONE plan year
+    target = year_derived[basis][periods.index(years[0])]
+    if target is None or target == 0:
+        return None
+    actual = mo_d[basis]
+    return {
+        "basis": basis,
+        "target": target,
+        "target_period": years[0],
+        "variance_pct": [round((a - target) / target * 100, 1)
+                         if a is not None else None for a in actual],
+    }
+
+
 def _monthly_block(report_sheets) -> Optional[Dict[str, Any]]:
     """Actuals: the date-axis chart where the most roles tag — volumes in,
     volumes out, per period — with the same derived arithmetic (the monthly
@@ -237,6 +273,11 @@ def build_model(report_sheets) -> Optional[Dict[str, Any]]:
         for role, s in best_roles.items()
     }
     derived = derive_metrics(metrics)
+
+    if monthly:
+        ucb = _unit_cost_budget(periods, derived, monthly, best_sheet)
+        if ucb:
+            monthly["unit_cost_budget"] = ucb
 
     # breakdowns: the top line items already computed at extraction
     breakdowns = []
