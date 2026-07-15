@@ -76,6 +76,63 @@ CREATE TABLE IF NOT EXISTS portals (
 )
 """
 
+# App-level secrets and small key/values. The client-auth signing secret is
+# minted here on first use — random, DB-persisted, no env var to configure,
+# and independent of LUMNIA_PASSWORD so rotating the analyst password never
+# silently kills every client's login link.
+_SCHEMA_META = """
+CREATE TABLE IF NOT EXISTS meta (
+    key    TEXT PRIMARY KEY,
+    value  TEXT NOT NULL
+)
+"""
+
+# The client hub (SPEC_client_portal_mvp): clients become entities, people
+# get login links, and everything we turn in for a client is a `deliverable`
+# row. `client_id` is the tenant key; every hub read scopes by it.
+_SCHEMA_CLIENTS = """
+CREATE TABLE IF NOT EXISTS clients (
+    id          TEXT PRIMARY KEY,
+    name        TEXT UNIQUE NOT NULL,
+    slug        TEXT UNIQUE NOT NULL,
+    created_at  TEXT NOT NULL
+)
+"""
+
+_SCHEMA_CLIENT_USERS = """
+CREATE TABLE IF NOT EXISTS client_users (
+    id          TEXT PRIMARY KEY,
+    client_id   TEXT NOT NULL,
+    email       TEXT UNIQUE NOT NULL,
+    created_at  TEXT NOT NULL
+)
+"""
+
+# kind='dashboard': source_ref is the analysis_id whose frozen published
+# snapshot renders the deliverable — no new render path. kind='file' arrives
+# in the follow-up PR. UNIQUE(kind, source_ref) is what makes the publish
+# path an upsert: republishing bumps version on the same row.
+_SCHEMA_DELIVERABLES = """
+CREATE TABLE IF NOT EXISTS deliverables (
+    id           TEXT PRIMARY KEY,
+    client_id    TEXT NOT NULL,
+    title        TEXT NOT NULL,
+    kind         TEXT NOT NULL CHECK (kind IN ('dashboard','file')),
+    grp          TEXT,
+    version      INTEGER NOT NULL DEFAULT 1,
+    published_at TEXT,
+    status       TEXT CHECK (status IN ('reconciled','flagged','open')),
+    source_ref   TEXT NOT NULL,
+    created_at   TEXT NOT NULL,
+    UNIQUE (kind, source_ref)
+)
+"""
+
+_SCHEMA_DELIVERABLES_IDX = """
+CREATE INDEX IF NOT EXISTS idx_deliverables_client
+    ON deliverables(client_id, grp, published_at DESC)
+"""
+
 
 def _db_path() -> Path:
     return Path(os.environ.get("LUMNIA_DB", "data/lumnia.db"))
@@ -90,6 +147,11 @@ def _connect() -> sqlite3.Connection:
     con.execute(_SCHEMA_SHARES)
     con.execute(_SCHEMA_PUBLISHED)
     con.execute(_SCHEMA_PORTALS)
+    con.execute(_SCHEMA_META)
+    con.execute(_SCHEMA_CLIENTS)
+    con.execute(_SCHEMA_CLIENT_USERS)
+    con.execute(_SCHEMA_DELIVERABLES)
+    con.execute(_SCHEMA_DELIVERABLES_IDX)
     for migration in (                # migrate DBs created before the column
         "ALTER TABLE analyses ADD COLUMN sha256 TEXT",
         "ALTER TABLE analyses ADD COLUMN client TEXT",
@@ -210,6 +272,14 @@ def list_analyses() -> List[Dict[str, Any]]:
                           if r["pub_version"] is not None else None),
             })
     return out
+
+
+def client_label(analysis_id: str) -> Optional[str]:
+    """The workspace label an analysis is assigned to, if any."""
+    with _connect() as con:
+        row = con.execute("SELECT client FROM analyses WHERE id = ?",
+                          (analysis_id,)).fetchone()
+    return row["client"] if row else None
 
 
 def set_client(analysis_id: str, client: Optional[str]) -> bool:
@@ -336,6 +406,7 @@ def delete_analysis(analysis_id: str) -> bool:
     with _connect() as con:
         con.execute("DELETE FROM shares WHERE analysis_id = ?", (analysis_id,))
         con.execute("DELETE FROM published WHERE analysis_id = ?", (analysis_id,))
+        _drop_dashboard_deliverable(con, analysis_id)
         cur = con.execute("DELETE FROM analyses WHERE id = ?", (analysis_id,))
     return cur.rowcount > 0
 
@@ -371,10 +442,12 @@ def publish(analysis_id: str, snapshot: Dict[str, Any]) -> Optional[Dict[str, An
 
 
 def revoke_publish(analysis_id: str) -> bool:
-    """Drop the published row; the public link dies immediately."""
+    """Drop the published row; the public link dies immediately and the
+    dashboard leaves the client hub with it."""
     with _connect() as con:
         cur = con.execute("DELETE FROM published WHERE analysis_id = ?",
                           (analysis_id,))
+        _drop_dashboard_deliverable(con, analysis_id)
     return cur.rowcount > 0
 
 
@@ -456,8 +529,9 @@ def revoke_portal(client: str) -> bool:
 
 
 # exec-safe fields lifted verbatim from the frozen snapshot — nothing else
-# from a snapshot ever enters a portal listing
-_PORTAL_SNAPSHOT_FIELDS = ("filename", "verdict", "kpis", "n_sheets")
+# from a snapshot ever enters a portal listing. (`kpis` left the snapshot
+# with the business-voice rebuild; `verdict` is the stable summary.)
+_PORTAL_SNAPSHOT_FIELDS = ("filename", "verdict", "n_sheets")
 
 
 def open_portal(token: str) -> Optional[Dict[str, Any]]:
@@ -497,3 +571,156 @@ def portal_token_exists(token: str) -> bool:
     with _connect() as con:
         return con.execute("SELECT 1 FROM portals WHERE token = ?",
                            (token,)).fetchone() is not None
+
+
+# --- the client hub: clients, users, deliverables ---------------------------
+
+def app_secret() -> str:
+    """The signing secret for client login links and sessions — minted once,
+    persisted in `meta`, independent of the analyst password."""
+    with _connect() as con:
+        row = con.execute("SELECT value FROM meta WHERE key = 'client_secret'"
+                          ).fetchone()
+        if row:
+            return row["value"]
+        secret = secrets.token_hex(32)
+        con.execute("INSERT INTO meta (key, value) VALUES ('client_secret', ?)",
+                    (secret,))
+    return secret
+
+
+def _slugify(name: str) -> str:
+    import unicodedata
+    ascii_ = unicodedata.normalize("NFKD", name).encode("ascii",
+                                                        "ignore").decode()
+    slug = "".join(c if c.isalnum() else "-" for c in ascii_.lower())
+    return "-".join(p for p in slug.split("-") if p) or "client"
+
+
+def ensure_client(name: str) -> Optional[Dict[str, Any]]:
+    """The clients row for a workspace label, minted on first use. Publishing
+    for a labeled client is enough to make it an entity — seeding by hand is
+    only needed for login emails."""
+    name = (name or "").strip()
+    if not name:
+        return None
+    with _connect() as con:
+        row = con.execute("SELECT id, name, slug FROM clients WHERE name = ?",
+                          (name,)).fetchone()
+        if row:
+            return dict(row)
+        base = _slugify(name)
+        slug, n = base, 2
+        while con.execute("SELECT 1 FROM clients WHERE slug = ?",
+                          (slug,)).fetchone():
+            slug, n = f"{base}-{n}", n + 1
+        cid = uuid.uuid4().hex[:12]
+        con.execute("INSERT INTO clients (id, name, slug, created_at) "
+                    "VALUES (?, ?, ?, ?)", (cid, name, slug, _now()))
+    return {"id": cid, "name": name, "slug": slug}
+
+
+def add_client_user(client_name: str, email: str) -> Optional[Dict[str, Any]]:
+    """Register (or return) a login identity for a client. An email belongs
+    to exactly one client — re-adding it elsewhere is refused (None)."""
+    email = (email or "").strip().lower()
+    if not email or "@" not in email:
+        return None
+    c = ensure_client(client_name)
+    if c is None:
+        return None
+    with _connect() as con:
+        row = con.execute("SELECT id, client_id FROM client_users "
+                          "WHERE email = ?", (email,)).fetchone()
+        if row:
+            return ({"id": row["id"], "client_id": c["id"], "email": email}
+                    if row["client_id"] == c["id"] else None)
+        uid = uuid.uuid4().hex[:12]
+        con.execute("INSERT INTO client_users (id, client_id, email, "
+                    "created_at) VALUES (?, ?, ?, ?)",
+                    (uid, c["id"], email, _now()))
+    return {"id": uid, "client_id": c["id"], "email": email}
+
+
+def list_client_users(client_name: str) -> List[Dict[str, Any]]:
+    with _connect() as con:
+        rows = con.execute(
+            "SELECT u.id, u.email, u.created_at FROM client_users u "
+            "JOIN clients c ON c.id = u.client_id WHERE c.name = ? "
+            "ORDER BY u.created_at", ((client_name or "").strip(),)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def remove_client_user(user_id: str) -> bool:
+    """Revoke a login identity; live sessions die on their next request."""
+    with _connect() as con:
+        cur = con.execute("DELETE FROM client_users WHERE id = ?", (user_id,))
+    return cur.rowcount > 0
+
+
+def client_user(user_id: str) -> Optional[Dict[str, Any]]:
+    """The identity a session token resolves to — None once revoked."""
+    with _connect() as con:
+        row = con.execute(
+            "SELECT u.id, u.email, c.id AS client_id, c.name, c.slug "
+            "FROM client_users u JOIN clients c ON c.id = u.client_id "
+            "WHERE u.id = ?", (user_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def record_dashboard_deliverable(analysis_id: str, client_name: str,
+                                 title: str, version: int, published_at: str,
+                                 status: Optional[str]) -> None:
+    """The publish path's upsert: one deliverables row per published
+    dashboard, version mirroring the publish version."""
+    c = ensure_client(client_name)
+    if c is None:
+        return
+    with _connect() as con:
+        con.execute(
+            "INSERT INTO deliverables (id, client_id, title, kind, grp, "
+            "version, published_at, status, source_ref, created_at) "
+            "VALUES (?, ?, ?, 'dashboard', NULL, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(kind, source_ref) DO UPDATE SET client_id = ?, "
+            "title = ?, version = ?, published_at = ?, status = ?",
+            (uuid.uuid4().hex[:12], c["id"], title, version, published_at,
+             status, analysis_id, _now(),
+             c["id"], title, version, published_at, status))
+
+
+def _drop_dashboard_deliverable(con: sqlite3.Connection,
+                                analysis_id: str) -> None:
+    con.execute("DELETE FROM deliverables WHERE kind = 'dashboard' "
+                "AND source_ref = ?", (analysis_id,))
+
+
+def list_deliverables(client_id: str) -> List[Dict[str, Any]]:
+    """A client's turned-in work, newest first within each group. NEVER
+    includes source_ref — ids in, curated payloads out."""
+    with _connect() as con:
+        rows = con.execute(
+            "SELECT id, title, kind, grp, version, published_at, status "
+            "FROM deliverables WHERE client_id = ? "
+            "ORDER BY grp IS NULL, grp, published_at DESC, id",
+            (client_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_deliverable(client_id: str, deliverable_id: str) -> Optional[Dict[str, Any]]:
+    """One deliverable, ownership re-checked IN the query: a foreign
+    client_id can never match, so cross-tenant reads are indistinguishable
+    from missing ids (404, not 403)."""
+    with _connect() as con:
+        row = con.execute(
+            "SELECT id, title, kind, grp, version, published_at, status, "
+            "source_ref FROM deliverables WHERE id = ? AND client_id = ?",
+            (deliverable_id, client_id)).fetchone()
+        if row is None:
+            return None
+        out = dict(row)
+        if out["kind"] == "dashboard":
+            snap = con.execute("SELECT snapshot FROM published "
+                               "WHERE analysis_id = ?",
+                               (out.pop("source_ref"),)).fetchone()
+            out["snapshot"] = json.loads(snap["snapshot"]) if snap else None
+    return out

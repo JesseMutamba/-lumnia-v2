@@ -1386,6 +1386,8 @@ const STR = {
     portal_btn: "portal",
     portal_copied: url => `Portal link copied · ${url}`,
     portal_enabling: "Enabling portal…",
+    hub_back: "All deliverables",
+    hub_flagged: "flagged",
   },
   fr: {
     tab_overview: "Aperçu", tab_financials: "Finances", tab_whatif: "Scénarios",
@@ -1791,6 +1793,8 @@ const STR = {
     portal_btn: "portail",
     portal_copied: url => `Lien du portail copié · ${url}`,
     portal_enabling: "Activation du portail…",
+    hub_back: "Tous les livrables",
+    hub_flagged: "signalé",
   },
 };
 const T = STR[LANG];
@@ -1817,10 +1821,12 @@ const PUB = location.pathname.startsWith("/published/")
   ? location.pathname.split("/")[2] : null;
 // Public client-portal mode: /portal/{token}/page. Lists a client's
 // currently-published dashboards; never loads any report either.
-const PORTAL = location.pathname.startsWith("/portal/")
+// Authed client hub: /portal/hub, session cookie instead of a URL token.
+const HUB = location.pathname === "/portal/hub";
+const PORTAL = !HUB && location.pathname.startsWith("/portal/")
   ? location.pathname.split("/")[2] : null;
 // Read-only gating flag (hides upload/library/edit affordances).
-const SHARE = PUB || PORTAL;
+const SHARE = PUB || PORTAL || HUB;
 const API = "";
 
 /* ---------- brand sun ---------- */
@@ -2117,18 +2123,20 @@ function renderPortalPage(view) {
   attachLang();
 
   const cards = (view.dashboards || []).map(d => {
-    const v = d.verdict || {}, k = d.kpis || {};
+    // honest chip from the frozen verdict alone: only claim "reconciled"
+    // when relations actually verified (the snapshot no longer ships kpis)
+    const v = d.verdict || {};
     const date = (d.published_at || "").slice(0, 10);
-    // honest chip: only claim "reconciled" when checks actually ran
+    const nChecks = (v.verified || 0) + (v.mismatched || 0);
     const chip = v.mismatched
       ? `<span class="schip crit">${T.portal_v_flag(v.mismatched)}</span>`
       : v.unverified
         ? `<span class="schip warn">${T.portal_v_review(v.unverified)}</span>`
-        : k.checks_total
+        : v.verified
           ? `<span class="schip good">✓ ${T.portal_v_clean}</span>`
           : "";
-    const checks = k.checks_total
-      ? ` · ${T.portal_checks(k.checks_ok, k.checks_total)}` : "";
+    const checks = nChecks
+      ? ` · ${T.portal_checks(v.verified || 0, nChecks)}` : "";
     return `<a class="wbrow" href="${esc(d.url)}/page">
       <div style="min-width:0;flex:1"><b>${esc(d.filename || "")}</b>
         <div class="wmeta">${T.portal_pub(d.version, date)}${checks}</div></div>
@@ -2150,6 +2158,92 @@ function renderPortalPage(view) {
     <p class="vlede">${T.portal_sub} · ${T.portal_count(view.count)}</p>
     ${body}
   </section>`;
+}
+
+/* ---------- Authed client hub: /portal/hub. Boots from /portal/me; lists
+   the client's deliverables and renders a dashboard's frozen snapshot
+   inline through the existing published-page renderer. */
+async function bootHub() {
+  document.body.classList.add("home");
+  const me = await fetch("/portal/me");
+  if (!me.ok) {
+    $("#content").innerHTML = `<div class="home-empty">
+      <svg class="sunmark" width="30" height="30" viewBox="-50 -50 100 100" aria-hidden="true">${sunPaths()}</svg>
+      <h1 style="font-size:22px">${T.portal_dead}</h1>
+      <p class="lede">${T.portal_dead_sub}</p></div>`;
+    return;
+  }
+  const items = await (await fetch("/portal/deliverables")).json();
+  renderHubPage(await me.json(), items);
+}
+
+function hubStatusChip(status) {
+  if (status === "flagged")
+    return `<span class="schip crit">${T.hub_flagged}</span>`;
+  if (status === "reconciled")
+    return `<span class="schip good">✓ ${T.portal_v_clean}</span>`;
+  if (status === "open")
+    return `<span class="schip warn">${T.hub_flagged}</span>`;
+  return "";                       // no checks ran — claim nothing
+}
+
+function renderHubPage(me, items) {
+  MODE = "exec";
+  document.body.dataset.mode = "exec";
+  const client = me.client.name || "";
+  $("#topbar").innerHTML = `<div class="topbar exec">
+    <span class="tkick">${T.portal_kicker} · ${esc(client)}</span>
+    <span class="grow"></span>
+    <span class="cs" style="font-family:var(--mono);font-size:9.5px;color:var(--ink-3)">${esc(me.email)}</span>
+    ${langToggle()}<span class="ropill">${T.ex_readonly}</span></div>`;
+  attachLang();
+
+  const row = d => `<div class="wbrow" data-did="${esc(d.id)}" role="link" tabindex="0">
+      <div style="min-width:0;flex:1"><b>${esc(d.title)}</b>
+        <div class="wmeta">${T.portal_pub(d.version, (d.published_at || "").slice(0, 10))}</div></div>
+      ${hubStatusChip(d.status)}
+      <span class="popen">${T.portal_open} →</span>
+    </div>`;
+  // group headers only when a group label actually exists (spec: nullable)
+  const groups = new Map();
+  for (const d of items) {
+    const key = d.group || "";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(d);
+  }
+  const list = [...groups.keys()].map(key => `
+      ${key ? `<div class="wb-group">${esc(key)}</div>` : ""}
+      ${groups.get(key).map(row).join("")}`).join("");
+
+  const body = items.length
+    ? `<div style="border-top:1px solid var(--border-strong);margin-top:18px">${list}</div>`
+    : `<div class="home-empty" style="padding-top:24px">
+        <svg class="sunmark" width="28" height="28" viewBox="-50 -50 100 100" aria-hidden="true">${sunPaths()}</svg>
+        <h2 style="font-family:var(--serif);font-weight:600;font-size:20px">${T.portal_empty}</h2>
+        <p class="lede">${T.portal_empty_sub}</p></div>`;
+
+  $("#content").innerHTML = `<section class="portal">
+    <span class="kicker">${T.portal_kicker}</span>
+    <h1 class="vhead" style="margin-top:6px">${esc(client)}</h1>
+    <p class="vlede">${T.portal_sub} · ${T.portal_count(items.length)}</p>
+    ${body}
+  </section>`;
+  $$("#content [data-did]").forEach(el => {
+    const open = () => openDeliverable(el.dataset.did);
+    el.addEventListener("click", open);
+    el.addEventListener("keydown", e => { if (e.key === "Enter") open(); });
+  });
+}
+
+async function openDeliverable(id) {
+  const r = await fetch(`/portal/deliverables/${id}`);
+  if (!r.ok) return;
+  const d = await r.json();
+  if (d.kind !== "dashboard" || !d.snapshot) return;
+  renderPublishedPage(d.snapshot);
+  $("#topbar .topbar").insertAdjacentHTML("afterbegin",
+    `<a class="seeall" id="hub-back" style="margin-right:14px;cursor:pointer">← ${T.hub_back}</a>`);
+  $("#hub-back").addEventListener("click", bootHub);
 }
 
 /* ---------- Home: routed by content — first-run (9b) or Command Center (9a) */
@@ -5682,6 +5776,10 @@ function downloadFindings() {
       return;
     }
     renderPublishedPage(await r.json());
+    return;
+  }
+  if (HUB) {             // authed client hub: session cookie, no report loads
+    await bootHub();
     return;
   }
   if (PORTAL) {          // public client portal: a live index, no report loads

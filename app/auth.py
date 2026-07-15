@@ -56,6 +56,46 @@ def check_password(candidate: str) -> bool:
     return bool(pw) and hmac.compare_digest(candidate, pw)
 
 
+# --- client identities (the hub) --------------------------------------------
+# Analyst-issued signed login links instead of hosted magic-link auth: the
+# link IS the credential (like a portal token), HMAC-signed over a DB-minted
+# secret (storage.app_secret()) so it survives analyst password rotation.
+# Exchanging a link sets a separate session cookie; analyst and client
+# sessions never share a token space thanks to the kind prefix in the MAC.
+
+CLIENT_COOKIE = "lumnia_client"
+LINK_MAX_AGE = 180 * 24 * 3600       # a client link lives half a year
+CLIENT_SESSION_MAX_AGE = 30 * 24 * 3600
+
+
+def _sign_scoped(secret_hex: str, kind: str, msg: str) -> str:
+    return hmac.new(bytes.fromhex(secret_hex), f"{kind}.{msg}".encode(),
+                    hashlib.sha256).hexdigest()
+
+
+def make_client_token(kind: str, user_id: str, secret_hex: str) -> str:
+    """kind is 'link' or 'session'; tokens of one kind never verify as the
+    other."""
+    issued = str(int(time.time()))
+    msg = f"{user_id}.{issued}"
+    return f"{msg}.{_sign_scoped(secret_hex, kind, msg)}"
+
+
+def read_client_token(token: str | None, kind: str, secret_hex: str,
+                      max_age: int) -> str | None:
+    """The user_id inside a valid, unexpired token — else None."""
+    if not token or token.count(".") != 2:
+        return None
+    user_id, issued, sig = token.split(".")
+    if not hmac.compare_digest(
+            sig, _sign_scoped(secret_hex, kind, f"{user_id}.{issued}")):
+        return None
+    try:
+        return user_id if (time.time() - int(issued)) < max_age else None
+    except ValueError:
+        return None
+
+
 LOGIN_HTML = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Lumnia</title>
