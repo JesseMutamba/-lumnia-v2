@@ -14,7 +14,7 @@ from typing import Any, Optional
 
 import pandas as pd
 
-from .celltypes import cell_kind, BLANK, DATE, NUMBER, _DATE_RE
+from .celltypes import cell_kind, parse_month_year, BLANK, DATE, NUMBER, _DATE_RE
 
 # ISO dates are year-first BY DEFINITION; feeding them through a dayfirst
 # parse silently swaps day and month whenever the day is <= 12
@@ -64,6 +64,10 @@ def coerce_date(v: Any) -> Optional[str]:
         ts = pd.to_datetime(s, dayfirst=not _ISO_RE.match(s), errors="coerce")
         if pd.notna(ts):
             return ts.date().isoformat() if ts.normalize() == ts else ts.isoformat()
+    if isinstance(v, str):
+        ym = parse_month_year(v.strip())   # "Jan 2026" / "févr. 26" -> month 1st
+        if ym is not None:
+            return _dt.date(ym[0], ym[1], 1).isoformat()
     return None
 
 

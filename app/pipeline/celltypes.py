@@ -34,6 +34,45 @@ _DATE_RE = re.compile(
     re.VERBOSE,
 )
 
+# Month-name periods head real actuals sheets as TEXT: "Jan 2026",
+# "janv. 2026", "Février 2026", "mars-26". month-word + year, nothing else —
+# "Q1 Total" and "Budget 2026" have no month word and stay text. The token
+# set is EN + FR, full and abbreviated, accents included; shared with
+# coerce_date so a cell classified DATE always parses.
+MONTH_TOKENS = {
+    "jan": 1, "january": 1, "janv": 1, "janvier": 1,
+    "feb": 2, "february": 2, "fev": 2, "fév": 2, "fevr": 2, "févr": 2,
+    "fevrier": 2, "février": 2,
+    "mar": 3, "march": 3, "mars": 3,
+    "apr": 4, "april": 4, "avr": 4, "avril": 4,
+    "may": 5, "mai": 5,
+    "jun": 6, "june": 6, "juin": 6,
+    "jul": 7, "july": 7, "juil": 7, "juillet": 7,
+    "aug": 8, "august": 8, "aout": 8, "août": 8,
+    "sep": 9, "sept": 9, "september": 9, "septembre": 9,
+    "oct": 10, "october": 10, "octobre": 10,
+    "nov": 11, "november": 11, "novembre": 11,
+    "dec": 12, "december": 12, "déc": 12, "decembre": 12, "décembre": 12,
+}
+
+_MONTH_YEAR_RE = re.compile(
+    r"^\s*(" + "|".join(sorted(MONTH_TOKENS, key=len, reverse=True))
+    + r")\.?[\s\-/]+(\d{4}|\d{2})\s*$",
+    re.IGNORECASE,
+)
+
+
+def parse_month_year(s: str):
+    """(year, month) for a month-name period string, else None."""
+    m = _MONTH_YEAR_RE.match(s)
+    if not m:
+        return None
+    month = MONTH_TOKENS[m.group(1).lower()]
+    year = int(m.group(2))
+    if year < 100:                       # Excel-style pivot: 26 -> 2026
+        year += 2000 if year < 80 else 1900
+    return year, month
+
 # Excel-style error literals that should be treated as blank/unknown, not text.
 _ERROR_LITERALS = {
     "#div/0!", "#n/a", "#name?", "#null!", "#num!", "#ref!", "#value!", "#error!",
@@ -93,7 +132,7 @@ def cell_kind(v: Any) -> str:
         return NUMBER
     if isinstance(v, str):
         s = v.strip()
-        if _DATE_RE.match(s):
+        if _DATE_RE.match(s) or parse_month_year(s) is not None:
             return DATE
         if _looks_numeric(s):
             return NUMBER
