@@ -56,6 +56,16 @@ MAX_BREAKDOWNS = 6
 DERIVED_SERIES_RX = re.compile(r"total|cumul|sous.?tot|grand.?tot",
                                re.IGNORECASE)
 
+# A per-unit RATE row ("Cost / tonne CPO", "Prix par kg") is a derived
+# indicator, not a level series — tagging one as revenue/opex/volume corrupts
+# every downstream division (a $/t row claimed as volume once out-tagged the
+# real tonnage rows on sheer dollar magnitude). Only the `price` role is
+# legitimately per-unit.
+RATE_SERIES_RX = re.compile(
+    r"(/|\bper\b|\bpar\b)\s*\(?\s*"
+    r"(t|tonnes?|kg|km|l|unit[ée]?s?|ha|hectares?|m²|jour|day|head|t[êe]te)s?\b",
+    re.IGNORECASE)
+
 
 def _tidies(report_sheets) -> List[tuple]:
     """(sheet_name, panel_label, tidy_dict) for every extracted table."""
@@ -94,6 +104,8 @@ def _tag_roles(chart: dict) -> Dict[str, dict]:
     for s in chart["series_all"]:
         label = s["label"]
         for role, rx in ROLE_PATTERNS:
+            if role != "price" and RATE_SERIES_RX.search(str(label)):
+                continue                 # a rate row is no level series
             if rx.search(label):
                 total = sum(abs(v) for v in s["values"] if v is not None)
                 matches.setdefault(role, []).append(
