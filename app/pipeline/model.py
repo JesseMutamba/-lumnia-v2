@@ -138,6 +138,8 @@ def derive_metrics(metrics: Dict[str, dict]) -> Dict[str, Any]:
     area = metrics.get("area", {}).get("values")
     if rev and area:
         derived["revenue_per_area"] = _pair(rev, area, lambda r, a: r / a)
+    if opx and area:
+        derived["opex_per_area"] = _pair(opx, area, lambda o, a: o / a)
     # two volume series -> conversion ratio (secondary/primary, e.g. an
     # extraction rate: tonnes of product out per tonne of raw input)
     vol2 = metrics.get("volume_secondary", {}).get("values")
