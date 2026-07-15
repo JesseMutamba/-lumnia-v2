@@ -1397,6 +1397,9 @@ const STR = {
     hub_download: "Download",
     hub_sub: "Everything we've turned in for you — read-only, versioned.",
     hub_count: n => `${n} deliverable${n === 1 ? "" : "s"}`,
+    wb_brief: "AI brief",
+    brief_generating: "Writing the analysis brief from the audited figures…",
+    brief_done: v => `Analysis brief delivered to the client hub — v${v}.`,
   },
   fr: {
     tab_overview: "Aperçu", tab_financials: "Finances", tab_whatif: "Scénarios",
@@ -1813,6 +1816,9 @@ const STR = {
     hub_download: "Télécharger",
     hub_sub: "Tout ce que nous vous avons remis — lecture seule, versionné.",
     hub_count: n => `${n} livrable${n === 1 ? "" : "s"}`,
+    wb_brief: "Brief IA",
+    brief_generating: "Rédaction du brief d'analyse à partir des chiffres audités…",
+    brief_done: v => `Brief d'analyse remis au portail client — v${v}.`,
   },
 };
 const T = STR[LANG];
@@ -2259,9 +2265,10 @@ async function openDeliverable(id) {
   if (!r.ok) return;
   const d = await r.json();
   if (d.kind === "file") {
-    // pdf previews inline; anything else downloads honestly (no in-browser
-    // xlsx rendering pretense)
-    if ((d.filename || "").toLowerCase().endsWith(".pdf")) renderFileViewer(d);
+    // pdf and generated html briefs preview inline; anything else downloads
+    // honestly (no in-browser xlsx rendering pretense)
+    const fn = (d.filename || "").toLowerCase();
+    if (fn.endsWith(".pdf") || fn.endsWith(".html")) renderFileViewer(d);
     else location.href = d.signed_url;
     return;
   }
@@ -2281,9 +2288,14 @@ function renderFileViewer(d) {
     <span class="grow"></span>${langToggle()}
     <span class="ropill">${T.ex_readonly}</span></div>`;
   attachLang();
+  const isHtml = (d.filename || "").toLowerCase().endsWith(".html");
+  const frame = isHtml
+    ? `<iframe src="${esc(d.signed_url)}" sandbox=""
+        style="width:100%;height:80vh;border:1px solid var(--border);background:#fbf9f3"></iframe>`
+    : `<embed src="${esc(d.signed_url)}" type="application/pdf"
+        style="width:100%;height:80vh;border:1px solid var(--border);background:var(--panel)">`;
   $("#content").innerHTML = `<section class="portal">
-    <embed src="${esc(d.signed_url)}" type="application/pdf"
-      style="width:100%;height:80vh;border:1px solid var(--border);background:var(--panel)">
+    ${frame}
     <p class="chcap" style="margin-top:10px">
       <a href="${esc(d.signed_url)}" download style="color:var(--gold)">↓ ${T.hub_download} — ${esc(d.filename || d.title)}</a></p>
   </section>`;
@@ -2726,6 +2738,7 @@ function renderWorkbench() {
     <span class="grow"></span>
     <button class="pillbtn dark" id="wb-preview">◉ ${T.pv_as_exec}</button>
     ${pub ? `<button class="pillbtn amber" id="wb-share">⧉ ${T.wb04_share}</button>` : ""}
+    ${NARR_READY ? `<button class="pillbtn dark" id="wb-brief">✎ ${T.wb_brief}</button>` : ""}
     ${pub ? "" : `<button class="pillbtn ${nOpen ? "dark" : "gold"}" id="wb-publish" ${nOpen ? "disabled" : ""}>${T.wb04_publish}</button>`}
     <div class="popover" id="share-pop">
       <div class="kicker">${T.po_t}</div>
@@ -2829,6 +2842,16 @@ function attachWorkbench() {
   const pubBtn = $("#wb-publish");
   if (pubBtn) pubBtn.addEventListener("click", () =>
     $("#review-scrim").classList.add("open"));
+  const briefBtn = $("#wb-brief");
+  if (briefBtn) briefBtn.addEventListener("click", async () => {
+    briefBtn.disabled = true;
+    setStatus(T.brief_generating);
+    const r = await fetch(`/analyses/${current}/brief-report?lang=${LANG}`,
+                          { method: "POST" });
+    briefBtn.disabled = false;
+    if (r.ok) setStatus(T.brief_done((await r.json()).version));
+    else setStatus((await r.json()).detail || "!", true);
+  });
   const rp = $("#wb-republish");
   if (rp) rp.addEventListener("click", () => doPublish(rp));
   const rmPub = $("#rm-publish");
