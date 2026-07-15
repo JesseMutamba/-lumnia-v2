@@ -25,7 +25,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 
 import datetime as _dt
 
-from . import auth, narrative, storage
+from . import auth, brief, narrative, storage
 from .findings import DECISIONS, aggregate_findings, count_open
 from .snapshot import build_exec_snapshot
 from .models import (
@@ -683,6 +683,44 @@ def portal_users(client: str) -> list[dict]:
 FILE_URL_TTL = 15 * 60
 
 
+@app.post("/analyses/{analysis_id}/brief-report")
+def make_brief_report(analysis_id: str, lang: str = "en") -> dict:
+    """Generate the written Analysis Brief and deliver it to the client hub
+    as a versioned file deliverable. The pipeline supplies every figure
+    (facts include monthly actuals + the vs-budget comparison); Claude only
+    phrases the five fixed sections. Honest walls: 503 without a key, 409
+    without a client to deliver to, 502 when the model's output is unusable."""
+    if not narrative.available():
+        raise HTTPException(
+            status_code=503,
+            detail="AI narrative is not configured on this server "
+                   "(set the ANTHROPIC_API_KEY secret).")
+    report = storage.get_report(analysis_id)
+    if report is None:
+        raise HTTPException(status_code=404,
+                            detail=f"No analysis '{analysis_id}'.")
+    label = storage.client_label(analysis_id)
+    if not label:
+        raise HTTPException(
+            status_code=409,
+            detail="Assign this analysis to a client first — the brief is "
+                   "delivered to the client's hub.")
+    agg = aggregate_findings(report)
+    facts = brief.build_brief_facts(report, agg)
+    try:
+        phrased = narrative.generate_brief(facts, brief.SECTION_KEYS, lang)
+    except narrative.NarrativeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    html = brief.render_brief_html(report, phrased, agg, label, lang)
+    stem = (report.get("filename") or analysis_id).rsplit(".", 1)[0]
+    d = storage.add_file_deliverable(
+        label, f"analysis-brief-{lang}.html", html.encode("utf-8"),
+        title=f"Analysis brief — {stem} ({lang.upper()})")
+    if d is None:                      # label vanished mid-flight
+        raise HTTPException(status_code=409, detail="Client no longer exists.")
+    return {**d, "lang": lang}
+
+
 @app.post("/clients/{client}/files")
 async def add_client_file(client: str, file: UploadFile = File(...),
                           group: str = Form(""), title: str = Form("")) -> dict:
@@ -717,10 +755,16 @@ def portal_file(token: str) -> FileResponse:
                             detail="This link is no longer active.")
     path, name = found
     media = mimetypes.guess_type(name)[0] or "application/octet-stream"
-    disposition = "inline" if media == "application/pdf" else "attachment"
-    return FileResponse(path, media_type=media, headers={
-        "Content-Disposition": f'{disposition}; filename="{name}"',
-        "Cache-Control": "no-store"})
+    inline = media in ("application/pdf", "text/html")
+    headers = {
+        "Content-Disposition":
+            f'{"inline" if inline else "attachment"}; filename="{name}"',
+        "Cache-Control": "no-store"}
+    if media == "text/html":
+        # readable in place, but script-dead: generated briefs carry no JS,
+        # and nothing served here may ever act on the client's session
+        headers["Content-Security-Policy"] = "sandbox"
+    return FileResponse(path, media_type=media, headers=headers)
 
 
 @app.delete("/clients/{client}/users/{user_id}")

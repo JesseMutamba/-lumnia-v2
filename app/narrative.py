@@ -141,11 +141,37 @@ def build_facts(report: Dict[str, Any],
     return "\n".join(lines)
 
 
-def _call_claude(facts: str, lang: str = "en") -> str:
+# The Analysis Brief: same integrity contract, five fixed sections. The
+# section list and titles live in brief.py; the model only writes prose.
+BRIEF_PROMPT = """You are the narrative layer of Lumnia, a spreadsheet-audit \
+tool. You will receive a FACTS block: verified figures computed by a \
+deterministic pipeline from a client's uploaded workbook.
+
+Write a short client-facing analysis brief for a non-technical leadership \
+reader.
+
+HARD RULES — these are the product's integrity guarantee:
+1. Use ONLY figures present in FACTS. You may reformat a number but NEVER \
+compute new ones — no sums, growth rates, differences, or ratios of your own.
+2. If something isn't in FACTS, don't claim it. No industry benchmarks, no \
+invented context.
+3. Mention data-quality problems from FACTS honestly.
+
+Respond with ONLY a JSON object, no markdown fences:
+{"title": "<one factual, plain-language title, <=90 chars>",
+ "sections": {
+   "engagement": "<what this workbook covers and what it now answers, <=90 words>",
+   "cash": "<where the money went, from the cost/investment figures, <=90 words>",
+   "unit_cost": "<the unit-cost story incl. actual vs budget when present, <=110 words>",
+   "trajectory": "<margins and the direction of travel across the periods, <=90 words>",
+   "delivers": "<what leadership can now track month to month, <=70 words>"
+ }}"""
+
+
+def _call_claude(facts: str, lang: str = "en", system: str | None = None) -> str:
     """One Messages API call; returns the raw text of the first block."""
-    lang_line = ("Écris headline, narrative et watchouts en français."
-                 if lang == "fr" else
-                 "Write headline, narrative and watchouts in English.")
+    lang_line = ("Écris tout le texte en français."
+                 if lang == "fr" else "Write all text in English.")
     resp = httpx.post(
         API_URL,
         headers={
@@ -155,9 +181,9 @@ def _call_claude(facts: str, lang: str = "en") -> str:
         },
         json={
             "model": os.environ.get("LUMNIA_NARRATIVE_MODEL", DEFAULT_MODEL),
-            "max_tokens": 700,
+            "max_tokens": 1200,
             "temperature": 0.2,
-            "system": SYSTEM_PROMPT,
+            "system": system or SYSTEM_PROMPT,
             "messages": [{"role": "user",
                           "content": f"FACTS:\n{facts}\n\n{lang_line}"}],
         },
@@ -201,3 +227,30 @@ def generate_narrative(report: Dict[str, Any],
         "model": os.environ.get("LUMNIA_NARRATIVE_MODEL", DEFAULT_MODEL),
         "lang": lang,
     }
+
+
+def generate_brief(facts: str, section_keys, lang: str = "en") -> Dict[str, Any]:
+    """Fact sheet -> Claude -> validated brief payload (title + the fixed
+    sections). Same fail-honest contract as the narrative: a malformed or
+    incomplete response raises, it is never repaired or padded."""
+    try:
+        raw = _call_claude(facts, lang, system=BRIEF_PROMPT)
+    except Exception as exc:
+        raise NarrativeError(f"Brief call failed: {exc}") from exc
+    try:
+        text = raw.strip()
+        if text.startswith("```"):
+            text = text.strip("`").lstrip("json").strip()
+        out = json.loads(text)
+        assert isinstance(out.get("title"), str) and out["title"].strip()
+        sections = out.get("sections")
+        assert isinstance(sections, dict)
+        for key in section_keys:
+            assert isinstance(sections.get(key), str) and sections[key].strip()
+    except Exception as exc:
+        raise NarrativeError(
+            f"Brief response was not the expected JSON: {exc}") from exc
+    return {"title": out["title"].strip(),
+            "sections": {k: sections[k].strip() for k in section_keys},
+            "model": os.environ.get("LUMNIA_NARRATIVE_MODEL", DEFAULT_MODEL),
+            "lang": lang}
