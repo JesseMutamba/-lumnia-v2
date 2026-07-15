@@ -16,6 +16,7 @@ Endpoints
 """
 from __future__ import annotations
 
+import mimetypes
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -677,6 +678,51 @@ def portal_users(client: str) -> list[dict]:
     return storage.list_client_users(client)
 
 
+# a signed file URL outlives its purpose quickly: long enough for a slow
+# connection in Kinshasa, short enough that a forwarded link goes stale
+FILE_URL_TTL = 15 * 60
+
+
+@app.post("/clients/{client}/files")
+async def add_client_file(client: str, file: UploadFile = File(...),
+                          group: str = Form(""), title: str = Form("")) -> dict:
+    """Analyst-gated: turn in a file (.xlsx/.pdf/...) for a client. Same
+    title re-delivered bumps the version on the same deliverable."""
+    content = await file.read()
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"'{file.filename}' exceeds the "
+                   f"{MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit.")
+    d = storage.add_file_deliverable(client, file.filename or "", content,
+                                     group=group, title=title)
+    if d is None:
+        raise HTTPException(status_code=422,
+                            detail="A client name and a filename are required.")
+    return d
+
+
+@app.get("/portal/files/{token}", include_in_schema=False)
+def portal_file(token: str) -> FileResponse:
+    """PUBLIC. Serve file bytes behind a short-TTL signed token. The token is
+    minted only after an ownership check in the detail endpoint, and its
+    expiry is inside the MAC — an expired or tampered link is a 404."""
+    did = auth.read_expiring_token(token, "file", storage.app_secret())
+    if did is None:
+        raise HTTPException(status_code=404,
+                            detail="This link is no longer active.")
+    found = storage.file_deliverable_path(did)
+    if found is None:
+        raise HTTPException(status_code=404,
+                            detail="This link is no longer active.")
+    path, name = found
+    media = mimetypes.guess_type(name)[0] or "application/octet-stream"
+    disposition = "inline" if media == "application/pdf" else "attachment"
+    return FileResponse(path, media_type=media, headers={
+        "Content-Disposition": f'{disposition}; filename="{name}"',
+        "Cache-Control": "no-store"})
+
+
 @app.delete("/clients/{client}/users/{user_id}")
 def revoke_portal_user(client: str, user_id: str) -> dict:
     """Drop the identity: the login link AND any live session die at once."""
@@ -734,6 +780,14 @@ def portal_deliverable(deliverable_id: str, request: Request) -> dict:
     d = storage.get_deliverable(user["client_id"], deliverable_id)
     if d is None or (d["kind"] == "dashboard" and d.get("snapshot") is None):
         raise HTTPException(status_code=404, detail="No such deliverable.")
+    if d["kind"] == "file":       # mint the signed URL only post-check
+        token = auth.make_expiring_token("file", d["id"],
+                                         storage.app_secret(), FILE_URL_TTL)
+        found = storage.file_deliverable_path(d["id"])
+        d["filename"] = found[1] if found else None
+        d["signed_url"] = f"/portal/files/{token}"
+        d["expires_at"] = int(_dt.datetime.now(_dt.timezone.utc).timestamp()
+                              ) + FILE_URL_TTL
     return d
 
 

@@ -96,6 +96,30 @@ def read_client_token(token: str | None, kind: str, secret_hex: str,
         return None
 
 
+def make_expiring_token(kind: str, subject: str, secret_hex: str,
+                        ttl: int) -> str:
+    """A token that carries its own absolute expiry — the shape signed file
+    URLs use. The expiry is inside the MAC, so it can't be extended."""
+    expires = str(int(time.time()) + ttl)
+    msg = f"{subject}.{expires}"
+    return f"{msg}.{_sign_scoped(secret_hex, kind, msg)}"
+
+
+def read_expiring_token(token: str | None, kind: str,
+                        secret_hex: str) -> str | None:
+    """The subject inside a valid, unexpired token — else None."""
+    if not token or token.count(".") != 2:
+        return None
+    subject, expires, sig = token.split(".")
+    if not hmac.compare_digest(
+            sig, _sign_scoped(secret_hex, kind, f"{subject}.{expires}")):
+        return None
+    try:
+        return subject if time.time() < int(expires) else None
+    except ValueError:
+        return None
+
+
 LOGIN_HTML = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Lumnia</title>

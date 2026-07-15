@@ -1388,6 +1388,10 @@ const STR = {
     portal_enabling: "Enabling portal…",
     hub_back: "All deliverables",
     hub_flagged: "flagged",
+    hub_file: "file",
+    hub_download: "Download",
+    hub_sub: "Everything we've turned in for you — read-only, versioned.",
+    hub_count: n => `${n} deliverable${n === 1 ? "" : "s"}`,
   },
   fr: {
     tab_overview: "Aperçu", tab_financials: "Finances", tab_whatif: "Scénarios",
@@ -1795,6 +1799,10 @@ const STR = {
     portal_enabling: "Activation du portail…",
     hub_back: "Tous les livrables",
     hub_flagged: "signalé",
+    hub_file: "fichier",
+    hub_download: "Télécharger",
+    hub_sub: "Tout ce que nous vous avons remis — lecture seule, versionné.",
+    hub_count: n => `${n} livrable${n === 1 ? "" : "s"}`,
   },
 };
 const T = STR[LANG];
@@ -2201,7 +2209,8 @@ function renderHubPage(me, items) {
   const row = d => `<div class="wbrow" data-did="${esc(d.id)}" role="link" tabindex="0">
       <div style="min-width:0;flex:1"><b>${esc(d.title)}</b>
         <div class="wmeta">${T.portal_pub(d.version, (d.published_at || "").slice(0, 10))}</div></div>
-      ${hubStatusChip(d.status)}
+      ${d.kind === "file" ? `<span class="schip">${T.hub_file}</span>`
+                          : hubStatusChip(d.status)}
       <span class="popen">${T.portal_open} →</span>
     </div>`;
   // group headers only when a group label actually exists (spec: nullable)
@@ -2225,7 +2234,7 @@ function renderHubPage(me, items) {
   $("#content").innerHTML = `<section class="portal">
     <span class="kicker">${T.portal_kicker}</span>
     <h1 class="vhead" style="margin-top:6px">${esc(client)}</h1>
-    <p class="vlede">${T.portal_sub} · ${T.portal_count(items.length)}</p>
+    <p class="vlede">${T.hub_sub} · ${T.hub_count(items.length)}</p>
     ${body}
   </section>`;
   $$("#content [data-did]").forEach(el => {
@@ -2239,10 +2248,35 @@ async function openDeliverable(id) {
   const r = await fetch(`/portal/deliverables/${id}`);
   if (!r.ok) return;
   const d = await r.json();
-  if (d.kind !== "dashboard" || !d.snapshot) return;
+  if (d.kind === "file") {
+    // pdf previews inline; anything else downloads honestly (no in-browser
+    // xlsx rendering pretense)
+    if ((d.filename || "").toLowerCase().endsWith(".pdf")) renderFileViewer(d);
+    else location.href = d.signed_url;
+    return;
+  }
+  if (!d.snapshot) return;
   renderPublishedPage(d.snapshot);
   $("#topbar .topbar").insertAdjacentHTML("afterbegin",
     `<a class="seeall" id="hub-back" style="margin-right:14px;cursor:pointer">← ${T.hub_back}</a>`);
+  $("#hub-back").addEventListener("click", bootHub);
+}
+
+function renderFileViewer(d) {
+  MODE = "exec";
+  document.body.dataset.mode = "exec";
+  $("#topbar").innerHTML = `<div class="topbar exec">
+    <a class="seeall" id="hub-back" style="cursor:pointer">← ${T.hub_back}</a>
+    <span class="tkick" style="margin-left:14px">${esc(d.title)} · v${d.version}</span>
+    <span class="grow"></span>${langToggle()}
+    <span class="ropill">${T.ex_readonly}</span></div>`;
+  attachLang();
+  $("#content").innerHTML = `<section class="portal">
+    <embed src="${esc(d.signed_url)}" type="application/pdf"
+      style="width:100%;height:80vh;border:1px solid var(--border);background:var(--panel)">
+    <p class="chcap" style="margin-top:10px">
+      <a href="${esc(d.signed_url)}" download style="color:var(--gold)">↓ ${T.hub_download} — ${esc(d.filename || d.title)}</a></p>
+  </section>`;
   $("#hub-back").addEventListener("click", bootHub);
 }
 
