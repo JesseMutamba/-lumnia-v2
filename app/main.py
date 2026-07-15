@@ -32,8 +32,11 @@ from .models import (
     AnalyzeResponse,
     DecisionsRequest,
     DeleteResponse,
+    DeliverableMeta,
     FindingsResponse,
     HealthResponse,
+    PortalClient,
+    PortalMe,
     SheetReport,
     StatsResponse,
 )
@@ -532,6 +535,14 @@ def publish_analysis(analysis_id: str) -> dict:
             detail=f"{n_open} finding(s) still open — decide each one "
                    f"(approve or flag) before publishing.")
     info = storage.publish(analysis_id, build_exec_snapshot(report))
+    label = storage.client_label(analysis_id)
+    if label:                     # labeled work lands in the client hub too
+        storage.record_dashboard_deliverable(
+            analysis_id, label,
+            title=(report.get("filename") or "").rsplit(".", 1)[0]
+                  or analysis_id,
+            version=info["version"], published_at=info["published_at"],
+            status=_deliverable_status(report))
     return {**info, "url": f"/published/{info['token']}"}
 
 
@@ -606,6 +617,124 @@ def portal_status(client: str) -> dict:
 def disable_portal(client: str) -> dict:
     """Drop the client's portal; the shared link dies immediately."""
     return {"revoked": storage.revoke_portal(client)}
+
+
+# --- the client hub (authed portal) -----------------------------------------
+# Literal /portal/* routes are registered BEFORE /portal/{token} below, so
+# Starlette matches them first; real portal tokens (22 url-safe chars) can
+# never collide with these names. Minting/revoking users is analyst work and
+# stays behind the password; everything under /portal/ passes the analyst
+# gate and is guarded by the client-session cookie instead.
+
+def _client_identity(request: Request) -> dict:
+    """The identity behind the client-session cookie. client_id is ALWAYS
+    derived here, server-side — it is never a request parameter."""
+    uid = auth.read_client_token(
+        request.cookies.get(auth.CLIENT_COOKIE), "session",
+        storage.app_secret(), auth.CLIENT_SESSION_MAX_AGE)
+    if uid is None:
+        raise HTTPException(status_code=401, detail="Sign-in required.")
+    user = storage.client_user(uid)
+    if user is None:                      # revoked while the session lived
+        raise HTTPException(status_code=403,
+                            detail="This access has been revoked.")
+    return user
+
+
+def _deliverable_status(report: dict) -> str | None:
+    """The rollup chip frozen onto a deliverable at publish time. None when
+    no relations were checked — we don't claim reconciliation that never
+    ran."""
+    agg = aggregate_findings(report)
+    n_relations = (agg["n_verified_relations"] + agg["n_mismatched_relations"]
+                   + agg["n_unverified_relations"])
+    if n_relations == 0:
+        return None
+    if any((d or {}).get("decision") == "flagged"
+           for d in (report.get("decisions") or {}).values()):
+        return "flagged"
+    return "reconciled"
+
+
+@app.post("/clients/{client}/users")
+async def add_portal_user(client: str, request: Request) -> dict:
+    """Mint a login identity + its signed link ({"email": ...}). The analyst
+    sends the link themselves (WhatsApp, email) — no hosted email flow."""
+    body = await request.json()
+    user = storage.add_client_user(client, body.get("email") or "")
+    if user is None:
+        raise HTTPException(
+            status_code=422,
+            detail="A valid email that isn't already on another client is "
+                   "required.")
+    token = auth.make_client_token("link", user["id"], storage.app_secret())
+    return {"id": user["id"], "email": user["email"],
+            "login_url": f"/portal/login/{token}"}
+
+
+@app.get("/clients/{client}/users")
+def portal_users(client: str) -> list[dict]:
+    return storage.list_client_users(client)
+
+
+@app.delete("/clients/{client}/users/{user_id}")
+def revoke_portal_user(client: str, user_id: str) -> dict:
+    """Drop the identity: the login link AND any live session die at once."""
+    return {"revoked": storage.remove_client_user(user_id)}
+
+
+@app.get("/portal/login/{token}", include_in_schema=False)
+def portal_login(token: str, request: Request):
+    """PUBLIC. Exchange a signed login link for a client session cookie."""
+    uid = auth.read_client_token(token, "link", storage.app_secret(),
+                                 auth.LINK_MAX_AGE)
+    if uid is None or storage.client_user(uid) is None:
+        raise HTTPException(status_code=403,
+                            detail="This sign-in link is no longer active.")
+    resp = RedirectResponse("/portal/hub", status_code=303)
+    resp.set_cookie(auth.CLIENT_COOKIE,
+                    auth.make_client_token("session", uid,
+                                           storage.app_secret()),
+                    max_age=auth.CLIENT_SESSION_MAX_AGE, httponly=True,
+                    samesite="lax", secure=_secure(request))
+    return resp
+
+
+@app.get("/portal/hub", include_in_schema=False)
+def portal_hub_page(request: Request) -> FileResponse:
+    """The hub shell; the page boots from /portal/me. Session required."""
+    _client_identity(request)
+    return FileResponse(_INDEX, media_type="text/html",
+                        headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/portal/me", response_model=PortalMe)
+def portal_me(request: Request) -> PortalMe:
+    user = _client_identity(request)
+    return PortalMe(client=PortalClient(name=user["name"], slug=user["slug"]),
+                    email=user["email"])
+
+
+@app.get("/portal/deliverables", response_model=list[DeliverableMeta])
+def portal_deliverables(request: Request) -> list[DeliverableMeta]:
+    user = _client_identity(request)
+    return [DeliverableMeta(id=d["id"], title=d["title"], kind=d["kind"],
+                            group=d["grp"], version=d["version"],
+                            published_at=d["published_at"],
+                            status=d["status"])
+            for d in storage.list_deliverables(user["client_id"])]
+
+
+@app.get("/portal/deliverables/{deliverable_id}")
+def portal_deliverable(deliverable_id: str, request: Request) -> dict:
+    """One deliverable. Dashboards return the frozen exec-only snapshot —
+    the same curated payload the public token link serves, no new render
+    path. Cross-tenant ids 404: we don't confirm they exist."""
+    user = _client_identity(request)
+    d = storage.get_deliverable(user["client_id"], deliverable_id)
+    if d is None or (d["kind"] == "dashboard" and d.get("snapshot") is None):
+        raise HTTPException(status_code=404, detail="No such deliverable.")
+    return d
 
 
 @app.get("/portal/{token}")

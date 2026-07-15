@@ -140,3 +140,26 @@ class HealthResponse(BaseModel):
     service: str
     # whether the AI narrative layer is configured (ANTHROPIC_API_KEY set)
     narrative_ready: bool = False
+
+
+class PortalClient(BaseModel):
+    name: str
+    slug: str
+
+
+class PortalMe(BaseModel):
+    """Who a client session belongs to — derived server-side, never claimed."""
+    client: PortalClient
+    email: str
+
+
+class DeliverableMeta(BaseModel):
+    """One row in the client hub. Deliberately excludes source_ref: ids in,
+    curated payloads out — storage keys and snapshot internals never list."""
+    id: str
+    title: str
+    kind: str
+    group: Optional[str] = None
+    version: int
+    published_at: Optional[str] = None
+    status: Optional[str] = None
