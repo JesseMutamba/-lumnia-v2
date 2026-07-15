@@ -11,6 +11,7 @@ COPY app ./app
 
 # SQLite lives on the mounted volume; the app creates the dir on first write.
 ENV LUMNIA_DB=/data/lumnia.db
+ENV LUMNIA_FILES=/data/files
 EXPOSE 8080
 
 # --proxy-headers so the app sees the real https scheme behind the platform

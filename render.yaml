@@ -20,6 +20,8 @@ services:
     envVars:
       - key: LUMNIA_DB
         value: /data/lumnia.db
+      - key: LUMNIA_FILES
+        value: /data/files
       - key: LUMNIA_PASSWORD   # gates the site; set in the dashboard
         sync: false
       - key: ANTHROPIC_API_KEY # optional: enables the AI narrative
