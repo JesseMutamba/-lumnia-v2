@@ -1115,6 +1115,8 @@ const STR = {
     cl_added: "Contact added — sign-in link copied. Send it via WhatsApp or email.",
     cl_copy: "Copy sign-in link",
     cl_copied: "Sign-in link copied — valid 6 months, this client only.",
+    cl_mail: "Email invite",
+    cl_mailed: e => `Invitation sent to ${e}.`,
     cl_revoke: "Revoke",
     cl_revoke_confirm: email => `Revoke access for ${email}? Their link and any open session die immediately.`,
     cl_revoked: "Access revoked.",
@@ -1572,6 +1574,8 @@ const STR = {
     cl_added: "Contact ajouté — lien de connexion copié. Envoyez-le par WhatsApp ou email.",
     cl_copy: "Copier le lien de connexion",
     cl_copied: "Lien de connexion copié — valable 6 mois, pour ce client uniquement.",
+    cl_mail: "Inviter par email",
+    cl_mailed: e => `Invitation envoyée à ${e}.`,
     cl_revoke: "Révoquer",
     cl_revoke_confirm: email => `Révoquer l'accès de ${email} ? Son lien et toute session ouverte meurent immédiatement.`,
     cl_revoked: "Accès révoqué.",
@@ -2583,6 +2587,7 @@ async function renderClientsPanel() {
           <span style="font-family:var(--mono);font-size:12px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">${esc(u.email)}</span>
           <span class="qsub">${T.cl_since(esc((u.created_at || "").slice(0, 10)))}</span>
           <button class="pillbtn" data-cplink="${esc(u.id)}" data-cname="${esc(c.name)}">${T.cl_copy}</button>
+          <button class="pillbtn" data-cmail="${esc(u.id)}" data-cname="${esc(c.name)}" data-cemail="${esc(u.email)}">${T.cl_mail}</button>
           <button class="pillbtn" data-crevoke="${esc(u.id)}" data-cname="${esc(c.name)}" data-cemail="${esc(u.email)}">${T.cl_revoke}</button>
         </div>`).join("")
         : `<p class="qsub" style="margin:8px 0 2px">${T.cl_no_contacts}</p>`;
@@ -2620,6 +2625,15 @@ async function renderClientsPanel() {
     const url = abs((await r.json()).login_url);
     try { await navigator.clipboard.writeText(url); } catch (_) {}
     setStatus(T.cl_copied);
+  }));
+  $$("#clients-panel [data-cmail]").forEach(el => el.addEventListener("click", async e => {
+    e.stopPropagation();
+    el.disabled = true;
+    const r = await fetch(`/clients/${encodeURIComponent(el.dataset.cname)}/users/${el.dataset.cmail}/invite?lang=${LANG}`,
+      { method: "POST" });
+    el.disabled = false;
+    if (!r.ok) { setStatus((await r.json()).detail || "!", true); return; }
+    setStatus(T.cl_mailed(el.dataset.cemail));
   }));
   $$("#clients-panel [data-crevoke]").forEach(el => el.addEventListener("click", async e => {
     e.stopPropagation();

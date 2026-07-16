@@ -25,7 +25,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 
 import datetime as _dt
 
-from . import auth, brief, narrative, storage
+from . import auth, brief, mailer, narrative, storage
 from .findings import DECISIONS, aggregate_findings, count_open
 from .snapshot import build_exec_snapshot
 from .models import (
@@ -684,18 +684,75 @@ def clients_index() -> list[dict]:
     return storage.list_clients()
 
 
-@app.post("/clients/{client}/users/{user_id}/link")
-def remint_login_link(client: str, user_id: str) -> dict:
-    """A fresh signed login link for an EXISTING contact — creation is the
-    only other moment a link exists. 404 unless the contact belongs to this
-    exact client: no cross-client minting."""
+def _client_contact_or_404(client: str, user_id: str) -> dict:
+    """The contact row, 404 unless it belongs to this exact client — no
+    cross-client link minting, ever."""
     user = storage.client_user(user_id)
     if user is None or user["name"] != (client or "").strip():
         raise HTTPException(status_code=404,
                             detail="No such contact for this client.")
+    return user
+
+
+@app.post("/clients/{client}/users/{user_id}/link")
+def remint_login_link(client: str, user_id: str) -> dict:
+    """A fresh signed login link for an EXISTING contact — creation is the
+    only other moment a link exists."""
+    user = _client_contact_or_404(client, user_id)
     token = auth.make_client_token("link", user_id, storage.app_secret())
     return {"id": user_id, "email": user["email"],
             "login_url": f"/portal/login/{token}"}
+
+
+# invite email copy lives server-side: the email is a deliverable of the
+# backend, not the SPA — FR first, like everything client-facing at PVAK
+_INVITE_MAIL = {
+    "en": {
+        "subject": lambda c: f"Your {c} workspace at Lumnia — sign-in link",
+        "body": lambda c, url: (
+            f"Hello,\n\n"
+            f"Here is your personal sign-in link for the {c} workspace at "
+            f"Lumnia:\n\n{url}\n\n"
+            f"The link is valid for 6 months and opens your read-only hub — "
+            f"every deliverable we turn in for you, versioned.\n\n"
+            f"If you weren't expecting this, you can ignore this email.\n"),
+    },
+    "fr": {
+        "subject": lambda c: f"Votre espace {c} chez Lumnia — lien de connexion",
+        "body": lambda c, url: (
+            f"Bonjour,\n\n"
+            f"Voici votre lien de connexion personnel à l'espace {c} chez "
+            f"Lumnia :\n\n{url}\n\n"
+            f"Ce lien est valable 6 mois et ouvre votre hub en lecture "
+            f"seule — tous les livrables que nous vous remettons, "
+            f"versionnés.\n\n"
+            f"Si vous n'attendiez pas ce message, vous pouvez l'ignorer.\n"),
+    },
+}
+
+
+@app.post("/clients/{client}/users/{user_id}/invite")
+def email_invite(client: str, user_id: str, request: Request,
+                 lang: str = "en") -> dict:
+    """Mint a fresh sign-in link and EMAIL it to the contact. 503 when SMTP
+    is unconfigured — the copy-link path in the workbench always works
+    without it. SMTP failures surface as 502; nothing pretends to send."""
+    if mailer.smtp_config() is None:
+        raise HTTPException(
+            status_code=503,
+            detail="SMTP is not configured (set SMTP_HOST) — copy the "
+                   "sign-in link instead.")
+    user = _client_contact_or_404(client, user_id)
+    token = auth.make_client_token("link", user_id, storage.app_secret())
+    url = f"{str(request.base_url).rstrip('/')}/portal/login/{token}"
+    copy = _INVITE_MAIL["fr" if lang == "fr" else "en"]
+    try:
+        mailer.send_invite(user["email"], copy["subject"](user["name"]),
+                           copy["body"](user["name"], url))
+    except Exception as exc:
+        raise HTTPException(status_code=502,
+                            detail=f"Sending failed: {exc}")
+    return {"sent": True, "email": user["email"]}
 
 
 # a signed file URL outlives its purpose quickly: long enough for a slow
