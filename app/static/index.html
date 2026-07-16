@@ -1105,6 +1105,22 @@ const STR = {
     cc_new: "New analysis",
     cc_drop_small: "Drop a spreadsheet",
     cc_drop_sub: "Audited answer in minutes.",
+    // client access panel (onboarding)
+    cl_kicker: "Clients",
+    cl_meta: (u, d) => `${u} contact${u === 1 ? "" : "s"} · ${d} deliverable${d === 1 ? "" : "s"}`,
+    cl_none: "No clients yet — assign a workbook to a client and it appears here.",
+    cl_no_contacts: "No sign-in access yet. Add a contact below.",
+    cl_add_ph: "contact@client.com",
+    cl_add: "Invite",
+    cl_added: "Contact added — sign-in link copied. Send it via WhatsApp or email.",
+    cl_copy: "Copy sign-in link",
+    cl_copied: "Sign-in link copied — valid 6 months, this client only.",
+    cl_mail: "Email invite",
+    cl_mailed: e => `Invitation sent to ${e}.`,
+    cl_revoke: "Revoke",
+    cl_revoke_confirm: email => `Revoke access for ${email}? Their link and any open session die immediately.`,
+    cl_revoked: "Access revoked.",
+    cl_since: d => `since ${d}`,
     mt_analyst: "Analyst", mt_exec: "Exec",
     wb_audit: n => `Audit · ${n} open`,
     wb_pub_stale: v => `Published v${v} · stale`,
@@ -1172,6 +1188,19 @@ const STR = {
     xd_capex: "Total investment", xd_capex_peak: p => `peak year ${p}`,
     xd_opex: p => `Operating costs · ${p}`,
     xd_margin_t: "Operating margin %", xd_margin_sub: "revenue − costs, by period",
+    // portfolio-sample insights: every figure from model.derived/insights
+    xd_cost_actual: "Cost / tonne — actual",
+    xd_vsb: t => `vs budget ${t}`,
+    xd_invshare: "Investment share", xd_invshare_sub: t => `of ${t} tracked`,
+    xd_cashpos: "Cash-positive", xd_cashpos_sub: "on plan",
+    xd_bridge: "Capital bridge", xd_bridge_sub: "to self-funding",
+    xp_path_t: (a, b) => `Path to profit — plan ${a}–${b}`,
+    xp_path_sub: y => `Net cash after investment turns positive in ${y}.`,
+    xp_margin_line: "Operating margin",
+    xp_netcash_line: "Net cash (cumulative)",
+    xp_split_t: "Where the cash went",
+    xp_split_sub: p => `${p}% invested in future production.`,
+    xp_split_inv: "Investment", xp_split_op: "Operating cost",
     xd_ramp: l => `Ramp-up — ${l}`, xd_ramp_sub: "per period",
     xd_cvr: "Investment vs revenue", xd_cvr_sub: "both series, same axis",
     xd_peak: l => `Peak ${l}`,
@@ -1392,6 +1421,17 @@ const STR = {
     portal_copied: url => `Portal link copied · ${url}`,
     portal_enabling: "Enabling portal…",
     hub_back: "All deliverables",
+    // first-login welcome: the hub before anything has been turned in
+    hub_welcome: "Welcome — your workspace is ready.",
+    hub_welcome_sub: "Your analyst is preparing your first deliverable. It appears here the moment it's turned in.",
+    hub_w1: ["Audited dashboards", "every total re-computed, every contradiction quantified, before a single chart is drawn."],
+    hub_w2: ["Written analysis briefs", "every figure traced to your own records — nothing estimated, nothing invented."],
+    hub_w3: ["Versioned deliverables", "updates arrive as v2, v3… of the same document. Nothing is silently replaced."],
+    hub_welcome_help: "Questions? Reply to the person who sent you your sign-in link.",
+    hub_send_t: "Send us a workbook",
+    hub_send_sub: "It goes straight to your analyst's desk and is audited before anything is published.",
+    hub_sending: "Sending…",
+    hub_sent: f => `Received — ${f} is on your analyst's desk.`,
     hub_flagged: "flagged",
     hub_file: "file",
     hub_download: "Download",
@@ -1524,6 +1564,22 @@ const STR = {
     cc_new: "Nouvelle analyse",
     cc_drop_small: "Déposez un tableur",
     cc_drop_sub: "Réponse auditée en quelques minutes.",
+    // panneau d'accès clients (onboarding)
+    cl_kicker: "Clients",
+    cl_meta: (u, d) => `${u} contact${u === 1 ? "" : "s"} · ${d} livrable${d === 1 ? "" : "s"}`,
+    cl_none: "Aucun client pour l'instant — attribuez un classeur à un client et il apparaîtra ici.",
+    cl_no_contacts: "Aucun accès pour l'instant. Ajoutez un contact ci-dessous.",
+    cl_add_ph: "contact@client.com",
+    cl_add: "Inviter",
+    cl_added: "Contact ajouté — lien de connexion copié. Envoyez-le par WhatsApp ou email.",
+    cl_copy: "Copier le lien de connexion",
+    cl_copied: "Lien de connexion copié — valable 6 mois, pour ce client uniquement.",
+    cl_mail: "Inviter par email",
+    cl_mailed: e => `Invitation envoyée à ${e}.`,
+    cl_revoke: "Révoquer",
+    cl_revoke_confirm: email => `Révoquer l'accès de ${email} ? Son lien et toute session ouverte meurent immédiatement.`,
+    cl_revoked: "Accès révoqué.",
+    cl_since: d => `depuis ${d}`,
     mt_analyst: "Analyste", mt_exec: "Direction",
     wb_audit: n => `Audit · ${n} ouverte${n === 1 ? "" : "s"}`,
     wb_pub_stale: v => `Publié v${v} · retard`,
@@ -1591,6 +1647,19 @@ const STR = {
     xd_capex: "Investissement total", xd_capex_peak: p => `pic en ${p}`,
     xd_opex: p => `Charges · ${p}`,
     xd_margin_t: "Marge opérationnelle %", xd_margin_sub: "revenus − charges, par période",
+    // indicateurs du modèle : chaque chiffre vient de model.derived/insights
+    xd_cost_actual: "Coût / tonne — réel",
+    xd_vsb: t => `vs budget ${t}`,
+    xd_invshare: "Part investie", xd_invshare_sub: t => `sur ${t} suivis`,
+    xd_cashpos: "Trésorerie positive", xd_cashpos_sub: "selon le plan",
+    xd_bridge: "Besoin de financement", xd_bridge_sub: "jusqu'à l'autofinancement",
+    xp_path_t: (a, b) => `Chemin vers la rentabilité — plan ${a}–${b}`,
+    xp_path_sub: y => `La trésorerie nette après investissement devient positive en ${y}.`,
+    xp_margin_line: "Marge opérationnelle",
+    xp_netcash_line: "Trésorerie nette cumulée",
+    xp_split_t: "Où est allée la trésorerie",
+    xp_split_sub: p => `${p}% investis dans la production future.`,
+    xp_split_inv: "Investissement", xp_split_op: "Charges d'exploitation",
     xd_ramp: l => `Montée en puissance — ${l}`, xd_ramp_sub: "par période",
     xd_cvr: "Investissement vs revenus", xd_cvr_sub: "les deux séries, même axe",
     xd_peak: l => `Pic ${l}`,
@@ -1811,6 +1880,17 @@ const STR = {
     portal_copied: url => `Lien du portail copié · ${url}`,
     portal_enabling: "Activation du portail…",
     hub_back: "Tous les livrables",
+    // accueil de première connexion : le hub avant toute remise
+    hub_welcome: "Bienvenue — votre espace est prêt.",
+    hub_welcome_sub: "Votre analyste prépare votre premier livrable. Il apparaîtra ici dès sa remise.",
+    hub_w1: ["Tableaux de bord audités", "chaque total recalculé, chaque contradiction quantifiée, avant le moindre graphique."],
+    hub_w2: ["Notes d'analyse rédigées", "chaque chiffre tracé jusqu'à vos propres données — rien d'estimé, rien d'inventé."],
+    hub_w3: ["Livrables versionnés", "les mises à jour arrivent en v2, v3… du même document. Rien n'est remplacé en silence."],
+    hub_welcome_help: "Des questions ? Répondez à la personne qui vous a envoyé votre lien de connexion.",
+    hub_send_t: "Envoyez-nous un classeur",
+    hub_send_sub: "Il arrive directement sur le bureau de votre analyste et est audité avant toute publication.",
+    hub_sending: "Envoi en cours…",
+    hub_sent: f => `Bien reçu — ${f} est sur le bureau de votre analyste.`,
     hub_flagged: "signalé",
     hub_file: "fichier",
     hub_download: "Télécharger",
@@ -2240,23 +2320,53 @@ function renderHubPage(me, items) {
       ${key ? `<div class="wb-group">${esc(key)}</div>` : ""}
       ${groups.get(key).map(row).join("")}`).join("");
 
+  const welcomeRow = ([head, sub]) => `
+      <div style="padding:12px 0;border-top:1px solid var(--border)">
+        <b style="font-family:var(--serif)">${head}</b>
+        <div class="qsub" style="margin-top:2px">${sub}</div>
+      </div>`;
   const body = items.length
     ? `<div style="border-top:1px solid var(--border-strong);margin-top:18px">${list}</div>`
-    : `<div class="home-empty" style="padding-top:24px">
+    : `<div style="padding-top:24px;max-width:560px">
         <svg class="sunmark" width="28" height="28" viewBox="-50 -50 100 100" aria-hidden="true">${sunPaths()}</svg>
-        <h2 style="font-family:var(--serif);font-weight:600;font-size:20px">${T.portal_empty}</h2>
-        <p class="lede">${T.portal_empty_sub}</p></div>`;
+        <h2 style="font-family:var(--serif);font-weight:600;font-size:20px;margin:10px 0 4px">${T.hub_welcome}</h2>
+        <p class="lede">${T.hub_welcome_sub}</p>
+        <div style="margin-top:18px;border-bottom:1px solid var(--border)">
+          ${welcomeRow(T.hub_w1)}${welcomeRow(T.hub_w2)}${welcomeRow(T.hub_w3)}
+        </div>
+        <p class="chcap" style="margin-top:14px">${T.hub_welcome_help}</p></div>`;
 
   $("#content").innerHTML = `<section class="portal">
     <span class="kicker">${T.portal_kicker}</span>
     <h1 class="vhead" style="margin-top:6px">${esc(client)}</h1>
     <p class="vlede">${T.hub_sub} · ${T.hub_count(items.length)}</p>
     ${body}
+    <div class="upcard" id="intake" style="margin-top:36px;max-width:560px">
+      <div style="font-family:var(--serif);font-size:17px;font-weight:600">${T.hub_send_t}</div>
+      <div style="font-size:12px;color:var(--ink-3);margin-top:3px;max-width:44ch">${T.hub_send_sub}</div>
+      <div class="hint2" style="margin-top:10px">${T.drop_fmt}</div>
+      <input id="intake-file" type="file" accept=".xlsx,.xls,.ods,.csv" style="display:none">
+    </div>
   </section>`;
   $$("#content [data-did]").forEach(el => {
     const open = () => openDeliverable(el.dataset.did);
     el.addEventListener("click", open);
     el.addEventListener("keydown", e => { if (e.key === "Enter") open(); });
+  });
+  $("#intake").addEventListener("click", () => $("#intake-file").click());
+  $("#intake-file").addEventListener("change", async e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    setStatus(T.hub_sending);
+    const fd = new FormData();
+    fd.append("file", f);
+    const r = await fetch("/portal/intake", { method: "POST", body: fd });
+    if (!r.ok) {
+      setStatus((await r.json()).detail || "!", true);
+    } else {
+      setStatus(T.hub_sent(esc((await r.json()).filename)));
+    }
+    e.target.value = "";
   });
 }
 
@@ -2410,6 +2520,7 @@ function renderCommandCenter() {
       <div>${queue}
         <span class="kicker" style="display:block;margin-top:${rows.length ? 30 : 0}px">${T.cc_workbooks}</span>
         <div style="border-top:1px solid var(--border-strong)">${list}</div>
+        <div id="clients-panel"></div>
       </div>
       <div><span class="kicker">${T.cc_new}</span>
         <div class="upcard" id="drop" style="margin-top:10px">
@@ -2429,6 +2540,7 @@ function renderCommandCenter() {
   $$("#content [data-exec]").forEach(el => el.addEventListener("click", e => {
     e.stopPropagation(); NEXT_PAGE = "exec"; select(el.dataset.exec);
   }));
+  renderClientsPanel();
   $$("#content [data-repub]").forEach(el => el.addEventListener("click", async e => {
     e.stopPropagation();
     el.disabled = true;
@@ -2440,6 +2552,109 @@ function renderCommandCenter() {
       el.outerHTML = `<span class="schip good">✓ ${T.wb_pub_ok(b.version)}</span>`;
       loadWorkbooks();
     } else { el.disabled = false; setStatus((await r.json()).detail || "!", true); }
+  }));
+}
+
+/* client access panel: who can sign in to each client's hub. The links are
+   minted server-side; this panel only copies them — sending is the analyst's
+   job (WhatsApp, email), no hosted email flow. */
+let OPEN_CLIENT = null;
+
+async function renderClientsPanel() {
+  const host = $("#clients-panel");
+  if (!host) return;
+  let clients;
+  try { clients = await (await fetch("/clients")).json(); }
+  catch (_) { return; }
+
+  const abs = u => `${location.origin}${u}`;
+  if (!clients.length) {
+    host.innerHTML = `<span class="kicker" style="display:block;margin-top:30px">${T.cl_kicker}</span>
+      <p class="qsub" style="margin-top:8px">${T.cl_none}</p>`;
+    return;
+  }
+
+  const blocks = [];
+  for (const c of clients) {
+    const open = OPEN_CLIENT === c.name;
+    let detail = "";
+    if (open) {
+      let users = [];
+      try { users = await (await fetch(`/clients/${encodeURIComponent(c.name)}/users`)).json(); }
+      catch (_) {}
+      const contacts = users.length ? users.map(u => `
+        <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--border)">
+          <span style="font-family:var(--mono);font-size:12px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">${esc(u.email)}</span>
+          <span class="qsub">${T.cl_since(esc((u.created_at || "").slice(0, 10)))}</span>
+          <button class="pillbtn" data-cplink="${esc(u.id)}" data-cname="${esc(c.name)}">${T.cl_copy}</button>
+          <button class="pillbtn" data-cmail="${esc(u.id)}" data-cname="${esc(c.name)}" data-cemail="${esc(u.email)}">${T.cl_mail}</button>
+          <button class="pillbtn" data-crevoke="${esc(u.id)}" data-cname="${esc(c.name)}" data-cemail="${esc(u.email)}">${T.cl_revoke}</button>
+        </div>`).join("")
+        : `<p class="qsub" style="margin:8px 0 2px">${T.cl_no_contacts}</p>`;
+      detail = `<div data-cdetail style="padding:2px 0 12px">
+        ${contacts}
+        <form data-cadd="${esc(c.name)}" style="display:flex;gap:8px;margin-top:10px">
+          <input type="email" required placeholder="${T.cl_add_ph}"
+            style="flex:1;font-family:var(--mono);font-size:12px;padding:6px 9px;border:1px solid var(--border-strong);background:var(--card);color:var(--ink)">
+          <button type="submit" class="pillbtn gold">${T.cl_add}</button>
+        </form>
+      </div>`;
+    }
+    blocks.push(`<div class="wbrow" data-cl="${esc(c.name)}" style="cursor:pointer">
+        <div style="min-width:0;flex:1"><b>${esc(c.name)}</b>
+          <div class="wmeta">${T.cl_meta(c.n_users, c.n_deliverables)}</div></div>
+        <span class="qsub">${open ? "−" : "+"}</span>
+      </div>${detail}`);
+  }
+  host.innerHTML = `<span class="kicker" style="display:block;margin-top:30px">${T.cl_kicker}</span>
+    <div style="border-top:1px solid var(--border-strong)">${blocks.join("")}</div>`;
+
+  $$("#clients-panel [data-cl]").forEach(el => el.addEventListener("click", () => {
+    OPEN_CLIENT = OPEN_CLIENT === el.dataset.cl ? null : el.dataset.cl;
+    renderClientsPanel();
+  }));
+  $$("#clients-panel [data-cdetail]").forEach(el =>
+    el.addEventListener("click", e => e.stopPropagation()));
+  $$("#clients-panel [data-cplink]").forEach(el => el.addEventListener("click", async e => {
+    e.stopPropagation();
+    el.disabled = true;
+    const r = await fetch(`/clients/${encodeURIComponent(el.dataset.cname)}/users/${el.dataset.cplink}/link`,
+      { method: "POST" });
+    el.disabled = false;
+    if (!r.ok) { setStatus((await r.json()).detail || "!", true); return; }
+    const url = abs((await r.json()).login_url);
+    try { await navigator.clipboard.writeText(url); } catch (_) {}
+    setStatus(T.cl_copied);
+  }));
+  $$("#clients-panel [data-cmail]").forEach(el => el.addEventListener("click", async e => {
+    e.stopPropagation();
+    el.disabled = true;
+    const r = await fetch(`/clients/${encodeURIComponent(el.dataset.cname)}/users/${el.dataset.cmail}/invite?lang=${LANG}`,
+      { method: "POST" });
+    el.disabled = false;
+    if (!r.ok) { setStatus((await r.json()).detail || "!", true); return; }
+    setStatus(T.cl_mailed(el.dataset.cemail));
+  }));
+  $$("#clients-panel [data-crevoke]").forEach(el => el.addEventListener("click", async e => {
+    e.stopPropagation();
+    if (!confirm(T.cl_revoke_confirm(el.dataset.cemail))) return;
+    const r = await fetch(`/clients/${encodeURIComponent(el.dataset.cname)}/users/${el.dataset.crevoke}`,
+      { method: "DELETE" });
+    if (!r.ok) { setStatus((await r.json()).detail || "!", true); return; }
+    setStatus(T.cl_revoked);
+    renderClientsPanel();
+  }));
+  $$("#clients-panel form[data-cadd]").forEach(f => f.addEventListener("submit", async e => {
+    e.preventDefault();
+    const input = f.querySelector("input");
+    const r = await fetch(`/clients/${encodeURIComponent(f.dataset.cadd)}/users`,
+      { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: input.value }) });
+    if (!r.ok) { setStatus((await r.json()).detail || "!", true); return; }
+    const url = abs((await r.json()).login_url);
+    try { await navigator.clipboard.writeText(url); } catch (_) {}
+    setStatus(T.cl_added);
+    renderClientsPanel();
   }));
 }
 
@@ -4066,16 +4281,29 @@ function renderExecDashboard() {
     cells.push(`<div class="kcell"><div class="kl">${T.der_margin_pct}</div>
       <div class="kv">${mp[0].toFixed(0)}%</div>
       <div class="ks">${esc(String(m.periods[mp[1]]))}</div></div>`);
-  if (met.capex) {
+  const ins = m.insights || {};
+  if (met.capex && !ins.capital_bridge) {
+    // when the model computed the capital bridge, that tile tells the
+    // investment story better than the raw CAPEX total — don't show both
     const v = met.capex.values;
     const pk = v.indexOf(Math.max(...v.filter(x => x != null)));
     cells.push(`<div class="kcell"><div class="kl">${T.xd_capex}</div>
       <div class="kv">${compact(sum(v))}</div>
       <div class="ks">${pk >= 0 ? T.xd_capex_peak(esc(String(m.periods[pk]))) : ""}</div></div>`);
   }
+  const ub = m.monthly && m.monthly.unit_cost_budget;
   const cuOut = D.opex_per_volume_out;
   const cu = (cuOut || D.opex_per_volume) && lastOf(cuOut || D.opex_per_volume);
-  if (cu && cu[0] != null) {
+  if (ub) {
+    // latest ACTUAL unit cost against the plan's target — the sample's
+    // headline tile; over-budget reads critical
+    const [av, ai] = lastOf(m.monthly.derived[ub.basis]);
+    const varr = ub.variance_pct[ai];
+    if (av != null) cells.push(`<div class="kcell ${varr > 0 ? "crit" : ""}"><div class="kl">${T.xd_cost_actual}</div>
+      <div class="kv">${compact(av)}</div>
+      <div class="ks">${esc(String(m.monthly.periods[ai]))} · ${T.xd_vsb(compact(ub.target))}${varr != null
+        ? ` · ${varr >= 0 ? "+" : "−"}${Math.abs(varr).toFixed(0)}%` : ""}</div></div>`);
+  } else if (cu && cu[0] != null) {
     const cuVol = cuOut ? met.volume_secondary : met.volume;
     cells.push(`<div class="kcell"><div class="kl">${cuOut ? T.der_opex_per_volume_out : T.der_opex_per_volume}</div>
       <div class="kv">${compact(cu[0])}</div>
@@ -4091,6 +4319,19 @@ function renderExecDashboard() {
     cells.push(`<div class="kcell ${bv[0] > 0 ? "crit" : ""}"><div class="kl">${T.der_opex_budget_variance_pct}</div>
       <div class="kv">${bv[0] >= 0 ? "+" : "−"}${Math.abs(bv[0]).toFixed(1)}%</div>
       <div class="ks">${esc(String(m.periods[bv[1]]))} · ${bv[0] > 0 ? T.fin_over : T.fin_under}</div></div>`);
+  // the sample's cash-story tiles — each only when the model computed it
+  const cash = m.monthly && m.monthly.cash;
+  if (cash) cells.push(`<div class="kcell"><div class="kl">${T.xd_invshare}</div>
+    <div class="kv">${cash.invested_pct.toFixed(0)}%</div>
+    <div class="ks">${T.xd_invshare_sub(compact(cash.total))}</div></div>`);
+  if (ins.cash_positive_period)
+    cells.push(`<div class="kcell"><div class="kl">${T.xd_cashpos}</div>
+      <div class="kv">${esc(String(ins.cash_positive_period))}</div>
+      <div class="ks">${T.xd_cashpos_sub}</div></div>`);
+  if (ins.capital_bridge)
+    cells.push(`<div class="kcell"><div class="kl">${T.xd_bridge}</div>
+      <div class="kv">${compact(ins.capital_bridge)}</div>
+      <div class="ks">${T.xd_bridge_sub}</div></div>`);
   if (met.area && cells.length < 4) {
     const v = met.area.values;
     const pk = v.indexOf(Math.max(...v.filter(x => x != null)));
@@ -4098,7 +4339,7 @@ function renderExecDashboard() {
       <div class="kv">${esc(String(m.periods[pk]))}</div>
       <div class="ks">${compact(v[pk])}</div></div>`);
   }
-  cells.length = Math.min(cells.length, 4);
+  cells.length = Math.min(cells.length, 6);
 
   // ---- charts: everything the model can draw, nothing it can't ----------
   const blocks = [];
@@ -4113,9 +4354,32 @@ function renderExecDashboard() {
     { label: `${ROLE_LABELS.capex} — ${met.capex.label.slice(0, 22)}`,
       values: met.capex.values, color: SERIES_COLORS[2], on: true },
   ]));
+  if (D.net_cash)
+    blocks.push(execLines(
+      T.xp_path_t(esc(String(m.periods[0])), esc(String(m.periods[m.periods.length - 1]))),
+      ins.cash_positive_period ? T.xp_path_sub(esc(String(ins.cash_positive_period))) : null,
+      m.periods, [
+        { label: T.xp_margin_line, values: D.margin,
+          color: SERIES_COLORS[0], on: true },
+        { label: T.xp_netcash_line, values: D.net_cash_cum,
+          color: SERIES_COLORS[2], on: true },
+      ]));
   if (D.margin_pct && D.margin_pct.some(v => v != null))
     blocks.push(execBars(T.xd_margin_t, T.xd_margin_sub, m.periods,
       D.margin_pct.map(v => v != null ? +v.toFixed(1) : null)));
+  if (cash) {
+    // invested vs operating: one honest band, formatted from model.monthly.cash
+    const iw = cash.invested_pct, ow = 100 - iw;
+    blocks.push(execBlock(T.xp_split_t, T.xp_split_sub(iw.toFixed(0)), `
+      <div style="display:flex;height:34px;border:1px solid var(--border-strong);margin:18px 0 12px">
+        <div style="width:${iw}%;background:var(--gold)"></div>
+        <div style="width:${ow}%;background:var(--ink-3)"></div>
+      </div>
+      <div class="legend">
+        <span class="lg"><span class="sw" style="background:var(--gold)"></span>${T.xp_split_inv} — ${compact(cash.capex_total)} (${iw.toFixed(0)}%)</span>
+        <span class="lg"><span class="sw" style="background:var(--ink-3)"></span>${T.xp_split_op} — ${compact(cash.opex_total)} (${ow.toFixed(0)}%)</span>
+      </div>`));
+  }
   if (!rev && met.volume)          // volume-only books still get their story
     blocks.push(execLines(esc(titleCase(met.volume.label.slice(0, 30))), null,
       m.periods, [{ label: met.volume.label, values: met.volume.values,

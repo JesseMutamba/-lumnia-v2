@@ -620,6 +620,20 @@ def ensure_client(name: str) -> Optional[Dict[str, Any]]:
     return {"id": cid, "name": name, "slug": slug}
 
 
+def list_clients() -> List[Dict[str, Any]]:
+    """Every client with its access + delivery footprint, in one query —
+    the spine of the workbench access panel."""
+    with _connect() as con:
+        rows = con.execute(
+            "SELECT c.id, c.name, c.slug, c.created_at, "
+            "  (SELECT COUNT(*) FROM client_users u "
+            "   WHERE u.client_id = c.id) AS n_users, "
+            "  (SELECT COUNT(*) FROM deliverables d "
+            "   WHERE d.client_id = c.id) AS n_deliverables "
+            "FROM clients c ORDER BY c.name").fetchall()
+    return [dict(r) for r in rows]
+
+
 def add_client_user(client_name: str, email: str) -> Optional[Dict[str, Any]]:
     """Register (or return) a login identity for a client. An email belongs
     to exactly one client — re-adding it elsewhere is refused (None)."""

@@ -173,7 +173,66 @@ def derive_metrics(metrics: Dict[str, dict]) -> Dict[str, Any]:
     if opx and bud:
         derived["opex_budget_variance_pct"] = _pair(
             opx, bud, lambda o, b: (o - b) / b * 100)
+    # net cash after investment + its cumulative walk — the path-to-profit
+    # spine. The cumulative is honest: it goes None from the first gap on,
+    # a partial walk would claim a balance nobody computed.
+    cpx = metrics.get("capex", {}).get("values")
+    if "margin" in derived and cpx:
+        net = _pair(derived["margin"], cpx, lambda mg, cx: mg - cx)
+        if any(v is not None for v in net):
+            derived["net_cash"] = net
+            cum, run = [], 0.0
+            for v in net:
+                if v is None or run is None:
+                    run = None
+                    cum.append(None)
+                else:
+                    run += v
+                    cum.append(round(run, 4))
+            derived["net_cash_cum"] = cum
     return derived
+
+
+def _cash_insights(periods: List[str],
+                   derived: Dict[str, Any]) -> Dict[str, Any]:
+    """Plan-level cash story: the first period the cumulative walk turns
+    positive, and the deepest deficit crossed to get there (the capital
+    bridge). Both only exist when the plan actually starts in the red —
+    an always-positive plan has no bridge to narrate."""
+    ins: Dict[str, Any] = {}
+    cum = derived.get("net_cash_cum")
+    if not cum:
+        return ins
+    known = [(p, v) for p, v in zip(periods, cum) if v is not None]
+    if not known or known[0][1] >= 0:
+        return ins
+    deepest = min(v for _, v in known)
+    if deepest < 0:
+        ins["capital_bridge"] = round(-deepest, 4)
+    for p, v in known:
+        if v >= 0:
+            ins["cash_positive_period"] = p
+            break
+    return ins
+
+
+def _cash_split(monthly: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Invested vs operating share of the tracked monthly spend — only when
+    both an opex and a capex series exist and money actually moved."""
+    met = monthly.get("metrics") or {}
+    opx = (met.get("opex") or {}).get("values")
+    cpx = (met.get("capex") or {}).get("values")
+    if not opx or not cpx:
+        return None
+    opex_total = sum(v for v in opx if v is not None)
+    capex_total = sum(v for v in cpx if v is not None)
+    total = opex_total + capex_total
+    if total <= 0:
+        return None
+    return {"opex_total": round(opex_total, 4),
+            "capex_total": round(capex_total, 4),
+            "total": round(total, 4),
+            "invested_pct": round(capex_total / total * 100, 1)}
 
 
 def _unit_cost_budget(periods: List[str], year_derived: Dict[str, Any],
@@ -278,6 +337,9 @@ def build_model(report_sheets) -> Optional[Dict[str, Any]]:
         ucb = _unit_cost_budget(periods, derived, monthly, best_sheet)
         if ucb:
             monthly["unit_cost_budget"] = ucb
+        cash = _cash_split(monthly)
+        if cash:
+            monthly["cash"] = cash
 
     # breakdowns: the top line items already computed at extraction
     breakdowns = []
@@ -292,6 +354,7 @@ def build_model(report_sheets) -> Optional[Dict[str, Any]]:
         "source_sheet": best_sheet,
         "metrics": metrics,
         "derived": derived,
+        "insights": _cash_insights(periods, derived),
         "breakdowns": breakdowns[:MAX_BREAKDOWNS],
         # scenario/simulation math needs a revenue line; cost levers appear
         # only when a cost series was actually found
