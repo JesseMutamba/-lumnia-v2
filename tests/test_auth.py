@@ -31,8 +31,10 @@ def test_gated_when_password_set(monkeypatch):
     # health stays open (Fly probes it), the app does not
     assert client.get("/health").status_code == 200
     assert client.get("/analyses").status_code == 401
+    # the root is now the PUBLIC landing page for anonymous visitors — the
+    # workspace itself stays behind the gate (see test_landing.py)
     r = client.get("/", headers={"accept": "text/html"}, follow_redirects=False)
-    assert r.status_code == 303 and r.headers["location"] == "/login"
+    assert r.status_code == 200 and 'id="topbar"' not in r.text
     assert client.get("/login").status_code == 200
 
 

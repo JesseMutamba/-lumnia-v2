@@ -17,7 +17,7 @@ import time
 
 COOKIE = "lumnia_session"
 MAX_AGE = 30 * 24 * 3600          # 30 days
-PUBLIC_PATHS = {"/health", "/login"}
+PUBLIC_PATHS = {"/health", "/login", "/", "/landing-shot.jpg"}
 
 
 def password() -> str | None:

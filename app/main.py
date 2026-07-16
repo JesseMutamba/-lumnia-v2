@@ -26,7 +26,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 
 import datetime as _dt
 
-from . import auth, brief, mailer, narrative, storage
+from . import auth, brief, landing, mailer, narrative, storage
 from .findings import DECISIONS, aggregate_findings, count_open
 from .snapshot import build_exec_snapshot
 from .models import (
@@ -218,14 +218,28 @@ _INDEX = Path(__file__).parent / "static" / "index.html"
 
 
 @app.get("/", include_in_schema=False)
-def index() -> FileResponse:
-    """The single-page UI: upload, history, per-sheet report, audit.
+def index(request: Request):
+    """The root wears two faces: the workspace for a signed-in operator (or
+    dev mode with no password), the public landing page for everyone else.
+    Anonymous visitors get the pitch, never a login wall.
 
     no-cache so browsers revalidate on every load — the UI evolves with the
     backend and a cached page against a newer API is a confusing failure.
     """
-    return FileResponse(_INDEX, media_type="text/html",
+    if (auth.password() is None
+            or auth.valid_token(request.cookies.get(auth.COOKIE))):
+        return FileResponse(_INDEX, media_type="text/html",
+                            headers={"Cache-Control": "no-cache"})
+    return HTMLResponse(landing.LANDING_HTML,
                         headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/landing-shot.jpg", include_in_schema=False)
+def landing_shot() -> FileResponse:
+    """PUBLIC. The landing page's product screenshot (demonstration data)."""
+    return FileResponse(_INDEX.parent / "landing-shot.jpg",
+                        media_type="image/jpeg",
+                        headers={"Cache-Control": "public, max-age=86400"})
 
 
 @app.get("/health", response_model=HealthResponse)
