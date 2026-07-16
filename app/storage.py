@@ -133,6 +133,24 @@ CREATE INDEX IF NOT EXISTS idx_deliverables_client
     ON deliverables(client_id, grp, published_at DESC)
 """
 
+# public sign-in: unknown emails wait HERE for the operator; nothing else
+# happens until a human puts the address on a client
+_SCHEMA_ACCESS_REQUESTS = """
+CREATE TABLE IF NOT EXISTS access_requests (
+    id          TEXT PRIMARY KEY,
+    email       TEXT UNIQUE NOT NULL,
+    created_at  TEXT NOT NULL
+)
+"""
+
+# throttle log for the public request-link endpoint (pruned on use)
+_SCHEMA_LINK_REQUESTS = """
+CREATE TABLE IF NOT EXISTS link_requests (
+    email       TEXT NOT NULL,
+    created_at  TEXT NOT NULL
+)
+"""
+
 
 def _db_path() -> Path:
     return Path(os.environ.get("LUMNIA_DB", "data/lumnia.db"))
@@ -152,6 +170,8 @@ def _connect() -> sqlite3.Connection:
     con.execute(_SCHEMA_CLIENT_USERS)
     con.execute(_SCHEMA_DELIVERABLES)
     con.execute(_SCHEMA_DELIVERABLES_IDX)
+    con.execute(_SCHEMA_ACCESS_REQUESTS)
+    con.execute(_SCHEMA_LINK_REQUESTS)
     for migration in (                # migrate DBs created before the column
         "ALTER TABLE analyses ADD COLUMN sha256 TEXT",
         "ALTER TABLE analyses ADD COLUMN client TEXT",
@@ -618,6 +638,74 @@ def ensure_client(name: str) -> Optional[Dict[str, Any]]:
         con.execute("INSERT INTO clients (id, name, slug, created_at) "
                     "VALUES (?, ?, ?, ?)", (cid, name, slug, _now()))
     return {"id": cid, "name": name, "slug": slug}
+
+
+def client_user_by_email(email: str) -> Optional[Dict[str, Any]]:
+    """The contact a public sign-in email resolves to — None when unknown."""
+    with _connect() as con:
+        row = con.execute(
+            "SELECT u.id, u.email, c.name FROM client_users u "
+            "JOIN clients c ON c.id = u.client_id WHERE u.email = ?",
+            ((email or "").strip().lower(),)).fetchone()
+    return dict(row) if row else None
+
+
+def link_request_allowed(email: str, per_hour: int = 3) -> bool:
+    """Throttle for the PUBLIC request-link endpoint: at most ``per_hour``
+    attempts per address. Records the attempt when allowed; old rows are
+    pruned opportunistically. The caller answers neutrally either way."""
+    email = (email or "").strip().lower()
+    cutoff = (_dt.datetime.now(_dt.timezone.utc)
+              - _dt.timedelta(hours=1)).isoformat(timespec="seconds")
+    with _connect() as con:
+        con.execute("DELETE FROM link_requests WHERE created_at < ?",
+                    (cutoff,))
+        n = con.execute("SELECT COUNT(*) FROM link_requests "
+                        "WHERE email = ? AND created_at >= ?",
+                        (email, cutoff)).fetchone()[0]
+        if n >= per_hour:
+            return False
+        con.execute("INSERT INTO link_requests (email, created_at) "
+                    "VALUES (?, ?)", (email, _now()))
+    return True
+
+
+def add_access_request(email: str) -> Optional[Dict[str, Any]]:
+    """Queue an unknown email for the operator. One pending row per address —
+    a repeat request refreshes the timestamp instead of stacking."""
+    email = (email or "").strip().lower()
+    if not email or "@" not in email:
+        return None
+    with _connect() as con:
+        row = con.execute("SELECT id FROM access_requests WHERE email = ?",
+                          (email,)).fetchone()
+        if row:
+            con.execute("UPDATE access_requests SET created_at = ? "
+                        "WHERE id = ?", (_now(), row["id"]))
+            return {"id": row["id"], "email": email}
+        rid = uuid.uuid4().hex[:12]
+        con.execute("INSERT INTO access_requests (id, email, created_at) "
+                    "VALUES (?, ?, ?)", (rid, email, _now()))
+    return {"id": rid, "email": email}
+
+
+def list_access_requests() -> List[Dict[str, Any]]:
+    with _connect() as con:
+        rows = con.execute("SELECT id, email, created_at FROM access_requests "
+                           "ORDER BY created_at DESC").fetchall()
+    return [dict(r) for r in rows]
+
+
+def pop_access_request(request_id: str) -> Optional[Dict[str, Any]]:
+    """Remove a queue entry and hand it back — approval and dismissal both
+    end with the row gone."""
+    with _connect() as con:
+        row = con.execute("SELECT id, email FROM access_requests "
+                          "WHERE id = ?", (request_id,)).fetchone()
+        if row is None:
+            return None
+        con.execute("DELETE FROM access_requests WHERE id = ?", (request_id,))
+    return dict(row)
 
 
 def list_clients() -> List[Dict[str, Any]]:

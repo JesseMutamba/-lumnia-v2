@@ -1117,6 +1117,15 @@ const STR = {
     cl_copied: "Sign-in link copied — valid 6 months, this client only.",
     cl_mail: "Email invite",
     cl_mailed: e => `Invitation sent to ${e}.`,
+    cl_req_kicker: "Access requests",
+    cl_req_sub: "Signed up on the client page — waiting for you to put them on a client.",
+    cl_req_ph: "Client name",
+    cl_req_approve: "Approve",
+    cl_req_dismiss: "Dismiss",
+    cl_req_ok: (e, mailed) => mailed
+      ? `Approved — sign-in link emailed to ${e}.`
+      : `Approved — sign-in link copied for ${e} (SMTP off, send it yourself).`,
+    cl_req_gone: "Request dismissed.",
     cl_revoke: "Revoke",
     cl_revoke_confirm: email => `Revoke access for ${email}? Their link and any open session die immediately.`,
     cl_revoked: "Access revoked.",
@@ -1576,6 +1585,15 @@ const STR = {
     cl_copied: "Lien de connexion copié — valable 6 mois, pour ce client uniquement.",
     cl_mail: "Inviter par email",
     cl_mailed: e => `Invitation envoyée à ${e}.`,
+    cl_req_kicker: "Demandes d'accès",
+    cl_req_sub: "Inscrits sur la page client — en attente d'être rattachés à un client.",
+    cl_req_ph: "Nom du client",
+    cl_req_approve: "Approuver",
+    cl_req_dismiss: "Rejeter",
+    cl_req_ok: (e, mailed) => mailed
+      ? `Approuvé — lien de connexion envoyé à ${e}.`
+      : `Approuvé — lien copié pour ${e} (SMTP inactif, envoyez-le vous-même).`,
+    cl_req_gone: "Demande rejetée.",
     cl_revoke: "Révoquer",
     cl_revoke_confirm: email => `Révoquer l'accès de ${email} ? Son lien et toute session ouverte meurent immédiatement.`,
     cl_revoked: "Accès révoqué.",
@@ -2563,12 +2581,30 @@ let OPEN_CLIENT = null;
 async function renderClientsPanel() {
   const host = $("#clients-panel");
   if (!host) return;
-  let clients;
-  try { clients = await (await fetch("/clients")).json(); }
-  catch (_) { return; }
+  let clients, reqs = [];
+  try {
+    clients = await (await fetch("/clients")).json();
+    reqs = await (await fetch("/access-requests")).json();
+  } catch (_) { return; }
 
   const abs = u => `${location.origin}${u}`;
-  if (!clients.length) {
+  // the approval queue rides ABOVE the client list: someone is waiting
+  const reqBlock = reqs.length ? `
+    <span class="kicker" style="display:block;margin-top:30px">${T.cl_req_kicker} · ${reqs.length}</span>
+    <p class="qsub" style="margin:6px 0 8px">${T.cl_req_sub}</p>
+    <div style="border-top:1px solid var(--border-strong)">
+      ${reqs.map(q => `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">
+        <span style="font-family:var(--mono);font-size:12px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">${esc(q.email)}</span>
+        <span class="qsub">${esc((q.created_at || "").slice(0, 10))}</span>
+        <input list="cl-names" placeholder="${T.cl_req_ph}" data-qclient="${esc(q.id)}"
+          style="width:150px;font-family:var(--mono);font-size:12px;padding:5px 8px;border:1px solid var(--border-strong);background:var(--card);color:var(--ink)">
+        <button class="pillbtn gold" data-qapprove="${esc(q.id)}" data-qemail="${esc(q.email)}">${T.cl_req_approve}</button>
+        <button class="pillbtn" data-qdismiss="${esc(q.id)}">${T.cl_req_dismiss}</button>
+      </div>`).join("")}
+    </div>
+    <datalist id="cl-names">${clients.map(c => `<option value="${esc(c.name)}">`).join("")}</datalist>` : "";
+
+  if (!clients.length && !reqs.length) {
     host.innerHTML = `<span class="kicker" style="display:block;margin-top:30px">${T.cl_kicker}</span>
       <p class="qsub" style="margin-top:8px">${T.cl_none}</p>`;
     return;
@@ -2606,9 +2642,35 @@ async function renderClientsPanel() {
         <span class="qsub">${open ? "−" : "+"}</span>
       </div>${detail}`);
   }
-  host.innerHTML = `<span class="kicker" style="display:block;margin-top:30px">${T.cl_kicker}</span>
-    <div style="border-top:1px solid var(--border-strong)">${blocks.join("")}</div>`;
+  host.innerHTML = `${reqBlock}
+    <span class="kicker" style="display:block;margin-top:30px">${T.cl_kicker}</span>
+    ${clients.length
+      ? `<div style="border-top:1px solid var(--border-strong)">${blocks.join("")}</div>`
+      : `<p class="qsub" style="margin-top:8px">${T.cl_none}</p>`}`;
 
+  $$("#clients-panel [data-qapprove]").forEach(el => el.addEventListener("click", async e => {
+    e.stopPropagation();
+    const input = $(`#clients-panel [data-qclient="${el.dataset.qapprove}"]`);
+    const name = (input.value || "").trim();
+    if (!name) { input.focus(); return; }
+    el.disabled = true;
+    const r = await fetch(`/access-requests/${el.dataset.qapprove}/approve`,
+      { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client: name, lang: LANG }) });
+    el.disabled = false;
+    if (!r.ok) { setStatus((await r.json()).detail || "!", true); return; }
+    const b = await r.json();
+    if (!b.emailed) {
+      try { await navigator.clipboard.writeText(`${location.origin}${b.login_url}`); } catch (_) {}
+    }
+    setStatus(T.cl_req_ok(el.dataset.qemail, b.emailed));
+    renderClientsPanel();
+  }));
+  $$("#clients-panel [data-qdismiss]").forEach(el => el.addEventListener("click", async e => {
+    e.stopPropagation();
+    const r = await fetch(`/access-requests/${el.dataset.qdismiss}`, { method: "DELETE" });
+    if (r.ok) { setStatus(T.cl_req_gone); renderClientsPanel(); }
+  }));
   $$("#clients-panel [data-cl]").forEach(el => el.addEventListener("click", () => {
     OPEN_CLIENT = OPEN_CLIENT === el.dataset.cl ? null : el.dataset.cl;
     renderClientsPanel();

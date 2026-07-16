@@ -16,6 +16,7 @@ Endpoints
 """
 from __future__ import annotations
 
+import logging
 import mimetypes
 from pathlib import Path
 
@@ -848,6 +849,106 @@ def portal_file(token: str) -> FileResponse:
 def revoke_portal_user(client: str, user_id: str) -> dict:
     """Drop the identity: the login link AND any live session die at once."""
     return {"revoked": storage.remove_client_user(user_id)}
+
+
+# the one neutral answer for /portal/request-link — identical for known,
+# unknown, and throttled addresses, and honest for all three: a recognized
+# address is mailed (or queued when SMTP is off), an unknown one waits for
+# the analyst. FR leads, EN rides.
+_REQUEST_LINK_OK = ("Merci. Si votre adresse est reconnue, votre lien arrive "
+                    "par email ; sinon votre demande a été transmise à votre "
+                    "analyste. · Thank you. If your address is recognized "
+                    "your link arrives by email; otherwise your request has "
+                    "been passed to your analyst.")
+_REQUEST_LINK_BAD = ("Entrez une adresse email valide. · "
+                     "Enter a valid email address.")
+
+
+@app.get("/portal/signin", include_in_schema=False)
+def portal_signin_page() -> HTMLResponse:
+    """PUBLIC. The client sign-in page: email in, link by email out."""
+    return HTMLResponse(auth.PORTAL_SIGNIN_HTML.replace("__MSG__", ""))
+
+
+@app.post("/portal/request-link", include_in_schema=False)
+def portal_request_link(request: Request, email: str = Form(...)):
+    """PUBLIC. A registered contact gets a fresh sign-in link by email; an
+    unknown address becomes an access request on the operator's desk. The
+    response NEVER distinguishes the cases — no way to probe which emails
+    are Lumnia clients — and the link itself only ever travels by email."""
+    addr = (email or "").strip().lower()
+    page = lambda msg: HTMLResponse(  # noqa: E731 — tiny local shorthand
+        auth.PORTAL_SIGNIN_HTML.replace("__MSG__", msg))
+    if not addr or "@" not in addr:
+        return page(_REQUEST_LINK_BAD)
+    if not storage.link_request_allowed(addr):
+        return page(_REQUEST_LINK_OK)          # throttled, same face
+    user = storage.client_user_by_email(addr)
+    if user is not None and mailer.smtp_config() is not None:
+        token = auth.make_client_token("link", user["id"],
+                                       storage.app_secret())
+        url = f"{str(request.base_url).rstrip('/')}/portal/login/{token}"
+        copy = _INVITE_MAIL["fr"]              # anchor clientele is FR
+        try:
+            mailer.send_invite(addr, copy["subject"](user["name"]),
+                               copy["body"](user["name"], url))
+        except Exception:
+            # deliberate: a send failure must not change the public answer
+            # (that would leak which addresses are real); it is logged for
+            # the operator instead
+            logging.exception("request-link send failed for %s", addr)
+    else:
+        # unknown address — or SMTP off, where even a known contact needs
+        # the analyst to hand over the link — waits on the operator's desk
+        storage.add_access_request(addr)
+    return page(_REQUEST_LINK_OK)
+
+
+@app.get("/access-requests")
+def access_requests() -> list[dict]:
+    """Operator: the pending public sign-in requests."""
+    return storage.list_access_requests()
+
+
+@app.post("/access-requests/{request_id}/approve")
+async def approve_access_request(request_id: str, request: Request) -> dict:
+    """Put the requested email on a client (operator's explicit choice),
+    mint its sign-in link, email it when SMTP is up — and always hand the
+    link back so the copy-paste path works without SMTP."""
+    body = await request.json()
+    reqs = {r["id"]: r for r in storage.list_access_requests()}
+    if request_id not in reqs:
+        raise HTTPException(status_code=404, detail="No such request.")
+    email_addr = reqs[request_id]["email"]
+    user = storage.add_client_user(body.get("client") or "", email_addr)
+    if user is None:
+        raise HTTPException(
+            status_code=422,
+            detail="A client name is required, and the email must not "
+                   "already belong to another client.")
+    token = auth.make_client_token("link", user["id"], storage.app_secret())
+    url = f"{str(request.base_url).rstrip('/')}/portal/login/{token}"
+    emailed = False
+    if mailer.smtp_config() is not None:
+        client_name = (body.get("client") or "").strip()
+        copy = _INVITE_MAIL["fr" if body.get("lang") == "fr" else "en"]
+        try:
+            mailer.send_invite(email_addr, copy["subject"](client_name),
+                               copy["body"](client_name, url))
+            emailed = True
+        except Exception as exc:
+            raise HTTPException(status_code=502,
+                                detail=f"Sending failed: {exc}")
+    storage.pop_access_request(request_id)
+    return {"client": (body.get("client") or "").strip(),
+            "email": email_addr, "emailed": emailed,
+            "login_url": f"/portal/login/{token}"}
+
+
+@app.delete("/access-requests/{request_id}")
+def dismiss_access_request(request_id: str) -> dict:
+    """Drop a pending request without creating anything."""
+    return {"dismissed": storage.pop_access_request(request_id) is not None}
 
 
 @app.get("/portal/login/{token}", include_in_schema=False)
