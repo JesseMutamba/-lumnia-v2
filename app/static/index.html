@@ -1105,6 +1105,20 @@ const STR = {
     cc_new: "New analysis",
     cc_drop_small: "Drop a spreadsheet",
     cc_drop_sub: "Audited answer in minutes.",
+    // client access panel (onboarding)
+    cl_kicker: "Clients",
+    cl_meta: (u, d) => `${u} contact${u === 1 ? "" : "s"} · ${d} deliverable${d === 1 ? "" : "s"}`,
+    cl_none: "No clients yet — assign a workbook to a client and it appears here.",
+    cl_no_contacts: "No sign-in access yet. Add a contact below.",
+    cl_add_ph: "contact@client.com",
+    cl_add: "Invite",
+    cl_added: "Contact added — sign-in link copied. Send it via WhatsApp or email.",
+    cl_copy: "Copy sign-in link",
+    cl_copied: "Sign-in link copied — valid 6 months, this client only.",
+    cl_revoke: "Revoke",
+    cl_revoke_confirm: email => `Revoke access for ${email}? Their link and any open session die immediately.`,
+    cl_revoked: "Access revoked.",
+    cl_since: d => `since ${d}`,
     mt_analyst: "Analyst", mt_exec: "Exec",
     wb_audit: n => `Audit · ${n} open`,
     wb_pub_stale: v => `Published v${v} · stale`,
@@ -1524,6 +1538,20 @@ const STR = {
     cc_new: "Nouvelle analyse",
     cc_drop_small: "Déposez un tableur",
     cc_drop_sub: "Réponse auditée en quelques minutes.",
+    // panneau d'accès clients (onboarding)
+    cl_kicker: "Clients",
+    cl_meta: (u, d) => `${u} contact${u === 1 ? "" : "s"} · ${d} livrable${d === 1 ? "" : "s"}`,
+    cl_none: "Aucun client pour l'instant — attribuez un classeur à un client et il apparaîtra ici.",
+    cl_no_contacts: "Aucun accès pour l'instant. Ajoutez un contact ci-dessous.",
+    cl_add_ph: "contact@client.com",
+    cl_add: "Inviter",
+    cl_added: "Contact ajouté — lien de connexion copié. Envoyez-le par WhatsApp ou email.",
+    cl_copy: "Copier le lien de connexion",
+    cl_copied: "Lien de connexion copié — valable 6 mois, pour ce client uniquement.",
+    cl_revoke: "Révoquer",
+    cl_revoke_confirm: email => `Révoquer l'accès de ${email} ? Son lien et toute session ouverte meurent immédiatement.`,
+    cl_revoked: "Accès révoqué.",
+    cl_since: d => `depuis ${d}`,
     mt_analyst: "Analyste", mt_exec: "Direction",
     wb_audit: n => `Audit · ${n} ouverte${n === 1 ? "" : "s"}`,
     wb_pub_stale: v => `Publié v${v} · retard`,
@@ -2410,6 +2438,7 @@ function renderCommandCenter() {
       <div>${queue}
         <span class="kicker" style="display:block;margin-top:${rows.length ? 30 : 0}px">${T.cc_workbooks}</span>
         <div style="border-top:1px solid var(--border-strong)">${list}</div>
+        <div id="clients-panel"></div>
       </div>
       <div><span class="kicker">${T.cc_new}</span>
         <div class="upcard" id="drop" style="margin-top:10px">
@@ -2429,6 +2458,7 @@ function renderCommandCenter() {
   $$("#content [data-exec]").forEach(el => el.addEventListener("click", e => {
     e.stopPropagation(); NEXT_PAGE = "exec"; select(el.dataset.exec);
   }));
+  renderClientsPanel();
   $$("#content [data-repub]").forEach(el => el.addEventListener("click", async e => {
     e.stopPropagation();
     el.disabled = true;
@@ -2440,6 +2470,99 @@ function renderCommandCenter() {
       el.outerHTML = `<span class="schip good">✓ ${T.wb_pub_ok(b.version)}</span>`;
       loadWorkbooks();
     } else { el.disabled = false; setStatus((await r.json()).detail || "!", true); }
+  }));
+}
+
+/* client access panel: who can sign in to each client's hub. The links are
+   minted server-side; this panel only copies them — sending is the analyst's
+   job (WhatsApp, email), no hosted email flow. */
+let OPEN_CLIENT = null;
+
+async function renderClientsPanel() {
+  const host = $("#clients-panel");
+  if (!host) return;
+  let clients;
+  try { clients = await (await fetch("/clients")).json(); }
+  catch (_) { return; }
+
+  const abs = u => `${location.origin}${u}`;
+  if (!clients.length) {
+    host.innerHTML = `<span class="kicker" style="display:block;margin-top:30px">${T.cl_kicker}</span>
+      <p class="qsub" style="margin-top:8px">${T.cl_none}</p>`;
+    return;
+  }
+
+  const blocks = [];
+  for (const c of clients) {
+    const open = OPEN_CLIENT === c.name;
+    let detail = "";
+    if (open) {
+      let users = [];
+      try { users = await (await fetch(`/clients/${encodeURIComponent(c.name)}/users`)).json(); }
+      catch (_) {}
+      const contacts = users.length ? users.map(u => `
+        <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--border)">
+          <span style="font-family:var(--mono);font-size:12px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">${esc(u.email)}</span>
+          <span class="qsub">${T.cl_since(esc((u.created_at || "").slice(0, 10)))}</span>
+          <button class="pillbtn" data-cplink="${esc(u.id)}" data-cname="${esc(c.name)}">${T.cl_copy}</button>
+          <button class="pillbtn" data-crevoke="${esc(u.id)}" data-cname="${esc(c.name)}" data-cemail="${esc(u.email)}">${T.cl_revoke}</button>
+        </div>`).join("")
+        : `<p class="qsub" style="margin:8px 0 2px">${T.cl_no_contacts}</p>`;
+      detail = `<div data-cdetail style="padding:2px 0 12px">
+        ${contacts}
+        <form data-cadd="${esc(c.name)}" style="display:flex;gap:8px;margin-top:10px">
+          <input type="email" required placeholder="${T.cl_add_ph}"
+            style="flex:1;font-family:var(--mono);font-size:12px;padding:6px 9px;border:1px solid var(--border-strong);background:var(--card);color:var(--ink)">
+          <button type="submit" class="pillbtn gold">${T.cl_add}</button>
+        </form>
+      </div>`;
+    }
+    blocks.push(`<div class="wbrow" data-cl="${esc(c.name)}" style="cursor:pointer">
+        <div style="min-width:0;flex:1"><b>${esc(c.name)}</b>
+          <div class="wmeta">${T.cl_meta(c.n_users, c.n_deliverables)}</div></div>
+        <span class="qsub">${open ? "−" : "+"}</span>
+      </div>${detail}`);
+  }
+  host.innerHTML = `<span class="kicker" style="display:block;margin-top:30px">${T.cl_kicker}</span>
+    <div style="border-top:1px solid var(--border-strong)">${blocks.join("")}</div>`;
+
+  $$("#clients-panel [data-cl]").forEach(el => el.addEventListener("click", () => {
+    OPEN_CLIENT = OPEN_CLIENT === el.dataset.cl ? null : el.dataset.cl;
+    renderClientsPanel();
+  }));
+  $$("#clients-panel [data-cdetail]").forEach(el =>
+    el.addEventListener("click", e => e.stopPropagation()));
+  $$("#clients-panel [data-cplink]").forEach(el => el.addEventListener("click", async e => {
+    e.stopPropagation();
+    el.disabled = true;
+    const r = await fetch(`/clients/${encodeURIComponent(el.dataset.cname)}/users/${el.dataset.cplink}/link`,
+      { method: "POST" });
+    el.disabled = false;
+    if (!r.ok) { setStatus((await r.json()).detail || "!", true); return; }
+    const url = abs((await r.json()).login_url);
+    try { await navigator.clipboard.writeText(url); } catch (_) {}
+    setStatus(T.cl_copied);
+  }));
+  $$("#clients-panel [data-crevoke]").forEach(el => el.addEventListener("click", async e => {
+    e.stopPropagation();
+    if (!confirm(T.cl_revoke_confirm(el.dataset.cemail))) return;
+    const r = await fetch(`/clients/${encodeURIComponent(el.dataset.cname)}/users/${el.dataset.crevoke}`,
+      { method: "DELETE" });
+    if (!r.ok) { setStatus((await r.json()).detail || "!", true); return; }
+    setStatus(T.cl_revoked);
+    renderClientsPanel();
+  }));
+  $$("#clients-panel form[data-cadd]").forEach(f => f.addEventListener("submit", async e => {
+    e.preventDefault();
+    const input = f.querySelector("input");
+    const r = await fetch(`/clients/${encodeURIComponent(f.dataset.cadd)}/users`,
+      { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: input.value }) });
+    if (!r.ok) { setStatus((await r.json()).detail || "!", true); return; }
+    const url = abs((await r.json()).login_url);
+    try { await navigator.clipboard.writeText(url); } catch (_) {}
+    setStatus(T.cl_added);
+    renderClientsPanel();
   }));
 }
 

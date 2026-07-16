@@ -678,6 +678,26 @@ def portal_users(client: str) -> list[dict]:
     return storage.list_client_users(client)
 
 
+@app.get("/clients")
+def clients_index() -> list[dict]:
+    """Every client with contact + deliverable counts, for the access panel."""
+    return storage.list_clients()
+
+
+@app.post("/clients/{client}/users/{user_id}/link")
+def remint_login_link(client: str, user_id: str) -> dict:
+    """A fresh signed login link for an EXISTING contact — creation is the
+    only other moment a link exists. 404 unless the contact belongs to this
+    exact client: no cross-client minting."""
+    user = storage.client_user(user_id)
+    if user is None or user["name"] != (client or "").strip():
+        raise HTTPException(status_code=404,
+                            detail="No such contact for this client.")
+    token = auth.make_client_token("link", user_id, storage.app_secret())
+    return {"id": user_id, "email": user["email"],
+            "login_url": f"/portal/login/{token}"}
+
+
 # a signed file URL outlives its purpose quickly: long enough for a slow
 # connection in Kinshasa, short enough that a forwarded link goes stale
 FILE_URL_TTL = 15 * 60
