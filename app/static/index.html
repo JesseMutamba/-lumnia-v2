@@ -1426,6 +1426,10 @@ const STR = {
     hub_w2: ["Written analysis briefs", "every figure traced to your own records — nothing estimated, nothing invented."],
     hub_w3: ["Versioned deliverables", "updates arrive as v2, v3… of the same document. Nothing is silently replaced."],
     hub_welcome_help: "Questions? Reply to the person who sent you your sign-in link.",
+    hub_send_t: "Send us a workbook",
+    hub_send_sub: "It goes straight to your analyst's desk and is audited before anything is published.",
+    hub_sending: "Sending…",
+    hub_sent: f => `Received — ${f} is on your analyst's desk.`,
     hub_flagged: "flagged",
     hub_file: "file",
     hub_download: "Download",
@@ -1879,6 +1883,10 @@ const STR = {
     hub_w2: ["Notes d'analyse rédigées", "chaque chiffre tracé jusqu'à vos propres données — rien d'estimé, rien d'inventé."],
     hub_w3: ["Livrables versionnés", "les mises à jour arrivent en v2, v3… du même document. Rien n'est remplacé en silence."],
     hub_welcome_help: "Des questions ? Répondez à la personne qui vous a envoyé votre lien de connexion.",
+    hub_send_t: "Envoyez-nous un classeur",
+    hub_send_sub: "Il arrive directement sur le bureau de votre analyste et est audité avant toute publication.",
+    hub_sending: "Envoi en cours…",
+    hub_sent: f => `Bien reçu — ${f} est sur le bureau de votre analyste.`,
     hub_flagged: "signalé",
     hub_file: "fichier",
     hub_download: "Télécharger",
@@ -2329,11 +2337,32 @@ function renderHubPage(me, items) {
     <h1 class="vhead" style="margin-top:6px">${esc(client)}</h1>
     <p class="vlede">${T.hub_sub} · ${T.hub_count(items.length)}</p>
     ${body}
+    <div class="upcard" id="intake" style="margin-top:36px;max-width:560px">
+      <div style="font-family:var(--serif);font-size:17px;font-weight:600">${T.hub_send_t}</div>
+      <div style="font-size:12px;color:var(--ink-3);margin-top:3px;max-width:44ch">${T.hub_send_sub}</div>
+      <div class="hint2" style="margin-top:10px">${T.drop_fmt}</div>
+      <input id="intake-file" type="file" accept=".xlsx,.xls,.ods,.csv" style="display:none">
+    </div>
   </section>`;
   $$("#content [data-did]").forEach(el => {
     const open = () => openDeliverable(el.dataset.did);
     el.addEventListener("click", open);
     el.addEventListener("keydown", e => { if (e.key === "Enter") open(); });
+  });
+  $("#intake").addEventListener("click", () => $("#intake-file").click());
+  $("#intake-file").addEventListener("change", async e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    setStatus(T.hub_sending);
+    const fd = new FormData();
+    fd.append("file", f);
+    const r = await fetch("/portal/intake", { method: "POST", body: fd });
+    if (!r.ok) {
+      setStatus((await r.json()).detail || "!", true);
+    } else {
+      setStatus(T.hub_sent(esc((await r.json()).filename)));
+    }
+    e.target.value = "";
   });
 }
 

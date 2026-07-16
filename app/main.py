@@ -810,6 +810,38 @@ def portal_login(token: str, request: Request):
     return resp
 
 
+@app.post("/portal/intake")
+async def portal_intake(request: Request,
+                        file: UploadFile = File(...)) -> dict:
+    """CLIENT-SESSION. A client drops their own workbook: it runs the SAME
+    pipeline as an analyst upload and lands in the operator workspace with
+    the client pre-assigned — nothing published, nothing analytical returned.
+    The client gets a receipt; the analyst gets the audit."""
+    user = _client_identity(request)
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty upload.")
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File is {len(content) / 1e6:.1f} MB; the limit is "
+                   f"{MAX_UPLOAD_BYTES / 1e6:.0f} MB.")
+    existing = storage.find_by_content(content)
+    if existing is not None:
+        # same bytes, no duplicate row — but NEVER reassign an analysis a
+        # different client already owns
+        if storage.client_label(existing) is None:
+            storage.set_client(existing, user["name"])
+        return {"received": True, "filename": file.filename or ""}
+    result = await run_in_threadpool(run_pipeline, content, file.filename or "")
+    report = result.model_dump()
+    _inherit_mapping(report)
+    result = AnalyzeResponse(**report)
+    aid = storage.save_analysis(result.filename, content, result.model_dump())
+    storage.set_client(aid, user["name"])
+    return {"received": True, "filename": result.filename}
+
+
 @app.get("/portal/hub", include_in_schema=False)
 def portal_hub_page(request: Request) -> FileResponse:
     """The hub shell; the page boots from /portal/me. Session required."""
