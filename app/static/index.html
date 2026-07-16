@@ -1186,6 +1186,19 @@ const STR = {
     xd_capex: "Total investment", xd_capex_peak: p => `peak year ${p}`,
     xd_opex: p => `Operating costs · ${p}`,
     xd_margin_t: "Operating margin %", xd_margin_sub: "revenue − costs, by period",
+    // portfolio-sample insights: every figure from model.derived/insights
+    xd_cost_actual: "Cost / tonne — actual",
+    xd_vsb: t => `vs budget ${t}`,
+    xd_invshare: "Investment share", xd_invshare_sub: t => `of ${t} tracked`,
+    xd_cashpos: "Cash-positive", xd_cashpos_sub: "on plan",
+    xd_bridge: "Capital bridge", xd_bridge_sub: "to self-funding",
+    xp_path_t: (a, b) => `Path to profit — plan ${a}–${b}`,
+    xp_path_sub: y => `Net cash after investment turns positive in ${y}.`,
+    xp_margin_line: "Operating margin",
+    xp_netcash_line: "Net cash (cumulative)",
+    xp_split_t: "Where the cash went",
+    xp_split_sub: p => `${p}% invested in future production.`,
+    xp_split_inv: "Investment", xp_split_op: "Operating cost",
     xd_ramp: l => `Ramp-up — ${l}`, xd_ramp_sub: "per period",
     xd_cvr: "Investment vs revenue", xd_cvr_sub: "both series, same axis",
     xd_peak: l => `Peak ${l}`,
@@ -1626,6 +1639,19 @@ const STR = {
     xd_capex: "Investissement total", xd_capex_peak: p => `pic en ${p}`,
     xd_opex: p => `Charges · ${p}`,
     xd_margin_t: "Marge opérationnelle %", xd_margin_sub: "revenus − charges, par période",
+    // indicateurs du modèle : chaque chiffre vient de model.derived/insights
+    xd_cost_actual: "Coût / tonne — réel",
+    xd_vsb: t => `vs budget ${t}`,
+    xd_invshare: "Part investie", xd_invshare_sub: t => `sur ${t} suivis`,
+    xd_cashpos: "Trésorerie positive", xd_cashpos_sub: "selon le plan",
+    xd_bridge: "Besoin de financement", xd_bridge_sub: "jusqu'à l'autofinancement",
+    xp_path_t: (a, b) => `Chemin vers la rentabilité — plan ${a}–${b}`,
+    xp_path_sub: y => `La trésorerie nette après investissement devient positive en ${y}.`,
+    xp_margin_line: "Marge opérationnelle",
+    xp_netcash_line: "Trésorerie nette cumulée",
+    xp_split_t: "Où est allée la trésorerie",
+    xp_split_sub: p => `${p}% investis dans la production future.`,
+    xp_split_inv: "Investissement", xp_split_op: "Charges d'exploitation",
     xd_ramp: l => `Montée en puissance — ${l}`, xd_ramp_sub: "par période",
     xd_cvr: "Investissement vs revenus", xd_cvr_sub: "les deux séries, même axe",
     xd_peak: l => `Pic ${l}`,
@@ -4212,16 +4238,29 @@ function renderExecDashboard() {
     cells.push(`<div class="kcell"><div class="kl">${T.der_margin_pct}</div>
       <div class="kv">${mp[0].toFixed(0)}%</div>
       <div class="ks">${esc(String(m.periods[mp[1]]))}</div></div>`);
-  if (met.capex) {
+  const ins = m.insights || {};
+  if (met.capex && !ins.capital_bridge) {
+    // when the model computed the capital bridge, that tile tells the
+    // investment story better than the raw CAPEX total — don't show both
     const v = met.capex.values;
     const pk = v.indexOf(Math.max(...v.filter(x => x != null)));
     cells.push(`<div class="kcell"><div class="kl">${T.xd_capex}</div>
       <div class="kv">${compact(sum(v))}</div>
       <div class="ks">${pk >= 0 ? T.xd_capex_peak(esc(String(m.periods[pk]))) : ""}</div></div>`);
   }
+  const ub = m.monthly && m.monthly.unit_cost_budget;
   const cuOut = D.opex_per_volume_out;
   const cu = (cuOut || D.opex_per_volume) && lastOf(cuOut || D.opex_per_volume);
-  if (cu && cu[0] != null) {
+  if (ub) {
+    // latest ACTUAL unit cost against the plan's target — the sample's
+    // headline tile; over-budget reads critical
+    const [av, ai] = lastOf(m.monthly.derived[ub.basis]);
+    const varr = ub.variance_pct[ai];
+    if (av != null) cells.push(`<div class="kcell ${varr > 0 ? "crit" : ""}"><div class="kl">${T.xd_cost_actual}</div>
+      <div class="kv">${compact(av)}</div>
+      <div class="ks">${esc(String(m.monthly.periods[ai]))} · ${T.xd_vsb(compact(ub.target))}${varr != null
+        ? ` · ${varr >= 0 ? "+" : "−"}${Math.abs(varr).toFixed(0)}%` : ""}</div></div>`);
+  } else if (cu && cu[0] != null) {
     const cuVol = cuOut ? met.volume_secondary : met.volume;
     cells.push(`<div class="kcell"><div class="kl">${cuOut ? T.der_opex_per_volume_out : T.der_opex_per_volume}</div>
       <div class="kv">${compact(cu[0])}</div>
@@ -4237,6 +4276,19 @@ function renderExecDashboard() {
     cells.push(`<div class="kcell ${bv[0] > 0 ? "crit" : ""}"><div class="kl">${T.der_opex_budget_variance_pct}</div>
       <div class="kv">${bv[0] >= 0 ? "+" : "−"}${Math.abs(bv[0]).toFixed(1)}%</div>
       <div class="ks">${esc(String(m.periods[bv[1]]))} · ${bv[0] > 0 ? T.fin_over : T.fin_under}</div></div>`);
+  // the sample's cash-story tiles — each only when the model computed it
+  const cash = m.monthly && m.monthly.cash;
+  if (cash) cells.push(`<div class="kcell"><div class="kl">${T.xd_invshare}</div>
+    <div class="kv">${cash.invested_pct.toFixed(0)}%</div>
+    <div class="ks">${T.xd_invshare_sub(compact(cash.total))}</div></div>`);
+  if (ins.cash_positive_period)
+    cells.push(`<div class="kcell"><div class="kl">${T.xd_cashpos}</div>
+      <div class="kv">${esc(String(ins.cash_positive_period))}</div>
+      <div class="ks">${T.xd_cashpos_sub}</div></div>`);
+  if (ins.capital_bridge)
+    cells.push(`<div class="kcell"><div class="kl">${T.xd_bridge}</div>
+      <div class="kv">${compact(ins.capital_bridge)}</div>
+      <div class="ks">${T.xd_bridge_sub}</div></div>`);
   if (met.area && cells.length < 4) {
     const v = met.area.values;
     const pk = v.indexOf(Math.max(...v.filter(x => x != null)));
@@ -4244,7 +4296,7 @@ function renderExecDashboard() {
       <div class="kv">${esc(String(m.periods[pk]))}</div>
       <div class="ks">${compact(v[pk])}</div></div>`);
   }
-  cells.length = Math.min(cells.length, 4);
+  cells.length = Math.min(cells.length, 6);
 
   // ---- charts: everything the model can draw, nothing it can't ----------
   const blocks = [];
@@ -4259,9 +4311,32 @@ function renderExecDashboard() {
     { label: `${ROLE_LABELS.capex} — ${met.capex.label.slice(0, 22)}`,
       values: met.capex.values, color: SERIES_COLORS[2], on: true },
   ]));
+  if (D.net_cash)
+    blocks.push(execLines(
+      T.xp_path_t(esc(String(m.periods[0])), esc(String(m.periods[m.periods.length - 1]))),
+      ins.cash_positive_period ? T.xp_path_sub(esc(String(ins.cash_positive_period))) : null,
+      m.periods, [
+        { label: T.xp_margin_line, values: D.margin,
+          color: SERIES_COLORS[0], on: true },
+        { label: T.xp_netcash_line, values: D.net_cash_cum,
+          color: SERIES_COLORS[2], on: true },
+      ]));
   if (D.margin_pct && D.margin_pct.some(v => v != null))
     blocks.push(execBars(T.xd_margin_t, T.xd_margin_sub, m.periods,
       D.margin_pct.map(v => v != null ? +v.toFixed(1) : null)));
+  if (cash) {
+    // invested vs operating: one honest band, formatted from model.monthly.cash
+    const iw = cash.invested_pct, ow = 100 - iw;
+    blocks.push(execBlock(T.xp_split_t, T.xp_split_sub(iw.toFixed(0)), `
+      <div style="display:flex;height:34px;border:1px solid var(--border-strong);margin:18px 0 12px">
+        <div style="width:${iw}%;background:var(--gold)"></div>
+        <div style="width:${ow}%;background:var(--ink-3)"></div>
+      </div>
+      <div class="legend">
+        <span class="lg"><span class="sw" style="background:var(--gold)"></span>${T.xp_split_inv} — ${compact(cash.capex_total)} (${iw.toFixed(0)}%)</span>
+        <span class="lg"><span class="sw" style="background:var(--ink-3)"></span>${T.xp_split_op} — ${compact(cash.opex_total)} (${ow.toFixed(0)}%)</span>
+      </div>`));
+  }
   if (!rev && met.volume)          // volume-only books still get their story
     blocks.push(execLines(esc(titleCase(met.volume.label.slice(0, 30))), null,
       m.periods, [{ label: met.volume.label, values: met.volume.values,
