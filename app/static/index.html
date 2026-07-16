@@ -1406,6 +1406,13 @@ const STR = {
     portal_copied: url => `Portal link copied · ${url}`,
     portal_enabling: "Enabling portal…",
     hub_back: "All deliverables",
+    // first-login welcome: the hub before anything has been turned in
+    hub_welcome: "Welcome — your workspace is ready.",
+    hub_welcome_sub: "Your analyst is preparing your first deliverable. It appears here the moment it's turned in.",
+    hub_w1: ["Audited dashboards", "every total re-computed, every contradiction quantified, before a single chart is drawn."],
+    hub_w2: ["Written analysis briefs", "every figure traced to your own records — nothing estimated, nothing invented."],
+    hub_w3: ["Versioned deliverables", "updates arrive as v2, v3… of the same document. Nothing is silently replaced."],
+    hub_welcome_help: "Questions? Reply to the person who sent you your sign-in link.",
     hub_flagged: "flagged",
     hub_file: "file",
     hub_download: "Download",
@@ -1839,6 +1846,13 @@ const STR = {
     portal_copied: url => `Lien du portail copié · ${url}`,
     portal_enabling: "Activation du portail…",
     hub_back: "Tous les livrables",
+    // accueil de première connexion : le hub avant toute remise
+    hub_welcome: "Bienvenue — votre espace est prêt.",
+    hub_welcome_sub: "Votre analyste prépare votre premier livrable. Il apparaîtra ici dès sa remise.",
+    hub_w1: ["Tableaux de bord audités", "chaque total recalculé, chaque contradiction quantifiée, avant le moindre graphique."],
+    hub_w2: ["Notes d'analyse rédigées", "chaque chiffre tracé jusqu'à vos propres données — rien d'estimé, rien d'inventé."],
+    hub_w3: ["Livrables versionnés", "les mises à jour arrivent en v2, v3… du même document. Rien n'est remplacé en silence."],
+    hub_welcome_help: "Des questions ? Répondez à la personne qui vous a envoyé votre lien de connexion.",
     hub_flagged: "signalé",
     hub_file: "fichier",
     hub_download: "Télécharger",
@@ -2268,12 +2282,21 @@ function renderHubPage(me, items) {
       ${key ? `<div class="wb-group">${esc(key)}</div>` : ""}
       ${groups.get(key).map(row).join("")}`).join("");
 
+  const welcomeRow = ([head, sub]) => `
+      <div style="padding:12px 0;border-top:1px solid var(--border)">
+        <b style="font-family:var(--serif)">${head}</b>
+        <div class="qsub" style="margin-top:2px">${sub}</div>
+      </div>`;
   const body = items.length
     ? `<div style="border-top:1px solid var(--border-strong);margin-top:18px">${list}</div>`
-    : `<div class="home-empty" style="padding-top:24px">
+    : `<div style="padding-top:24px;max-width:560px">
         <svg class="sunmark" width="28" height="28" viewBox="-50 -50 100 100" aria-hidden="true">${sunPaths()}</svg>
-        <h2 style="font-family:var(--serif);font-weight:600;font-size:20px">${T.portal_empty}</h2>
-        <p class="lede">${T.portal_empty_sub}</p></div>`;
+        <h2 style="font-family:var(--serif);font-weight:600;font-size:20px;margin:10px 0 4px">${T.hub_welcome}</h2>
+        <p class="lede">${T.hub_welcome_sub}</p>
+        <div style="margin-top:18px;border-bottom:1px solid var(--border)">
+          ${welcomeRow(T.hub_w1)}${welcomeRow(T.hub_w2)}${welcomeRow(T.hub_w3)}
+        </div>
+        <p class="chcap" style="margin-top:14px">${T.hub_welcome_help}</p></div>`;
 
   $("#content").innerHTML = `<section class="portal">
     <span class="kicker">${T.portal_kicker}</span>
