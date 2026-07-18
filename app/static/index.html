@@ -1030,6 +1030,8 @@ const STR = {
     pr_peak: "Peak period", pr_chart: "Monthly volumes",
     pr_ratio_chart: "Conversion rate by period",
     pr_avg: p => `average ${p}`, pr_src: s => `from ${s}`,
+    pr_xsheet: (out, inp) => `${out} ÷ ${inp}`,
+    pr_gap_ratio: "Conversion rate not computed — the two volume series share fewer than 3 periods across sheets.",
     pr_cost_chart: "Cost per tonne — actual vs budget",
     pr_cost_target: (t, y) => `budget target ${t} (${y})`,
     pr_budget_line: y => `Budget ${y}`,
@@ -1503,6 +1505,8 @@ const STR = {
     pr_peak: "Période de pointe", pr_chart: "Volumes mensuels",
     pr_ratio_chart: "Taux de conversion par période",
     pr_avg: p => `moyenne ${p}`, pr_src: s => `depuis ${s}`,
+    pr_xsheet: (out, inp) => `${out} ÷ ${inp}`,
+    pr_gap_ratio: "Taux de conversion non calculé — les deux séries de volume partagent moins de 3 périodes entre les feuilles.",
     pr_cost_chart: "Coût par tonne — réel vs budget",
     pr_cost_target: (t, y) => `cible budget ${t} (${y})`,
     pr_budget_line: y => `Budget ${y}`,
@@ -5085,13 +5089,26 @@ function renderProduction() {
 
   let ratioCard = "";
   if (vr && vr.some(v => v != null)) {
+    // provenance: when the pair spans two sheets, say so — output ÷ input
+    const xs = met.volume && met.volume_secondary
+      && met.volume.sheet !== met.volume_secondary.sheet
+      ? T.pr_xsheet(esc(met.volume_secondary.sheet), esc(met.volume.sheet))
+      : null;
     const rc = { pseudo: true, sheet: T.pr_ratio_chart,
-      loc: avg != null ? T.pr_avg(`${(avg * 100).toFixed(1)}%`) : null,
+      loc: [avg != null ? T.pr_avg(`${(avg * 100).toFixed(1)}%`) : null, xs]
+        .filter(Boolean).join(" · ") || null,
       chart: { kind: "profile", x: mo.periods,
                y: vr.map(v => v != null ? +(v * 100).toFixed(2) : 0) },
       i: CHARTS.length, range: null };
     CHARTS.push(rc);
     ratioCard = chartCard(rc, false);
+  } else if (((REPORT.model && REPORT.model.gaps) || [])
+      .some(g => g.metric === "volume_ratio")) {
+    // the pipeline found a ratio pair it could not align: honest gap,
+    // no number, no placeholder — ever
+    ratioCard = `<div class="card"><div class="card-head">
+        <span class="ct">${T.pr_ratio_chart}</span></div>
+      <p class="chcap" style="margin-top:10px">${T.pr_gap_ratio}</p></div>`;
   }
 
   // actual $/t against the plan — everything here is pipeline-computed
