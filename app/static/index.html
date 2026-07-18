@@ -934,7 +934,9 @@
   .rtile:hover { outline: 1.5px solid var(--gold); outline-offset: -1.5px; }
   .rtile:focus-visible { outline: 2px solid var(--gold-strong); outline-offset: -2px; }
   .rtile .re { font-family: var(--mono); font-size: 9px; letter-spacing: .14em;
-    text-transform: uppercase; color: var(--ink-3); }
+    text-transform: uppercase; color: var(--ink-3); display: flex;
+    align-items: center; gap: 7px; }
+  .rtile .re svg { flex: none; color: var(--gold); }
   .rtile .rt { font-family: var(--serif); font-size: 16.5px; font-weight: 600;
     line-height: 1.35; margin-top: 8px; overflow-wrap: anywhere; }
   .rtile .rm { font-size: 12px; color: var(--ink-4); margin-top: 4px; }
@@ -2341,6 +2343,21 @@ async function bootHub() {
   renderHubPage(await me.json(), items);
 }
 
+/* tile kind icons — only what the backend actually distinguishes:
+   dashboard | file (portal deliverables), sheet (operator workbooks) */
+function kindIcon(kind) {
+  if (kind === "dashboard") return `<svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true">
+    <rect x="1.5" y="7" width="2.6" height="5.5" fill="currentColor"/>
+    <rect x="5.7" y="4" width="2.6" height="8.5" fill="currentColor"/>
+    <rect x="9.9" y="1.5" width="2.6" height="11" fill="currentColor"/></svg>`;
+  if (kind === "file") return `<svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true">
+    <path d="M3 1h6l3 3v9H3z" fill="none" stroke="currentColor" stroke-width="1.2"/>
+    <path d="M9 1v3h3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>`;
+  return `<svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true">
+    <rect x="1" y="1" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2"/>
+    <path d="M1 5h12M5.5 1v12" stroke="currentColor" stroke-width="1.2"/></svg>`;
+}
+
 function hubStatusChip(status) {
   if (status === "flagged")
     return `<span class="schip crit">${T.hub_flagged}</span>`;
@@ -2363,7 +2380,7 @@ function renderHubPage(me, items) {
   attachLang();
 
   const row = d => `<div class="rtile" data-did="${esc(d.id)}" role="link" tabindex="0">
-      <div class="re">${T.portal_pub(d.version, (d.published_at || "").slice(0, 10))}</div>
+      <div class="re">${kindIcon(d.kind)}${T.portal_pub(d.version, (d.published_at || "").slice(0, 10))}</div>
       <div class="rt">${esc(d.title)}</div>
       <div class="rfoot">${d.kind === "file" ? `<span class="schip">${T.hub_file}</span>`
                           : hubStatusChip(d.status)}
@@ -2563,7 +2580,7 @@ function renderCommandCenter() {
     <div style="border-top:1px solid var(--border-strong)">${rows.join("")}</div>` : "";
 
   const tiles = ws.map(w => `<div class="rtile" data-open="${esc(w.id)}" role="link" tabindex="0">
-      <div class="re">${esc((w.uploaded_at || "").slice(0, 10))} · ${T.meta_line(w.n_sheets, "")}</div>
+      <div class="re">${kindIcon("sheet")}${esc((w.uploaded_at || "").slice(0, 10))} · ${T.meta_line(w.n_sheets, "")}</div>
       <div class="rt">${esc(w.filename)}</div>
       <div class="rfoot">${wbChip(w)}
         <span class="minitabs"><span class="on" data-open="${esc(w.id)}">${T.mt_analyst}</span><span data-exec="${esc(w.id)}">${T.mt_exec}</span></span>
