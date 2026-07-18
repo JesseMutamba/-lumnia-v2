@@ -2,18 +2,19 @@
 
 Server-rendered static HTML like the login pages (no framework, no build
 step, self-contained except the product shot served at /landing-shot.jpg).
-FR is the default language — the anchor clientele works in French — with a
-client-side FR/EN toggle. Every claim on the page is one the product
+EN is the default language — prospects are broadly anglophone professional
+settings — with a client-side EN/FR toggle (the anchor clientele works in
+French, one click away). Every claim on the page is one the product
 actually keeps: totals recomputed, unsupported metrics not rendered,
 deliverables versioned. The product shot is the real interface rendering
 demonstration data and is captioned as such.
 """
 from __future__ import annotations
 
-LANDING_HTML = """<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">
+LANDING_HTML = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lumnia — Vos tableurs, audités. Vos décisions, éclairées.</title>
-<meta name="description" content="Lumnia transforme vos classeurs Excel en tableaux de bord audités et notes d'analyse — chaque total recalculé, chaque contradiction quantifiée.">
+<title>Lumnia — Your spreadsheets, audited. Your decisions, informed.</title>
+<meta name="description" content="Lumnia turns your Excel workbooks into audited dashboards and written analysis briefs — every total re-computed, every contradiction quantified.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='7' fill='%23c9992a'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -125,7 +126,7 @@ LANDING_HTML = """<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">
   <header>
     <span class="wordmark"><svg width="30" height="30" viewBox="-50 -50 100 100" class="sun"></svg>LUMNIA</span>
     <span class="grow"></span>
-    <span class="langs"><button data-l="fr">FR</button><button data-l="en">EN</button></span>
+    <span class="langs"><button data-l="en">EN</button><button data-l="fr">FR</button></span>
     <a class="ghost" href="/portal/signin"><span class="fr">Espace client</span><span class="en">Client sign-in</span></a>
   </header>
 
@@ -147,7 +148,7 @@ LANDING_HTML = """<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">
   <div class="shotframe">
     <div class="shotbar"><span></span><span></span><span></span></div>
     <img src="/landing-shot.jpg" width="1240" height="1033"
-      alt="Tableau de bord Lumnia — coût par tonne réel contre budget, part investie, chemin vers la rentabilité">
+      alt="Lumnia dashboard — actual cost per tonne against budget, investment share, path to profitability">
   </div>
   <p class="shotcap"><span class="fr">L'interface réelle — données de démonstration.</span>
     <span class="en">The real interface — demonstration data.</span></p>
@@ -248,7 +249,7 @@ LANDING_HTML = """<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">
       workbook can go out today.</span></p>
     <form id="reqform" data-endpoint="/portal/request-link">
       <input name="email" type="email" required autocomplete="email"
-        placeholder="nom@entreprise.com" aria-label="Email">
+        placeholder="name@company.com" aria-label="Email">
       <button class="cta" type="submit"><span><span class="fr">Demander un accès</span><span class="en">Request access</span></span><span>→</span></button>
     </form>
     <p id="req-msg" aria-live="polite">
@@ -278,9 +279,9 @@ LANDING_HTML = """<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">
     try { localStorage.setItem("lumnia_lang", l); } catch (_) {} };
   document.querySelectorAll(".langs button").forEach(b =>
     b.addEventListener("click", () => setLang(b.dataset.l)));
-  let saved = "fr";
-  try { saved = localStorage.getItem("lumnia_lang") || "fr"; } catch (_) {}
-  setLang(saved === "en" ? "en" : "fr");
+  let saved = "en";
+  try { saved = localStorage.getItem("lumnia_lang") || "en"; } catch (_) {}
+  setLang(saved === "fr" ? "fr" : "en");
   /* access request: same neutral answer as the endpoint, no case leaked */
   const rf = document.getElementById("reqform");
   rf.addEventListener("submit", async e => {
