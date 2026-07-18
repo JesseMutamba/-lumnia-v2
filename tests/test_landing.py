@@ -50,3 +50,27 @@ def test_product_shot_is_public(monkeypatch):
     r = fresh.get("/landing-shot.jpg")
     assert r.status_code == 200
     assert r.headers["content-type"] == "image/jpeg"
+
+
+def test_landing_carries_the_inline_access_request_form(monkeypatch):
+    """The prospect form posts to the existing public request-link endpoint —
+    no new backend path, same neutral non-enumerating answer."""
+    monkeypatch.setenv("LUMNIA_PASSWORD", "s3cret")
+    fresh = TestClient(app)
+    r = fresh.get("/", headers={"Accept": "text/html"})
+    assert 'data-endpoint="/portal/request-link"' in r.text
+    assert 'type="email"' in r.text
+
+
+def test_anonymous_access_request_passes_the_password_gate(monkeypatch):
+    """With the app password set, an anonymous prospect can still file a
+    request (portal paths bypass the operator gate) and it lands on the
+    operator's approval queue."""
+    monkeypatch.setenv("LUMNIA_PASSWORD", "s3cret")
+    fresh = TestClient(app)
+    r = fresh.post("/portal/request-link",
+                   data={"email": "prospect@kivu.cd"})
+    assert r.status_code == 200
+    from app import storage
+    assert "prospect@kivu.cd" in [q["email"]
+                                  for q in storage.list_access_requests()]

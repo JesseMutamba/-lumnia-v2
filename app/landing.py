@@ -104,6 +104,19 @@ LANDING_HTML = """<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">
     padding:56px 0 60px;text-align:center}
   .band h2{color:var(--paper);margin:14px auto 8px;max-width:none}
   .band .sub{color:#b8b0a0;margin:0 auto 26px;max-width:52ch}
+  /* inline access request: email straight to the operator's approval queue */
+  #reqform{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+  #reqform input{font:inherit;font-size:14px;padding:13px 16px;min-width:280px;
+    border:1px solid #4a453b;border-radius:0;background:var(--card);color:var(--ink)}
+  #reqform input:focus{outline:2px solid var(--gold2);outline-offset:1px}
+  #reqform button{font:inherit;cursor:pointer;border:none}
+  #reqform button:disabled{opacity:.5;cursor:wait}
+  #req-msg{display:none;font-size:13.5px;max-width:56ch;margin:16px auto 0}
+  #req-msg[data-state="ok"]{display:block;color:#b8b0a0}
+  #req-msg[data-state="err"]{display:block;color:#e0a69e}
+  #req-msg .err,#req-msg[data-state="err"] .ok{display:none}
+  #req-msg[data-state="err"] .err{display:inline}
+  .band .signin{display:inline-block;margin-top:18px;color:#b8b0a0;font-size:13px}
   footer{padding:30px 0 40px;display:flex;gap:16px;align-items:center;
     color:var(--ink3);font-size:12.5px}
   footer a{color:var(--ink3)}
@@ -126,7 +139,7 @@ LANDING_HTML = """<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">
       Lumnia re-computes every total, quantifies every contradiction, and returns decision-ready
       dashboards and written analysis briefs.</span></p>
     <div class="ctas">
-      <a class="cta" href="/portal/signin"><span><span class="fr">Demander un accès</span><span class="en">Request access</span></span><span>→</span></a>
+      <a class="cta" href="#access"><span><span class="fr">Demander un accès</span><span class="en">Request access</span></span><span>→</span></a>
       <a class="cta2" href="/portal/signin"><span><span class="fr">J'ai déjà un compte</span><span class="en">I have an account</span></span><span>→</span></a>
     </div>
   </div>
@@ -225,7 +238,7 @@ LANDING_HTML = """<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">
   </section>
 </div>
 
-<div class="band">
+<div class="band" id="access">
   <div class="wrap">
     <span class="mono" style="color:var(--gold2)"><span class="fr">Commencer</span><span class="en">Get started</span></span>
     <h2><span class="fr">Votre email professionnel suffit.</span><span class="en">Your work email is enough.</span></h2>
@@ -233,7 +246,20 @@ LANDING_HTML = """<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">
       et votre premier classeur peut partir aujourd'hui.</span>
       <span class="en">Request access — your analyst opens your hub, and your first
       workbook can go out today.</span></p>
-    <a class="cta" href="/portal/signin"><span><span class="fr">Demander un accès</span><span class="en">Request access</span></span><span>→</span></a>
+    <form id="reqform" data-endpoint="/portal/request-link">
+      <input name="email" type="email" required autocomplete="email"
+        placeholder="nom@entreprise.com" aria-label="Email">
+      <button class="cta" type="submit"><span><span class="fr">Demander un accès</span><span class="en">Request access</span></span><span>→</span></button>
+    </form>
+    <p id="req-msg" aria-live="polite">
+      <span class="ok"><span class="fr">Merci. Si votre adresse est reconnue, votre lien arrive
+        par email&nbsp;; sinon votre demande a été transmise à votre analyste.</span>
+        <span class="en">Thank you. If your address is recognized your link arrives by email;
+        otherwise your request has been passed to your analyst.</span></span>
+      <span class="err"><span class="fr">Échec de l'envoi — réessayez.</span>
+        <span class="en">Send failed — try again.</span></span>
+    </p>
+    <a class="signin" href="/portal/signin"><span class="fr">J'ai déjà un compte → connexion</span><span class="en">I have an account → sign in</span></a>
   </div>
 </div>
 
@@ -255,6 +281,19 @@ LANDING_HTML = """<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">
   let saved = "fr";
   try { saved = localStorage.getItem("lumnia_lang") || "fr"; } catch (_) {}
   setLang(saved === "en" ? "en" : "fr");
+  /* access request: same neutral answer as the endpoint, no case leaked */
+  const rf = document.getElementById("reqform");
+  rf.addEventListener("submit", async e => {
+    e.preventDefault();
+    const btn = rf.querySelector("button"), msg = document.getElementById("req-msg");
+    btn.disabled = true;
+    const ok = await fetch(rf.dataset.endpoint,
+      { method: "POST", body: new FormData(rf) })
+      .then(r => r.ok).catch(() => false);
+    msg.dataset.state = ok ? "ok" : "err";
+    if (ok) rf.querySelector("input").value = "";
+    btn.disabled = false;
+  });
   let d = `<circle cx="0" cy="0" r="7.5" fill="#c9992a"/>`;
   for (let r = 1; r <= 7; r++) { const R = 9 + r * 4.6, n = 10 + r * 6,
     rr = Math.max(.5, 2.1 - r * .18), o = Math.max(.3, 1 - r * .1);
