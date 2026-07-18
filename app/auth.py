@@ -134,10 +134,10 @@ LOGIN_HTML = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
     letter-spacing:.14em;margin:0 0 4px;text-indent:.14em}
   .tag{font-family:"Didot",Georgia,serif;font-style:italic;color:#a8821f;
     font-size:14px;margin-bottom:26px}
-  input{width:100%;padding:11px 14px;border:1px solid #e4dcc9;border-radius:8px;
+  input{width:100%;padding:11px 14px;border:1px solid #e4dcc9;border-radius:0;
     background:#fbf9f3;font-size:14px;box-sizing:border-box;margin-bottom:10px;outline:none}
   input:focus{border-color:#c9992a}
-  button{width:100%;padding:11px;border:none;border-radius:8px;background:#a8821f;
+  button{width:100%;padding:11px;border:none;border-radius:0;background:#a8821f;
     color:#fff;font-family:ui-monospace,Menlo,monospace;font-size:11px;
     letter-spacing:.12em;text-transform:uppercase;cursor:pointer}
   button:hover{background:#c9992a}
@@ -166,9 +166,9 @@ LOGIN_HTML = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 # out. FR leads — the anchor clientele works in French; EN rides below.
 # __MSG__ is the one server-driven slot; the answer is deliberately the
 # same whether the address is known, unknown, or throttled.
-PORTAL_SIGNIN_HTML = """<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">
+PORTAL_SIGNIN_HTML = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lumnia — Espace client</title>
+<title>Lumnia — Client hub</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='7' fill='%23c9992a'/%3E%3C/svg%3E">
 <style>
   body{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;
@@ -182,10 +182,10 @@ PORTAL_SIGNIN_HTML = """<!DOCTYPE html><html lang="fr"><head><meta charset="utf-
     font-size:14px;margin-bottom:22px}
   p.how{font-size:13px;color:#5c564a;margin:0 0 6px}
   p.how-en{font-size:11.5px;color:#99917e;margin:0 0 20px}
-  input{width:100%;padding:11px 14px;border:1px solid #e4dcc9;border-radius:8px;
+  input{width:100%;padding:11px 14px;border:1px solid #e4dcc9;border-radius:0;
     background:#fbf9f3;font-size:14px;box-sizing:border-box;margin-bottom:10px;outline:none}
   input:focus{border-color:#c9992a}
-  button{width:100%;padding:11px;border:none;border-radius:8px;background:#a8821f;
+  button{width:100%;padding:11px;border:none;border-radius:0;background:#a8821f;
     color:#fff;font-family:ui-monospace,Menlo,monospace;font-size:11px;
     letter-spacing:.12em;text-transform:uppercase;cursor:pointer}
   button:hover{background:#c9992a}
@@ -194,14 +194,14 @@ PORTAL_SIGNIN_HTML = """<!DOCTYPE html><html lang="fr"><head><meta charset="utf-
 </style></head><body>
   <form class="box" method="post" action="/portal/request-link">
     <svg class="sun" width="60" height="60" viewBox="-50 -50 100 100" id="s"></svg>
-    <h1>LUMNIA</h1><div class="tag">Espace client</div>
-    <p class="how">Entrez votre email professionnel — votre lien de connexion
-      personnel arrive par email.</p>
-    <p class="how-en">Enter your work email — your personal sign-in link
+    <h1>LUMNIA</h1><div class="tag">Client hub · Espace client</div>
+    <p class="how">Enter your work email — your personal sign-in link
       arrives by email.</p>
+    <p class="how-en">Entrez votre email professionnel — votre
+      lien de connexion personnel arrive par email.</p>
     <div class="msg">__MSG__</div>
-    <input type="email" name="email" placeholder="vous@entreprise.cd" autofocus required>
-    <button type="submit">Recevoir mon lien · Get my link</button>
+    <input type="email" name="email" placeholder="name@company.com" autofocus required>
+    <button type="submit">Get my link · Recevoir mon lien</button>
   </form>
   <script>
     let d=`<circle cx="0" cy="0" r="7.5" fill="#c9992a"/>`;

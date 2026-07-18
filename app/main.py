@@ -868,14 +868,14 @@ def revoke_portal_user(client: str, user_id: str) -> dict:
 # the one neutral answer for /portal/request-link — identical for known,
 # unknown, and throttled addresses, and honest for all three: a recognized
 # address is mailed (or queued when SMTP is off), an unknown one waits for
-# the analyst. FR leads, EN rides.
-_REQUEST_LINK_OK = ("Merci. Si votre adresse est reconnue, votre lien arrive "
-                    "par email ; sinon votre demande a été transmise à votre "
-                    "analyste. · Thank you. If your address is recognized "
-                    "your link arrives by email; otherwise your request has "
-                    "been passed to your analyst.")
-_REQUEST_LINK_BAD = ("Entrez une adresse email valide. · "
-                     "Enter a valid email address.")
+# the analyst. EN leads, FR rides.
+_REQUEST_LINK_OK = ("Thank you. If your address is recognized your link "
+                    "arrives by email; otherwise your request has been "
+                    "passed to your analyst. · Merci. Si votre adresse est "
+                    "reconnue, votre lien arrive par email ; sinon votre "
+                    "demande a été transmise à votre analyste.")
+_REQUEST_LINK_BAD = ("Enter a valid email address. · "
+                     "Entrez une adresse email valide.")
 
 
 @app.get("/portal/signin", include_in_schema=False)

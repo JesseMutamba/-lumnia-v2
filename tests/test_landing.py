@@ -25,8 +25,8 @@ def test_anonymous_visitor_gets_the_landing(monkeypatch):
     assert r.status_code == 200
     assert LANDING_MARKER in r.text
     assert APP_MARKER not in r.text
-    assert "Espace client" in r.text          # FR leads
-    assert "How it works" in r.text           # EN rides along
+    assert "Espace client" in r.text          # FR copy rides along
+    assert "How it works" in r.text           # EN leads
 
 
 def test_signed_in_operator_still_gets_the_app(monkeypatch):
