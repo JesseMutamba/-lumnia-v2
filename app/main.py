@@ -853,9 +853,10 @@ def portal_file(token: str) -> FileResponse:
             f'{"inline" if inline else "attachment"}; filename="{name}"',
         "Cache-Control": "no-store"}
     if media == "text/html":
-        # readable in place, but script-dead: generated briefs carry no JS,
-        # and nothing served here may ever act on the client's session
-        headers["Content-Security-Policy"] = "sandbox"
+        # interactive dashboards may run their scripts, but in an OPAQUE
+        # ORIGIN (CSP sandbox): no cookies, no session, no same-origin API
+        # reach — nothing served here can act on the client's session
+        headers["Content-Security-Policy"] = "sandbox allow-scripts"
     return FileResponse(path, media_type=media, headers=headers)
 
 

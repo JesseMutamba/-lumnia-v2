@@ -1148,6 +1148,9 @@ const STR = {
     cc_hub: "Report hub",
     cc_lede: "Audited dashboards, briefs and workbooks in one place — versioned, publish-gated, every figure traceable to source.",
     // client access panel (onboarding)
+    cl_deliver: "Deliver a file",
+    cl_deliver_sub: "PDF, HTML dashboard or spreadsheet — lands in the client's hub, versioned by title.",
+    cl_delivered: (t, v) => `Delivered — “${t}” v${v} is live in the client's hub.`,
     cl_kicker: "Clients",
     cl_meta: (u, d) => `${u} contact${u === 1 ? "" : "s"} · ${d} deliverable${d === 1 ? "" : "s"}`,
     cl_none: "No clients yet — assign a workbook to a client and it appears here.",
@@ -1618,6 +1621,9 @@ const STR = {
     cc_hub: "Centre de rapports",
     cc_lede: "Tableaux de bord audités, notes et classeurs au même endroit — versionnés, publication contrôlée, chaque chiffre traçable à la source.",
     // panneau d'accès clients (onboarding)
+    cl_deliver: "Remettre un fichier",
+    cl_deliver_sub: "PDF, tableau de bord HTML ou tableur — arrive dans l'espace du client, versionné par titre.",
+    cl_delivered: (t, v) => `Remis — « ${t} » v${v} est en ligne dans l'espace du client.`,
     cl_kicker: "Clients",
     cl_meta: (u, d) => `${u} contact${u === 1 ? "" : "s"} · ${d} livrable${d === 1 ? "" : "s"}`,
     cl_none: "Aucun client pour l'instant — attribuez un classeur à un client et il apparaîtra ici.",
@@ -2477,7 +2483,7 @@ function renderFileViewer(d) {
   attachLang();
   const isHtml = (d.filename || "").toLowerCase().endsWith(".html");
   const frame = isHtml
-    ? `<iframe src="${esc(d.signed_url)}" sandbox=""
+    ? `<iframe src="${esc(d.signed_url)}" sandbox="allow-scripts"
         style="width:100%;height:80vh;border:1px solid var(--border);background:#fbf9f3"></iframe>`
     : `<embed src="${esc(d.signed_url)}" type="application/pdf"
         style="width:100%;height:80vh;border:1px solid var(--border);background:var(--panel)">`;
@@ -2700,6 +2706,12 @@ async function renderClientsPanel() {
             style="flex:1;font-family:var(--mono);font-size:12px;padding:6px 9px;border:1px solid var(--border-strong);background:var(--card);color:var(--ink)">
           <button type="submit" class="pillbtn gold">${T.cl_add}</button>
         </form>
+        <div style="display:flex;gap:10px;margin-top:10px;align-items:center;flex-wrap:wrap">
+          <button class="pillbtn" data-cfile="${esc(c.name)}">${T.cl_deliver}</button>
+          <span class="qsub" style="flex:1;min-width:200px">${T.cl_deliver_sub}</span>
+          <input type="file" data-cfileinput="${esc(c.name)}"
+            accept=".pdf,.html,.xlsx,.xls,.ods,.csv" style="display:none">
+        </div>
       </div>`;
     }
     blocks.push(`<div class="wbrow" data-cl="${esc(c.name)}" style="cursor:pointer">
@@ -2743,6 +2755,24 @@ async function renderClientsPanel() {
   }));
   $$("#clients-panel [data-cdetail]").forEach(el =>
     el.addEventListener("click", e => e.stopPropagation()));
+  $$("#clients-panel [data-cfile]").forEach(el => el.addEventListener("click", e => {
+    e.stopPropagation();
+    $(`#clients-panel [data-cfileinput="${el.dataset.cfile}"]`).click();
+  }));
+  $$("#clients-panel [data-cfileinput]").forEach(el => el.addEventListener("change", async e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    setStatus(T.hub_sending);
+    const fd = new FormData();
+    fd.append("file", f);
+    const r = await fetch(`/clients/${encodeURIComponent(el.dataset.cfileinput)}/files`,
+      { method: "POST", body: fd });
+    e.target.value = "";
+    if (!r.ok) { setStatus((await r.json()).detail || "!", true); return; }
+    const d = await r.json();
+    setStatus(T.cl_delivered(esc(d.title), d.version));
+    renderClientsPanel();
+  }));
   $$("#clients-panel [data-cplink]").forEach(el => el.addEventListener("click", async e => {
     e.stopPropagation();
     el.disabled = true;
