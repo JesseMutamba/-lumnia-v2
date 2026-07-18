@@ -45,14 +45,14 @@
     --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     --shadow: none;
-    --radius-card: 10px;      /* exec */
+    --radius-card: 0;         /* Carbon-sharp surfaces; pills/chips stay round */
   }
   body[data-mode="analyst"] {
     --surface: var(--surface-analyst);
     --panel: var(--panel-analyst);
     --ink-2: #44413a;
     --ink-3: #948b76;
-    --radius-card: 6px;
+    --radius-card: 0;
   }
   body[data-mode="exec"] { --border: var(--border-exec); }
   * { box-sizing: border-box; }
@@ -80,7 +80,7 @@
   /* exec: a 2px gold rule carries the state; analyst: a card pill */
   .nav-item.active { border-left-color: var(--gold); color: var(--ink);
     font-weight: 650; }
-  body[data-mode="analyst"] .nav-item { border-radius: 6px; border-left-width: 1px; }
+  body[data-mode="analyst"] .nav-item { border-radius: 0; border-left-width: 1px; }
   body[data-mode="analyst"] .nav-item:hover { background: var(--card); }
   body[data-mode="analyst"] .nav-item.active { background: var(--card);
     border-color: var(--border); color: var(--ink); }
@@ -88,7 +88,7 @@
   .nav-item .cnt { margin-left: auto; font-family: var(--mono); font-size: 10px;
     color: var(--ink-3); }
   .nav-item.active .cnt { color: var(--gold); }
-  .wb { padding: 7px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 2px; }
+  .wb { padding: 7px 12px; border-radius: 0; cursor: pointer; margin-bottom: 2px; }
   .wb:hover { background: var(--card); }
   .wb .name { font-size: 12.5px; font-weight: 600; overflow-wrap: anywhere; }
   .wb.active .name { color: var(--gold); }
@@ -117,7 +117,7 @@
   .btn { display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
     font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
     text-transform: uppercase; color: var(--ink-2); background: var(--card);
-    border: 1px solid var(--border-strong); border-radius: 8px; padding: 7px 13px; }
+    border: 1px solid var(--border-strong); border-radius: 0; padding: 7px 13px; }
   .btn:hover { border-color: var(--gold); color: var(--gold); }
   #status { font-family: var(--mono); font-size: 12px; color: var(--ink-2);
     letter-spacing: .04em; min-height: 18px; margin: 0 0 10px; }
@@ -127,12 +127,12 @@
   .filters { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; position: relative; }
   .pill { position: relative; }
   .pill > button { display: flex; align-items: center; gap: 8px; cursor: pointer;
-    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 0;
     padding: 9px 16px; font: 13px var(--sans); color: var(--ink-2); box-shadow: var(--shadow); }
   .pill > button b { color: var(--ink); font-weight: 650; }
   .pill > button .car { color: var(--ink-3); font-size: 10px; }
   .pop { position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; min-width: 230px;
-    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 0;
     box-shadow: 0 10px 34px rgba(70,58,25,.14); padding: 8px; display: none; }
   .pill.open .pop { display: block; }
   .pop .search { display: flex; align-items: center; gap: 7px; padding: 6px 8px;
@@ -204,7 +204,7 @@
   .hero { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 12px; margin: 14px 0 16px; }
   .hero-tile { background: var(--card); border: 1px solid var(--line);
-    border-radius: 14px; padding: 18px 20px; }
+    border-radius: var(--radius-card); padding: 18px 20px; }
   .hero-tile .hl { font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em;
     text-transform: uppercase; color: var(--ink-3); }
   .hero-tile .hv { font-family: var(--serif); font-size: 34px; font-weight: 650;
@@ -307,7 +307,7 @@
 
   /* analyzing skeleton: shimmer while the pipeline runs */
   .skel { display: grid; gap: 14px; }
-  .skel .sk { border-radius: 14px; background:
+  .skel .sk { border-radius: 0; background:
     linear-gradient(100deg, var(--card) 40%, #f2eddf 50%, var(--card) 60%);
     background-size: 200% 100%; animation: shimmer 1.2s linear infinite; }
   @keyframes shimmer { to { background-position: -200% 0; } }
@@ -322,7 +322,7 @@
   .bq { font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em;
     text-transform: uppercase; color: var(--ink-3); margin: 16px 0 6px; }
   .binput { width: 100%; box-sizing: border-box; font: inherit; font-size: 13.5px;
-    padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px;
+    padding: 9px 12px; border: 1px solid var(--line); border-radius: 0;
     background: var(--card-2); color: var(--ink); resize: vertical; }
   .binput:focus { outline: none; border-color: var(--gold); }
   .chiprow { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
@@ -479,7 +479,7 @@
   body[data-mode="analyst"] .modes button { border-radius: 5px; }
   body[data-mode="analyst"] .modes button.on { background: var(--gold); color: #fff; }
   .verdict { display: flex; gap: 16px; align-items: flex-start;
-    background: var(--card); border: 1px solid var(--hairline); border-radius: 14px;
+    background: var(--card); border: 1px solid var(--hairline); border-radius: var(--radius-card);
     padding: 18px 22px; box-shadow: var(--shadow); margin-bottom: 16px;
     border-left: 4px solid var(--vcolor, var(--ink-3)); }
   .verdict .vic { font-size: 26px; line-height: 1; color: var(--vcolor); }
@@ -487,7 +487,7 @@
     text-transform: uppercase; color: var(--vcolor); font-weight: 600; }
   .verdict p { margin: 6px 0 0; font-size: 14px; line-height: 1.65; max-width: 75ch; }
   .action-card { background: var(--card); border: 1px solid var(--hairline);
-    border-radius: 14px; padding: 15px 19px; box-shadow: var(--shadow);
+    border-radius: var(--radius-card); padding: 15px 19px; box-shadow: var(--shadow);
     margin-bottom: 12px; border-left: 4px solid var(--acolor, var(--border)); }
   .action-card .ahead { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
   .action-card .asheet { font-weight: 650; }
@@ -518,7 +518,7 @@
   .preset { border: none; border-radius: 7px; padding: 5px 12px; font-size: 11px;
     font-weight: 600; cursor: pointer; margin: 0 6px 6px 0; }
   .scard { background: var(--card); border: 1px solid var(--border);
-    border-top: 2px solid var(--scolor, var(--border)); border-radius: 6px;
+    border-top: 2px solid var(--scolor, var(--border)); border-radius: 0;
     padding: 13px 16px; }
   .scard .sn { font-family: var(--mono); font-size: 9.5px; letter-spacing: .12em;
     text-transform: uppercase; color: var(--ink-3); }
@@ -526,7 +526,7 @@
     color: var(--scolor); font-variant-numeric: tabular-nums; margin: 4px 0 1px; }
   .scard .ss { font-size: 10.5px; color: var(--ink-3); }
   .runbtn { width: 100%; margin-top: 12px; background: var(--gold); color: #fff;
-    border: none; border-radius: 8px; padding: 10px 0; font-family: var(--mono);
+    border: none; border-radius: 0; padding: 10px 0; font-family: var(--mono);
     font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
     cursor: pointer; }
   .runbtn:hover { background: var(--gold-strong); }
@@ -810,7 +810,7 @@
   .modchip.off { border-style: dashed; background: transparent;
     color: var(--ink-3); font-weight: 500; }
   .modchip.off .mck { background: transparent; border: 1px solid var(--border-strong); }
-  .pubband { background: var(--ink); color: #f6f3ec; border-radius: 10px;
+  .pubband { background: var(--ink); color: #f6f3ec; border-radius: 0;
     padding: 18px 22px; display: flex; gap: 12px; align-items: center;
     flex-wrap: wrap; margin-top: 14px; position: relative; scroll-margin-top: 14px; }
   .pubband .cs { letter-spacing: .14em; }
@@ -833,7 +833,7 @@
     padding: 8vh 20px 20px; }
   .scrim.open { display: flex; }
   .rmodal { background: var(--surface); border: 1px solid var(--border);
-    border-radius: 10px; box-shadow: 0 1px 3px rgba(70,58,25,.3);
+    border-radius: 0; box-shadow: 0 1px 3px rgba(70,58,25,.3);
     padding: 30px 36px; max-width: 620px; width: 100%; }
   .rmrow { display: grid; grid-template-columns: 20px auto minmax(0, 1fr);
     gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--hairline);
@@ -897,7 +897,7 @@
   .minitabs .on { background: var(--ink); color: #f6f3ec; }
   .minitabs span:not(.on) { color: var(--ink-3); }
   .minitabs span:not(.on):hover { color: var(--ink); }
-  .upcard { border: 1.5px dashed var(--border-strong); border-radius: 12px;
+  .upcard { border: 1.5px dashed var(--border-strong); border-radius: 0;
     background: var(--card); text-align: center; padding: 32px 24px;
     cursor: pointer; transition: border-color .15s; }
   .upcard:hover { border-color: var(--gold-strong); }
@@ -907,6 +907,44 @@
     font-size: 12.5px; color: var(--ink-2); line-height: 1.55; }
   .step3 > div:first-child { border-left: none; padding-left: 2px; }
 
+  /* ============ report hub: Carbon-borrowed leadspace + tile grid ============
+     Sharp geometry, 1px gridline gaps, eyebrow labels, trailing-arrow CTA —
+     IBM's grammar, Lumnia's palette and type. */
+  .leadspace { padding: 6px 0 2px; }
+  .leadspace .cchead { font-size: 40px; max-width: 26ch; line-height: 1.15;
+    margin: 10px 0 12px; }
+  @media (max-width: 900px) { .leadspace .cchead { font-size: 30px; } }
+  .ctarow { display: flex; gap: 12px; margin: 20px 0 10px; flex-wrap: wrap; }
+  .cta { display: inline-flex; align-items: center; justify-content: space-between;
+    gap: 36px; min-width: 220px; background: var(--gold); color: #fff;
+    border: none; border-radius: 0; padding: 14px 16px;
+    font: 600 13.5px var(--sans); cursor: pointer; text-align: left; }
+  .cta:hover { background: var(--gold-strong); }
+  .cta.ghost { background: transparent; color: var(--gold);
+    border: 1px solid var(--gold); }
+  .cta .ar { font-size: 15px; line-height: 1; }
+  .rgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    border-top: 1px solid var(--border); border-left: 1px solid var(--border);
+    margin-top: 12px; }
+  .rtile { background: var(--card); padding: 18px 18px 16px; min-height: 158px;
+    display: flex; flex-direction: column; cursor: pointer;
+    border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+  #drop.rtile { border: 1.5px dashed var(--border-strong); padding: 18px 18px 16px;
+    text-align: left; }
+  .rtile:hover { outline: 1.5px solid var(--gold); outline-offset: -1.5px; }
+  .rtile:focus-visible { outline: 2px solid var(--gold-strong); outline-offset: -2px; }
+  .rtile .re { font-family: var(--mono); font-size: 9px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--ink-3); }
+  .rtile .rt { font-family: var(--serif); font-size: 16.5px; font-weight: 600;
+    line-height: 1.35; margin-top: 8px; overflow-wrap: anywhere; }
+  .rtile .rm { font-size: 12px; color: var(--ink-4); margin-top: 4px; }
+  .rtile .rfoot { margin-top: auto; padding-top: 18px; display: flex;
+    align-items: center; gap: 8px; flex-wrap: wrap; }
+  .rtile .rarrow { margin-left: auto; color: var(--gold); font-size: 15px;
+    line-height: 1; }
+  .rtile.rnew { background: var(--surface); }
+  .rtile.rnew .rt { color: var(--ink-2); }
+
   /* empty / drop: the product promise up front */
   .home-empty { max-width: 620px; margin: 9vh auto 0; text-align: center; }
   .home-empty .sunmark { margin: 0 auto 24px; }
@@ -914,7 +952,7 @@
     line-height: 1.25; margin: 0 0 14px; letter-spacing: -.005em; }
   .home-empty .lede { font-size: 14px; color: var(--ink-2); line-height: 1.65;
     margin: 0 auto 34px; max-width: 52ch; }
-  #drop { border: 1.5px dashed var(--border-strong); border-radius: 12px;
+  #drop { border: 1.5px dashed var(--border-strong); border-radius: 0;
     padding: 42px 30px; text-align: center; color: var(--ink-2); cursor: pointer;
     background: var(--card); transition: border-color .15s; }
   #drop:hover, #drop.hover { border-color: var(--gold-strong); }
@@ -1105,6 +1143,8 @@ const STR = {
     cc_new: "New analysis",
     cc_drop_small: "Drop a spreadsheet",
     cc_drop_sub: "Audited answer in minutes.",
+    cc_hub: "Report hub",
+    cc_lede: "Audited dashboards, briefs and workbooks in one place — versioned, publish-gated, every figure traceable to source.",
     // client access panel (onboarding)
     cl_kicker: "Clients",
     cl_meta: (u, d) => `${u} contact${u === 1 ? "" : "s"} · ${d} deliverable${d === 1 ? "" : "s"}`,
@@ -1573,6 +1613,8 @@ const STR = {
     cc_new: "Nouvelle analyse",
     cc_drop_small: "Déposez un tableur",
     cc_drop_sub: "Réponse auditée en quelques minutes.",
+    cc_hub: "Centre de rapports",
+    cc_lede: "Tableaux de bord audités, notes et classeurs au même endroit — versionnés, publication contrôlée, chaque chiffre traçable à la source.",
     // panneau d'accès clients (onboarding)
     cl_kicker: "Clients",
     cl_meta: (u, d) => `${u} contact${u === 1 ? "" : "s"} · ${d} livrable${d === 1 ? "" : "s"}`,
@@ -2320,12 +2362,12 @@ function renderHubPage(me, items) {
     ${langToggle()}<span class="ropill">${T.ex_readonly}</span></div>`;
   attachLang();
 
-  const row = d => `<div class="wbrow" data-did="${esc(d.id)}" role="link" tabindex="0">
-      <div style="min-width:0;flex:1"><b>${esc(d.title)}</b>
-        <div class="wmeta">${T.portal_pub(d.version, (d.published_at || "").slice(0, 10))}</div></div>
-      ${d.kind === "file" ? `<span class="schip">${T.hub_file}</span>`
+  const row = d => `<div class="rtile" data-did="${esc(d.id)}" role="link" tabindex="0">
+      <div class="re">${T.portal_pub(d.version, (d.published_at || "").slice(0, 10))}</div>
+      <div class="rt">${esc(d.title)}</div>
+      <div class="rfoot">${d.kind === "file" ? `<span class="schip">${T.hub_file}</span>`
                           : hubStatusChip(d.status)}
-      <span class="popen">${T.portal_open} →</span>
+        <span class="rarrow">→</span></div>
     </div>`;
   // group headers only when a group label actually exists (spec: nullable)
   const groups = new Map();
@@ -2336,7 +2378,7 @@ function renderHubPage(me, items) {
   }
   const list = [...groups.keys()].map(key => `
       ${key ? `<div class="wb-group">${esc(key)}</div>` : ""}
-      ${groups.get(key).map(row).join("")}`).join("");
+      <div class="rgrid">${groups.get(key).map(row).join("")}</div>`).join("");
 
   const welcomeRow = ([head, sub]) => `
       <div style="padding:12px 0;border-top:1px solid var(--border)">
@@ -2344,7 +2386,7 @@ function renderHubPage(me, items) {
         <div class="qsub" style="margin-top:2px">${sub}</div>
       </div>`;
   const body = items.length
-    ? `<div style="border-top:1px solid var(--border-strong);margin-top:18px">${list}</div>`
+    ? `<div style="margin-top:18px">${list}</div>`
     : `<div style="padding-top:24px;max-width:560px">
         <svg class="sunmark" width="28" height="28" viewBox="-50 -50 100 100" aria-hidden="true">${sunPaths()}</svg>
         <h2 style="font-family:var(--serif);font-weight:600;font-size:20px;margin:10px 0 4px">${T.hub_welcome}</h2>
@@ -2520,38 +2562,45 @@ function renderCommandCenter() {
   const queue = rows.length ? `<span class="kicker">${T.cc_attention}</span>
     <div style="border-top:1px solid var(--border-strong)">${rows.join("")}</div>` : "";
 
-  const list = ws.map(w => `<div class="wbrow" data-open="${esc(w.id)}">
-      <div style="min-width:0;flex:1"><b>${esc(w.filename)}</b>
-        <div class="wmeta">${T.meta_line(w.n_sheets, "")}· ${esc((w.uploaded_at || "").slice(0, 10))}</div></div>
-      ${wbChip(w)}
-      <span class="minitabs"><span class="on" data-open="${esc(w.id)}">${T.mt_analyst}</span><span data-exec="${esc(w.id)}">${T.mt_exec}</span></span>
+  const tiles = ws.map(w => `<div class="rtile" data-open="${esc(w.id)}" role="link" tabindex="0">
+      <div class="re">${esc((w.uploaded_at || "").slice(0, 10))} · ${T.meta_line(w.n_sheets, "")}</div>
+      <div class="rt">${esc(w.filename)}</div>
+      <div class="rfoot">${wbChip(w)}
+        <span class="minitabs"><span class="on" data-open="${esc(w.id)}">${T.mt_analyst}</span><span data-exec="${esc(w.id)}">${T.mt_exec}</span></span>
+        <span class="rarrow">→</span></div>
     </div>`).join("");
+  const newTile = `<div class="rtile rnew" id="drop" role="button" tabindex="0">
+      <div class="re" style="color:var(--gold)">${T.cc_new}</div>
+      <div class="rt">${T.cc_drop_small}</div>
+      <div class="rm">${T.cc_drop_sub}</div>
+      <div class="rfoot"><span class="hint2" style="margin:0">${T.drop_fmt}</span>
+        <span class="rarrow">+</span></div>
+    </div>`;
 
   $("#topbar").innerHTML = `<div class="topbar exec">
     <span class="tkick">${T.cc_kicker} · ${date}</span>
     <span class="grow"></span>${langToggle()}</div>`;
   attachLang();
   $("#content").innerHTML = `<div class="cc">
-    <h1 class="cchead">${head}</h1>
-    ${strip}
-    <div class="ccgrid">
-      <div>${queue}
-        <span class="kicker" style="display:block;margin-top:${rows.length ? 30 : 0}px">${T.cc_workbooks}</span>
-        <div style="border-top:1px solid var(--border-strong)">${list}</div>
-        <div id="clients-panel"></div>
-      </div>
-      <div><span class="kicker">${T.cc_new}</span>
-        <div class="upcard" id="drop" style="margin-top:10px">
-          <svg width="26" height="26" viewBox="-50 -50 100 100" aria-hidden="true">${sunPaths()}</svg>
-          <div style="font-family:var(--serif);font-size:17px;font-weight:600;margin-top:8px">${T.cc_drop_small}</div>
-          <div style="font-size:12px;color:var(--ink-3);margin-top:3px">${T.cc_drop_sub}</div>
-          <div class="hint2" style="margin-top:10px">${T.drop_fmt}</div>
-        </div>
-        <p class="chcap" style="margin-top:14px">${T.home_lede}</p>
+    <div class="leadspace">
+      <span class="kicker">LUMNIA · ${T.cc_hub}</span>
+      <h1 class="cchead">${head}</h1>
+      <p class="vlede" style="max-width:62ch">${T.cc_lede}</p>
+      <div class="ctarow">
+        <button class="cta" id="cta-upload"><span>${T.cc_new}</span><span class="ar">→</span></button>
       </div>
     </div>
+    ${strip}
+    ${queue}
+    <span class="kicker" style="display:block;margin-top:${rows.length ? 34 : 6}px">${T.cc_workbooks} · ${ws.length}</span>
+    <div class="rgrid">${tiles}${newTile}</div>
+    <div id="clients-panel" style="max-width:720px"></div>
   </div>`;
   $("#drop").addEventListener("click", () => fileInput.click());
+  $("#cta-upload").addEventListener("click", () => fileInput.click());
+  $$("#content .rtile[role]").forEach(el => el.addEventListener("keydown", e => {
+    if (e.key === "Enter") el.click();
+  }));
   $$("#content [data-open]").forEach(el => el.addEventListener("click", e => {
     e.stopPropagation(); NEXT_PAGE = "analyst"; select(el.dataset.open);
   }));
