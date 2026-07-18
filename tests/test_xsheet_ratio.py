@@ -130,3 +130,99 @@ def test_misaligned_axes_gap_honestly_instead_of_guessing():
     gaps = rep["model"]["gaps"]
     assert [g["metric"] for g in gaps] == ["volume_ratio"]
     assert gaps[0]["requires"]
+
+
+def test_duplicate_period_in_foreign_axis_is_excluded_not_guessed():
+    """A repeated month in the foreign header is unknowable — which cell is
+    truth? Those periods join as None; they never corrupt the swap or the
+    ratio (the bug rendered 500% extraction rates from last-wins joins)."""
+    months_dup = [MONTHS[0], MONTHS[1], MONTHS[1], MONTHS[3], MONTHS[4],
+                  MONTHS[5]]
+    rep = _analyze(_book(
+        ("RECOLTE", _recolte()),
+        ("USINE", _usine(months=months_dup, cpo=[10, 40, 999, 100, 80, 16]))))
+    mo = rep["model"]["monthly"]
+    assert mo["metrics"]["volume"]["label"] == "RECOLTE FFB (T)"   # no flip
+    assert mo["derived"]["volume_ratio"] == \
+        [0.2, None, None, 0.25, 0.25, 0.2]
+
+
+def test_yearly_pair_does_not_wipe_monthly_gap():
+    """Gap lists are per grain: a yearly sheet holding its own FFB+CPO pair
+    must not delete the monthly misalignment gap (the wipe is only sound
+    within the grain whose pair actually completed)."""
+    recap = _year([["RECOLTE FFB (tonnes)", 50, 100, 160, 200],
+                   ["PRODUCTION CPO", 10, 20, 40, 80]])
+    rep = _analyze(_book(
+        ("RECOLTE", _recolte()),
+        ("USINE", _usine(months=[dt.date(2024, m, 28) for m in (1, 2, 3, 4)],
+                         cpo=[10, 40, 50, 100])),
+        ("RECAP", recap)))
+    gaps = rep["model"].get("gaps") or []
+    assert [(g["metric"], g["grain"]) for g in gaps] == \
+        [("volume_ratio", "monthly")]
+    # and the yearly same-sheet pair still derives its own ratio
+    assert rep["model"]["derived"]["volume_ratio"] == [0.2, 0.2, 0.25, 0.4]
+
+
+def test_foreign_sheet_carrying_its_own_pair_keeps_the_ratio():
+    """Regression lock: a sheet whose own FFB+CPO pair supplements a spine
+    without volume must deliver BOTH series — the old engine did."""
+    recap = _year([["REVENUS BRUTS", 100, 200, 400, 800],
+                   ["DEPENSES OPEX", 60, 90, 150, 240]])
+    prod = _year([["RECOLTE FFB (tonnes)", 50, 100, 160, 200],
+                  ["PRODUCTION CPO", 10, 20, 40, 80]])
+    m = _analyze(_book(("RECAP", recap), ("PROD", prod)))["model"]
+    assert m["metrics"]["volume"]["sheet"] == "PROD"
+    assert m["metrics"]["volume_secondary"]["sheet"] == "PROD"
+    assert m["derived"]["volume_ratio"] == [0.2, 0.2, 0.25, 0.4]
+    assert m["derived"]["opex_per_volume_out"] == [6, 4.5, 3.75, 3]
+    assert not m.get("gaps")
+
+
+def test_sparse_series_on_identical_axis_still_admitted():
+    """Regression lock: the >=3 overlap gate exists for cross-axis joins;
+    an IDENTICAL axis keeps the old unconditional admission, however sparse
+    (dropping it silently deleted capex/net_cash on rerun)."""
+    recap = _year([["REVENUS BRUTS", 100, 200, 400, 800],
+                   ["DEPENSES OPEX", 60, 90, 150, 240]])
+    capex = _year([["INVESTISSEMENTS", 500, 300, None, None]])
+    m = _analyze(_book(("RECAP", recap), ("CAPEX", capex)))["model"]
+    assert m["metrics"]["capex"]["values"] == [500, 300, None, None]
+    assert m["derived"]["net_cash"] == [-460, -190, None, None]
+
+
+def test_cash_split_counts_only_the_common_window():
+    """Cross-sheet monthly opex/capex may cover different windows; the
+    invested share is only honest over periods where BOTH are tracked."""
+    journal = pd.DataFrame([
+        ["JOURNAL SITE", *([None] * 6)],
+        ["SERIE", *MONTHS],
+        ["CHARGES OPEX", 10, 10, 10, 10, 10, 10],
+        ["PRODUCTION CPO (T)", *CPO],
+    ])
+    capex = pd.DataFrame([
+        ["INVESTISSEMENTS", *([None] * 3)],
+        ["SERIE", *MONTHS[:3]],
+        ["CAPEX PLANTATION", 30, 30, 30],
+    ])
+    # _cash_split only runs alongside a year spine (existing behavior)
+    recap = _year([["REVENUS BRUTS", 100, 200, 400, 800]])
+    rep = _analyze(_book(("JOURNAL", journal), ("CAPEX", capex),
+                         ("RECAP", recap)))
+    cash = rep["model"]["monthly"]["cash"]
+    assert cash == {"opex_total": 30, "capex_total": 90,
+                    "total": 120, "invested_pct": 75.0}
+
+
+def test_partial_overlap_marks_dropped_out_of_window_cells():
+    """A foreign 2024 cell outside the 2025-2028 spine is excluded from the
+    join — and the exclusion is declared, so no total quietly understates
+    what the workbook holds."""
+    recap = _year([["PRODUCTION CPO", 10, 20, 40, 80],
+                   ["EFFECTIFS", 5, 6, 7, 8]])
+    recolte = _year([["RECOLTE FFB (tonnes)", 40, 50, 100, 160]],
+                    years=(2024, 2025, 2026, 2027))
+    m = _analyze(_book(("RECAP", recap), ("RECOLTE", recolte)))["model"]
+    assert m["metrics"]["volume"]["dropped_outside_axis"] == 1
+    assert "dropped_outside_axis" not in m["metrics"]["volume_secondary"]

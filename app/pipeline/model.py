@@ -141,13 +141,28 @@ def _reindex(values: List, periods: List[str],
     """A foreign series re-indexed onto the spine axis by exact period-string
     equality; None where the spine period is absent from the foreign axis.
     The spine axis is authoritative — it never grows or reorders, and no
-    positional zip ever crosses differing axes."""
-    by_p = dict(zip(periods, values))
+    positional zip ever crosses differing axes. A period string appearing
+    MORE THAN ONCE in the foreign axis is unknowable — which column is
+    truth? — so it joins as None rather than silently last-wins."""
+    counts: Dict[str, int] = {}
+    for p in periods:
+        counts[p] = counts.get(p, 0) + 1
+    by_p = {p: v for p, v in zip(periods, values) if counts[p] == 1}
     return [by_p.get(p) for p in spine_periods]
 
 
-def _pair_volumes(roles: Dict[str, dict], series: dict, vals: List,
-                  sheet: str, gaps: List[Dict[str, str]]) -> None:
+def _dropped_outside(values: List, periods: List[str],
+                     spine_periods: List[str]) -> int:
+    """Non-empty foreign cells whose period falls outside the spine axis —
+    excluded from the join, and DECLARED so no total quietly understates
+    what the workbook holds."""
+    spine = set(spine_periods)
+    return sum(1 for p, v in zip(periods, values)
+               if v is not None and p not in spine)
+
+
+def _pair_volumes(roles: Dict[str, dict], entry: dict,
+                  gaps: List[Dict[str, str]], grain: str) -> None:
     """A volume series from another sheet against the spine's own: the larger
     over the aligned cells is the raw input (e.g. FFB) and takes ``volume``,
     the smaller (e.g. CPO) becomes ``volume_secondary`` — keeping
@@ -156,55 +171,76 @@ def _pair_volumes(roles: Dict[str, dict], series: dict, vals: List,
     if "volume_secondary" in roles:
         return                        # a pair already exists — first wins
     spine_vol = roles["volume"]
-    if str(series["label"]).strip() == str(spine_vol["label"]).strip():
+    if str(entry["label"]).strip() == str(spine_vol["label"]).strip():
         return                        # the same line copied across sheets
-    both = [(a, b) for a, b in zip(spine_vol["values"], vals)
+    both = [(a, b) for a, b in zip(spine_vol["values"], entry["values"])
             if a is not None and b is not None]
     if len(both) < MIN_XSHEET_OVERLAP:
         gaps.append({
             "metric": "volume_ratio",
+            "grain": grain,
             "reason": "volume series found on two sheets but fewer than "
                       f"{MIN_XSHEET_OVERLAP} shared periods carry values",
             "requires": f"{MIN_XSHEET_OVERLAP}+ overlapping periods "
                         "across sheets"})
         return
-    foreign = {**series, "values": vals, "_sheet": sheet}
     if sum(abs(b) for _, b in both) > sum(abs(a) for a, _ in both):
         roles["volume_secondary"] = spine_vol      # swap: keeps its own sheet
-        roles["volume"] = foreign
+        roles["volume"] = entry
     else:
-        roles["volume_secondary"] = foreign
+        roles["volume_secondary"] = entry
 
 
 def _supplement(spine_periods: List[str], roles: Dict[str, dict],
-                others: List[tuple], gaps: List[Dict[str, str]]) -> None:
+                others: List[tuple], grain: str) -> List[Dict[str, str]]:
     """Fill roles the spine chart lacks from OTHER charts of the same grain,
     re-indexed onto the spine axis. A second volume series found on another
-    sheet becomes the conversion pair (volume_secondary) via _pair_volumes.
-    An identical axis re-indexes to a no-op, so single-sheet behavior is
-    unchanged."""
+    sheet becomes the conversion pair (volume_secondary) via _pair_volumes;
+    a sheet's OWN pair travels together (its secondary rides along when its
+    primary took the spine's volume slot). An identical axis keeps the old
+    unconditional admission — the >=3 overlap gate exists for genuinely
+    cross-axis joins. Returns the alignment gaps of THIS grain only; the
+    completed-pair wipe never reaches another grain's gaps."""
+    sgaps: List[Dict[str, str]] = []
     for name, ch in others:
         ch_periods = [str(p) for p in ch["periods"]]
+        identical = ch_periods == spine_periods
+        # _tag_roles inserts volume before volume_secondary, so a sheet's
+        # primary always lands before its secondary rides along
         for role, series in _tag_roles(ch).items():
-            vals = _reindex(series["values"], ch_periods, spine_periods)
+            vals = series["values"] if identical \
+                else _reindex(series["values"], ch_periods, spine_periods)
+            entry = {**series, "values": vals, "_sheet": name}
+            dropped = _dropped_outside(series["values"], ch_periods,
+                                       spine_periods)
+            if dropped:
+                entry["_dropped_outside"] = dropped
             if role == "volume" and "volume" in roles:
-                _pair_volumes(roles, series, vals, name, gaps)
+                _pair_volumes(roles, entry, sgaps, grain)
                 continue
-            if role in roles or role == "volume_secondary":
-                continue              # cross-sheet secondaries pair above
-            if sum(v is not None for v in vals) < MIN_XSHEET_OVERLAP:
+            if role == "volume_secondary":
+                if ("volume_secondary" not in roles
+                        and roles.get("volume", {}).get("_sheet") == name):
+                    roles["volume_secondary"] = entry
                 continue
-            roles[role] = {**series, "values": vals, "_sheet": name}
+            if role in roles:
+                continue
+            if not identical and sum(
+                    v is not None for v in vals) < MIN_XSHEET_OVERLAP:
+                continue
+            roles[role] = entry
     if "volume_secondary" in roles:
-        # a later sheet completed the pair — earlier alignment gaps are moot
-        gaps[:] = [g for g in gaps if g["metric"] != "volume_ratio"]
+        # a later sheet completed this grain's pair — its gaps are moot
+        sgaps = [g for g in sgaps if g["metric"] != "volume_ratio"]
+    return sgaps
 
 
 def _dedupe_gaps(gaps: List[Dict[str, str]]) -> List[Dict[str, str]]:
     seen, out = set(), []
     for g in gaps:
-        if g["metric"] not in seen:
-            seen.add(g["metric"])
+        key = (g["metric"], g.get("grain"))
+        if key not in seen:
+            seen.add(key)
             out.append(g)
     return out
 
@@ -301,8 +337,14 @@ def _cash_split(monthly: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     cpx = (met.get("capex") or {}).get("values")
     if not opx or not cpx:
         return None
-    opex_total = sum(v for v in opx if v is not None)
-    capex_total = sum(v for v in cpx if v is not None)
+    # apples to apples: cross-sheet series may cover different windows, so
+    # the invested share only counts periods where BOTH sides are tracked
+    both = [(o, c) for o, c in zip(opx, cpx)
+            if o is not None and c is not None]
+    if not both:
+        return None
+    opex_total = sum(o for o, _ in both)
+    capex_total = sum(c for _, c in both)
     total = opex_total + capex_total
     if total <= 0:
         return None
@@ -364,17 +406,27 @@ def _monthly_block(report_sheets,
         return None
     name, ch, roles = best
     periods = [str(p) for p in ch["periods"]]
-    _supplement(periods, roles,
-                [(n, c) for n, c in charts if c is not ch], gaps)
-    metrics = {
-        role: {"label": s["label"], "sheet": s.get("_sheet", name),
-               "values": s["values"]}
-        for role, s in roles.items()
-    }
+    gaps.extend(_supplement(periods, roles,
+                            [(n, c) for n, c in charts if c is not ch],
+                            "monthly"))
+    metrics = _public_metrics(roles, name)
     return {"periods": periods,
             "source_sheet": name,
             "metrics": metrics,
             "derived": derive_metrics(metrics)}
+
+
+def _public_metrics(roles: Dict[str, dict],
+                    spine_sheet: Optional[str]) -> Dict[str, dict]:
+    """Strip the private underscore fields; declare out-of-window drops."""
+    out: Dict[str, dict] = {}
+    for role, s in roles.items():
+        m = {"label": s["label"], "sheet": s.get("_sheet", spine_sheet),
+             "values": s["values"]}
+        if s.get("_dropped_outside"):
+            m["dropped_outside_axis"] = s["_dropped_outside"]
+        out[role] = m
+    return out
 
 
 def build_model(report_sheets) -> Optional[Dict[str, Any]]:
@@ -407,14 +459,11 @@ def build_model(report_sheets) -> Optional[Dict[str, Any]]:
 
     # supplement missing roles from other year charts, joined onto the spine
     # axis by exact period-string equality (cross-sheet ratio pairs included)
-    _supplement(periods, best_roles,
-                [(n, c) for n, c in charts if c is not best_chart], gaps)
+    gaps.extend(_supplement(periods, best_roles,
+                            [(n, c) for n, c in charts if c is not best_chart],
+                            "yearly"))
 
-    metrics = {
-        role: {"label": s["label"], "sheet": s.get("_sheet", best_sheet),
-               "values": s["values"]}
-        for role, s in best_roles.items()
-    }
+    metrics = _public_metrics(best_roles, best_sheet)
     derived = derive_metrics(metrics)
 
     if monthly:

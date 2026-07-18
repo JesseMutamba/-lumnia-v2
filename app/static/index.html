@@ -1032,6 +1032,7 @@ const STR = {
     pr_avg: p => `average ${p}`, pr_src: s => `from ${s}`,
     pr_xsheet: (out, inp) => `${out} ÷ ${inp}`,
     pr_gap_ratio: "Conversion rate not computed — the two volume series share fewer than 3 periods across sheets.",
+    pr_outside: n => `(${n} period${n === 1 ? "" : "s"} outside the window excluded)`,
     pr_cost_chart: "Cost per tonne — actual vs budget",
     pr_cost_target: (t, y) => `budget target ${t} (${y})`,
     pr_budget_line: y => `Budget ${y}`,
@@ -1507,6 +1508,7 @@ const STR = {
     pr_avg: p => `moyenne ${p}`, pr_src: s => `depuis ${s}`,
     pr_xsheet: (out, inp) => `${out} ÷ ${inp}`,
     pr_gap_ratio: "Taux de conversion non calculé — les deux séries de volume partagent moins de 3 périodes entre les feuilles.",
+    pr_outside: n => `(${n} période${n === 1 ? "" : "s"} hors fenêtre exclue${n === 1 ? "" : "s"})`,
     pr_cost_chart: "Coût par tonne — réel vs budget",
     pr_cost_target: (t, y) => `cible budget ${t} (${y})`,
     pr_budget_line: y => `Budget ${y}`,
@@ -5011,13 +5013,23 @@ function renderFinancials(execView) {
     unitCard = chartCard(uc, false);
   }
   if (d.volume_ratio && met.volume_secondary) {
+    // only computed periods — a None drawn as a 0% bar is a fabrication
+    const cpts = m.periods.map((p, i) => [p, d.volume_ratio[i]])
+      .filter(([, v]) => v != null);
     const conv = { pseudo: true,
       sheet: T.fin_conv(met.volume_secondary.label.slice(0, 20), met.volume.label.slice(0, 20)),
-      loc: null, chart: { kind: "profile", x: m.periods,
-        y: d.volume_ratio.map(v => v != null ? +(v * 100).toFixed(2) : 0) },
+      loc: null, chart: { kind: "profile", x: cpts.map(p => p[0]),
+        y: cpts.map(([, v]) => +(v * 100).toFixed(2)) },
       i: CHARTS.length, range: null };
     CHARTS.push(conv);
     convCard = chartCard(conv, false);
+  } else if (((REPORT.model && REPORT.model.gaps) || [])
+      .some(g => g.metric === "volume_ratio" && g.grain === "yearly")) {
+    // a yearly ratio pair the pipeline could not align: honest gap here,
+    // where the conversion card would have rendered
+    convCard = `<div class="card"><div class="card-head">
+        <span class="ct">${T.pr_ratio_chart}</span></div>
+      <p class="chcap" style="margin-top:10px">${T.pr_gap_ratio}</p></div>`;
   }
 
   // breakdown panels: ranked bars — fill fades by rank, ONE shared scale
@@ -5060,7 +5072,9 @@ function renderProduction() {
   const met = mo.metrics;
 
   const stats = Object.entries(met).map(([role, s]) =>
-    `<span>${T.pr_total(ROLE_LABELS[role] || role)} <b>${compact(sum(s.values))}</b></span>`);
+    `<span>${T.pr_total(ROLE_LABELS[role] || role)} <b>${compact(sum(s.values))}</b>${
+      s.dropped_outside_axis
+        ? ` <span class="muted">${T.pr_outside(s.dropped_outside_axis)}</span>` : ""}</span>`);
   const vr = mo.derived.volume_ratio;
   let avg = null;
   if (vr) {
@@ -5089,23 +5103,29 @@ function renderProduction() {
 
   let ratioCard = "";
   if (vr && vr.some(v => v != null)) {
-    // provenance: when the pair spans two sheets, say so — output ÷ input
-    const xs = met.volume && met.volume_secondary
+    // provenance: when the pair spans two sheets, say so — output ÷ input.
+    // Suppressed on the exec/published page like every sheet-name caption.
+    const xs = PAGE !== "exec" && met.volume && met.volume_secondary
       && met.volume.sheet !== met.volume_secondary.sheet
       ? T.pr_xsheet(esc(met.volume_secondary.sheet), esc(met.volume.sheet))
       : null;
+    // only periods the pipeline actually computed — a None period drawn
+    // as a 0% bar would be a fabricated number
+    const pts = mo.periods.map((p, i) => [p, vr[i]])
+      .filter(([, v]) => v != null);
     const rc = { pseudo: true, sheet: T.pr_ratio_chart,
       loc: [avg != null ? T.pr_avg(`${(avg * 100).toFixed(1)}%`) : null, xs]
         .filter(Boolean).join(" · ") || null,
-      chart: { kind: "profile", x: mo.periods,
-               y: vr.map(v => v != null ? +(v * 100).toFixed(2) : 0) },
+      chart: { kind: "profile", x: pts.map(p => p[0]),
+               y: pts.map(([, v]) => +(v * 100).toFixed(2)) },
       i: CHARTS.length, range: null };
     CHARTS.push(rc);
     ratioCard = chartCard(rc, false);
   } else if (((REPORT.model && REPORT.model.gaps) || [])
-      .some(g => g.metric === "volume_ratio")) {
-    // the pipeline found a ratio pair it could not align: honest gap,
-    // no number, no placeholder — ever
+      .some(g => g.metric === "volume_ratio" && g.grain === "monthly")) {
+    // the pipeline found a MONTHLY ratio pair it could not align: honest
+    // gap, no number, no placeholder — ever (yearly gaps belong to
+    // Financials, not this view)
     ratioCard = `<div class="card"><div class="card-head">
         <span class="ct">${T.pr_ratio_chart}</span></div>
       <p class="chcap" style="margin-top:10px">${T.pr_gap_ratio}</p></div>`;
