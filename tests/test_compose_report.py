@@ -89,8 +89,11 @@ def test_composed_report_is_versioned_scriptfree_and_deterministic():
     assert body["version"] == 1
     assert "kpi" in body["blocks"] and "plan_vs_actual" in body["blocks"]
     assert "monthly_table" in body["blocks"]
-    # cash needs capex; conversion needs a second volume — skipped, declared
-    assert set(body["skipped"]) == {"cash", "conversion"}
+    # blocks the data can't support are skipped, declared: no capex (cash),
+    # no second volume (conversion), plan covers no extra months (outlook),
+    # no yearly model (net_cash), no line items (breakdowns)
+    assert set(body["skipped"]) == {"cash", "conversion", "outlook",
+                                    "net_cash", "breakdowns"}
 
     html = _hub_html("PVAK", "rapport@pvak.cd", "Operations report")
     assert "<script" not in html.lower()          # self-contained, script-free
@@ -182,3 +185,79 @@ def test_error_details_and_month_labels_speak_both_languages():
                 json={"blocks": [], "lang": "fr"})
     html_fr = _hub_html("MWENGA", "mois@mwenga.cd", "Rapport d'exploitation")
     assert "janv. 2026" in html_fr and "2026-01" not in html_fr
+
+
+def _full_book() -> bytes:
+    """The PVAK shape end to end: 3-month journal (FFB+CPO+OPEX), 12-month
+    plan, yearly projections, and a line-item cost sheet."""
+    m3 = MONTHS
+    m12 = [dt.date(2026, m, 28) for m in range(1, 13)]
+    plan_cpo = [20.0, 54.1, 77.3, 108.1, 77.3, 46.2,
+                25.3, 54.1, 77.3, 108.1, 77.3, 46.2]      # sums 771.4
+    journal = pd.DataFrame([
+        ["JOURNAL PRODUCTION USINE", None, None, None],
+        ["SERIE", *m3],
+        ["RECOLTE FFB (T)", 71, 73, 67],
+        ["PRODUCTION CPO (T)", *CPO],
+        ["CHARGES OPEX SITE (USD)", *OPEX],
+    ])
+    plan = pd.DataFrame([
+        ["PLAN OPERATIONNEL 2026", *([None] * 12)],
+        ["SERIE", *m12],
+        ["PRODUCTION CPO PREVUE (T)", *plan_cpo],
+        ["OPEX PREVISIONNEL (USD)", *([33248] * 12)],
+    ])
+    recap = pd.DataFrame([
+        [None, 2026, 2027, 2028, 2029],
+        ["REVENUS BRUTS", 100, 200, 400, 800],
+        ["DEPENSES OPEX", 60, 90, 150, 240],
+        ["INVESTISSEMENTS", 500, 300, 100, 50],
+    ])
+    costs = pd.DataFrame([
+        ["Description", "Unité", "Qté", "Montant"],
+        ["Semences", "nbre", 10, 500],
+        ["Machettes", "pièce", 5, 40],
+        ["Engrais", "sac", 8, 240],
+        ["TOTAL", None, 23, 780],
+    ])
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as xw:
+        journal.to_excel(xw, sheet_name="JOURNAL", header=False, index=False)
+        plan.to_excel(xw, sheet_name="PROJECTIONS 2026", header=False,
+                      index=False)
+        recap.to_excel(xw, sheet_name="RECAP", header=False, index=False)
+        costs.to_excel(xw, sheet_name="COSTS", header=False, index=False)
+    return buf.getvalue()
+
+
+def test_v2_blocks_render_the_reference_story():
+    """The full PVAK pack in one workbook: blended $/t with the phased-plan
+    reference, the rest-of-year required run-rate, the yearly net balance
+    with breakeven, and ranked line items — every number planted."""
+    r = client.post("/analyze", files={
+        "file": ("PVAK_pack.xlsx", _full_book(),
+                 "application/octet-stream")})
+    aid = r.json()["id"]
+    assert client.post(f"/analyses/{aid}/client",
+                       json={"client": "PVAK"}).status_code == 200
+    fs = client.get(f"/analyses/{aid}/findings").json()
+    dec = {f["id"]: "approved" for f in fs["findings"]}
+    dec.update({f["id"]: "flagged" for f in fs["unverified"]})
+    if dec:
+        client.post(f"/analyses/{aid}/decisions", json={"decisions": dec})
+    rep = client.post(f"/analyses/{aid}/compose-report",
+                      json={"blocks": [], "lang": "en"})
+    assert rep.status_code == 200, rep.text
+    body = rep.json()
+    for b in ("unit_cost", "outlook", "net_cash", "breakdowns"):
+        assert b in body["blocks"], (b, body)
+    html = _hub_html("PVAK", "pack@pvak.cd", "Operations report")
+    assert "981" in html               # blended 44,623 / 45.5 t
+    assert "659" in html               # phased plan 99,744 / 151.4 t
+    assert "80.6" in html              # (771.3 - 45.5) / 9 remaining months
+    # cumulative walk: -460, -650, -500, +10 -> positive in 2029; the
+    # deepest deficit crossed is the 650 capital bridge
+    assert "breakeven 2029" in html
+    assert "capital bridge 650" in html
+    assert "Semences" in html          # ranked line items
+    assert "<script" not in html.lower()
