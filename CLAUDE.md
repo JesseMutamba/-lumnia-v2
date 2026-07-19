@@ -65,9 +65,12 @@ Lumnia is a two-person, early-revenue B2B financial/operational intelligence pla
 
 The v1 fabrication bug (template-first rendering inventing revenue on non-financial uploads) does not exist here — v2's pipeline is capability-gated by design. What's actually open:
 
+Cross-sheet ratios and monthly plan-vs-actual are BUILT (model.py `_supplement` / `_plan_vs_actual`; oracles in tests/test_xsheet_ratio.py and tests/test_plan_vs_actual.py) — joins are exact period-string equality onto the spine axis; fewer than 3 aligned cells is an honest `model["gaps"]` entry, never a number. Still open:
+
 1. **Suggestion-chip phrasing inherits messy headers** (`suggest_brief`, semantics.py) — "Quelle est la répartition de Janvier par PRODUCTION 2025 ?" is answerable but reads awkward. Smoothing must not break the round-trip oracle.
-2. **Cross-sheet ratio metrics** (taux d'extraction = production ÷ récolte across sheets) — known limit, documented, not built. Series B problem until a client asks twice.
+2. **Cross-WORKBOOK consolidation** (projections + journals uploaded as separate files, joined per client/period) — known limit, not built. Honest workaround: combine the sheets into one workbook per engagement before upload.
 3. **Analyses stored before an engine upgrade need a rerun** to grow new fields — the UI offers ↺; consider auto-rerun on open someday.
+4. Logged `# DEBT`: exec KPI tiles don't surface `dropped_outside_axis` (the Production statbar does); mapping.py restricts manual `volume_secondary` to identical axes; yearly-plan-phased-monthly comparison needs an explicit phasing rule to stay honest.
 
 ---
 

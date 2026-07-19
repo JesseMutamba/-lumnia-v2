@@ -82,6 +82,8 @@ class AnalysisMeta(BaseModel):
     n_sheets: int
     # client workspace this analysis belongs to (None = unassigned)
     client: Optional[str] = None
+    # 'intake' = submitted by the client from their hub (None = analyst upload)
+    origin: Optional[str] = None
     # findings (mismatched + unverified) still waiting on a decision
     open_findings: Optional[int] = None
     # reconciliation rollup for the Command Center row

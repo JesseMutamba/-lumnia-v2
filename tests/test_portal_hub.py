@@ -202,3 +202,34 @@ def test_hub_page_bypasses_analyst_password(monkeypatch):
     assert client.get("/analyses").status_code == 401     # analyst side gated
     assert c.get("/portal/me").status_code == 200         # client side works
     assert c.get("/portal/deliverables").status_code == 200
+
+
+def test_logout_kills_the_client_session():
+    """Shared phones are the normal case: sign out must end the session on
+    this device, immediately."""
+    _published_analysis(b"bye", "PVAK")
+    c = _login("PVAK", "adieu@pvak.cd")
+    assert c.get("/portal/me").status_code == 200
+    r = c.get("/portal/logout", follow_redirects=False)
+    assert r.status_code == 303
+    assert r.headers["location"] == "/portal/signin"
+    assert c.get("/portal/me").status_code == 401
+
+
+def test_dashboard_deliverable_title_is_humanized():
+    """'PVAK_T1_2026.xlsx' is a filename; the client reads 'PVAK T1 2026'."""
+    r = client.post("/analyze", files={
+        "file": ("PVAK_T1_2026.xlsx", _book() + b"humanize",
+                 "application/octet-stream")})
+    aid = r.json()["id"]
+    assert client.post(f"/analyses/{aid}/client",
+                       json={"client": "PVAK"}).status_code == 200
+    fs = client.get(f"/analyses/{aid}/findings").json()
+    dec = {f["id"]: "approved" for f in fs["findings"]}
+    dec.update({f["id"]: "flagged" for f in fs["unverified"]})
+    if dec:
+        client.post(f"/analyses/{aid}/decisions", json={"decisions": dec})
+    assert client.post(f"/analyses/{aid}/publish").status_code == 200
+    c = _login("PVAK", "titre@pvak.cd")
+    titles = [d["title"] for d in c.get("/portal/deliverables").json()]
+    assert "PVAK T1 2026" in titles

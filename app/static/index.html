@@ -850,9 +850,6 @@
   .kv .ksfx { font-family: var(--sans); font-size: 12.5px; font-weight: 650;
     letter-spacing: 0; }
   .kv .ksfx.warn { color: var(--warning); } .kv .ksfx.good { color: var(--good); }
-  .ccgrid { display: grid; grid-template-columns: 1.55fr 1fr; gap: 46px;
-    align-items: start; margin-top: 28px; }
-  @media (max-width: 1000px) { .ccgrid { grid-template-columns: 1fr; } }
   .qrow2 { display: grid; grid-template-columns: 66px minmax(0, 1fr) auto;
     gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--hairline);
     align-items: center; }
@@ -1017,6 +1014,13 @@ const compact = v => {
 const deltaPct = f => (f >= 1 ? "+" : "−") + Math.abs((f - 1) * 100).toFixed(0) + (LANG === "fr" ? " %" : "%");
 const pctFmt = (v, d = 0) => new Intl.NumberFormat(LOCALE, { maximumFractionDigits: d, minimumFractionDigits: d })
   .format(v) + (LANG === "fr" ? " %" : "%");
+// period labels: "2025-08-28" reads "août 2025" — formatting only; years
+// and anything not year-month shaped pass through untouched
+const perIntl = new Intl.DateTimeFormat(LOCALE, { month: "short", year: "numeric" });
+const fmtPeriod = p => {
+  const m = /^(\d{4})-(0[1-9]|1[0-2])/.exec(String(p));
+  return m ? perIntl.format(new Date(Date.UTC(+m[1], +m[2] - 1, 15))) : String(p);
+};
 
 /* Every customer-facing string, EN + FR. Values are strings or functions of
    the interpolated parts. Backend-computed text (formulas, EDA insight
@@ -1158,6 +1162,14 @@ const STR = {
     cl_deliver: "Deliver a file",
     cl_deliver_sub: "PDF, HTML dashboard or spreadsheet — lands in the client's hub, versioned by title.",
     cl_delivered: (t, v) => `Delivered — “${t}” v${v} is live in the client's hub.`,
+    cl_deliv_kicker: "In the client's hub",
+    cl_open: "Open",
+    cl_link_hint: "Send this sign-in link:",
+    cl_link_done: "Done",
+    wb_from_client: "from client",
+    cc_intake_row: "New workbook sent by the client — review it",
+    comp_pick: "Deliver the report in…",
+    comp_fr: "Français", comp_en: "English",
     cl_kicker: "Clients",
     cl_meta: (u, d) => `${u} contact${u === 1 ? "" : "s"} · ${d} deliverable${d === 1 ? "" : "s"}`,
     cl_none: "No clients yet — assign a workbook to a client and it appears here.",
@@ -1496,6 +1508,8 @@ const STR = {
     hub_flagged: "flagged",
     hub_file: "file",
     hub_download: "Download",
+    hub_logout: "Sign out",
+    k_of_plan: "of plan",
     hub_sub: "Everything we've turned in for you — read-only, versioned.",
     hub_count: n => `${n} deliverable${n === 1 ? "" : "s"}`,
     wb_brief: "AI brief",
@@ -1641,6 +1655,14 @@ const STR = {
     cl_deliver: "Remettre un fichier",
     cl_deliver_sub: "PDF, tableau de bord HTML ou tableur — arrive dans l'espace du client, versionné par titre.",
     cl_delivered: (t, v) => `Remis — « ${t} » v${v} est en ligne dans l'espace du client.`,
+    cl_deliv_kicker: "Dans l'espace du client",
+    cl_open: "Ouvrir",
+    cl_link_hint: "Envoyez ce lien de connexion :",
+    cl_link_done: "Fait",
+    wb_from_client: "reçu du client",
+    cc_intake_row: "Nouveau classeur envoyé par le client — à examiner",
+    comp_pick: "Livrer le rapport en…",
+    comp_fr: "Français", comp_en: "English",
     cl_kicker: "Clients",
     cl_meta: (u, d) => `${u} contact${u === 1 ? "" : "s"} · ${d} livrable${d === 1 ? "" : "s"}`,
     cl_none: "Aucun client pour l'instant — attribuez un classeur à un client et il apparaîtra ici.",
@@ -1979,6 +2001,8 @@ const STR = {
     hub_flagged: "signalé",
     hub_file: "fichier",
     hub_download: "Télécharger",
+    hub_logout: "Se déconnecter",
+    k_of_plan: "du plan",
     hub_sub: "Tout ce que nous vous avons remis — lecture seule, versionné.",
     hub_count: n => `${n} livrable${n === 1 ? "" : "s"}`,
     wb_brief: "Brief IA",
@@ -2402,7 +2426,8 @@ function renderHubPage(me, items) {
     <span class="tkick">${T.portal_kicker} · ${esc(client)}</span>
     <span class="grow"></span>
     <span class="cs" style="font-family:var(--mono);font-size:9.5px;color:var(--ink-3)">${esc(me.email)}</span>
-    ${langToggle()}<span class="ropill">${T.ex_readonly}</span></div>`;
+    ${langToggle()}<span class="ropill">${T.ex_readonly}</span>
+    <a class="seeall" href="/portal/logout" style="font-size:11.5px">${T.hub_logout}</a></div>`;
   attachLang();
 
   const row = d => `<div class="rtile" data-did="${esc(d.id)}" role="link" tabindex="0">
@@ -2585,8 +2610,17 @@ function renderCommandCenter() {
       <div class="kv">${compact(stakeTotal)}</div></div>
   </div>`;
 
-  // the attention queue: gated publishes first, then stale published views
+  // the attention queue: client submissions first (a client upload nobody
+  // notices is a dropped ball), then gated publishes, then stale views
   const rows = [];
+  for (const w of ws.filter(x => x.origin === "intake"
+      && x.published_version == null && !(x.open_findings > 0)))
+    rows.push(`<div class="qrow2" data-open="${esc(w.id)}">
+      <span class="qst" style="color:var(--warning)">✉ ${T.wb_from_client}</span>
+      <div><b>${T.cc_intake_row}</b>
+        <div class="qsub">${esc(w.filename.slice(0, 44))} · ${esc((w.uploaded_at || "").slice(0, 10))}</div></div>
+      <button class="pillbtn gold" data-open="${esc(w.id)}">${T.cc_open_wb}</button>
+    </div>`);
   for (const w of ws.filter(x => x.open_findings > 0))
     rows.push(`<div class="qrow2" data-open="${esc(w.id)}">
       <span class="qst" style="color:var(--critical)">✕ ${T.sb_fail}</span>
@@ -2608,7 +2642,7 @@ function renderCommandCenter() {
   const tiles = ws.map(w => `<div class="rtile" data-open="${esc(w.id)}" role="link" tabindex="0">
       <div class="re">${kindIcon("sheet")}${esc((w.uploaded_at || "").slice(0, 10))} · ${T.meta_line(w.n_sheets, "")}</div>
       <div class="rt">${esc(w.filename)}</div>
-      <div class="rfoot">${wbChip(w)}
+      <div class="rfoot">${w.origin === "intake" ? `<span class="schip warn">${T.wb_from_client}</span>` : ""}${wbChip(w)}
         <span class="minitabs"><span class="on" data-open="${esc(w.id)}">${T.mt_analyst}</span><span data-exec="${esc(w.id)}">${T.mt_exec}</span></span>
         <span class="rarrow">→</span></div>
     </div>`).join("");
@@ -2707,8 +2741,10 @@ async function renderClientsPanel() {
     const open = OPEN_CLIENT === c.name;
     let detail = "";
     if (open) {
-      let users = [];
+      let users = [], delivs = [];
       try { users = await (await fetch(`/clients/${encodeURIComponent(c.name)}/users`)).json(); }
+      catch (_) {}
+      try { delivs = await (await fetch(`/clients/${encodeURIComponent(c.name)}/deliverables`)).json(); }
       catch (_) {}
       const contacts = users.length ? users.map(u => `
         <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--border)">
@@ -2732,6 +2768,14 @@ async function renderClientsPanel() {
           <input type="file" data-cfileinput="${esc(c.name)}"
             accept=".pdf,.html,.xlsx,.xls,.ods,.csv" style="display:none">
         </div>
+        ${delivs.length ? `
+        <div class="kicker" style="display:block;margin-top:14px">${T.cl_deliv_kicker} · ${delivs.length}</div>
+        ${delivs.map(d => `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--border)">
+          ${kindIcon(d.kind)}
+          <span style="font-size:12.5px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis"><b>${esc(d.title)}</b></span>
+          <span class="qsub">v${d.version} · ${esc((d.published_at || "").slice(0, 10))}</span>
+          ${d.url ? `<a class="pillbtn" href="${esc(d.url)}" target="_blank" rel="noopener" style="text-decoration:none">${T.cl_open} ↗</a>` : ""}
+        </div>`).join("")}` : ""}
       </div>`;
     }
     blocks.push(`<div class="wbrow" data-cl="${esc(c.name)}" style="cursor:pointer">
@@ -2758,10 +2802,21 @@ async function renderClientsPanel() {
     el.disabled = false;
     if (!r.ok) { setStatus((await r.json()).detail || "!", true); return; }
     const b = await r.json();
-    if (!b.emailed) {
-      try { await navigator.clipboard.writeText(`${location.origin}${b.login_url}`); } catch (_) {}
-    }
     setStatus(T.cl_req_ok(el.dataset.qemail, b.emailed));
+    if (!b.emailed) {
+      // no SMTP: the link IS the deliverable — show it where the operator
+      // is looking, never only on a clipboard they may not know about
+      try { await navigator.clipboard.writeText(`${location.origin}${b.login_url}`); } catch (_) {}
+      const row = el.closest("div");
+      row.innerHTML = `<span class="qsub" style="white-space:nowrap">${T.cl_link_hint}</span>
+        <input readonly value="${esc(location.origin + b.login_url)}"
+          onclick="this.select()"
+          style="flex:1;min-width:0;font-family:var(--mono);font-size:11px;padding:6px 9px;border:1px solid var(--chip-bd);background:var(--chip-bg);color:var(--ink)">
+        <button class="pillbtn gold" data-linkdone>${T.cl_link_done}</button>`;
+      row.querySelector("[data-linkdone]").addEventListener("click",
+        () => renderClientsPanel());
+      return;
+    }
     renderClientsPanel();
   }));
   $$("#clients-panel [data-qdismiss]").forEach(el => el.addEventListener("click", async e => {
@@ -3133,6 +3188,12 @@ function renderWorkbench() {
     ${pub ? `<button class="pillbtn amber" id="wb-share">⧉ ${T.wb04_share}</button>` : ""}
     ${NARR_READY ? `<button class="pillbtn dark" id="wb-brief">✎ ${T.wb_brief}</button>` : ""}
     <button class="pillbtn dark" id="wb-compose" ${nOpen ? "disabled" : ""}>⧈ ${T.wb_compose}</button>
+    <div class="popover" id="compose-pop">
+      <div class="kicker">${T.comp_pick}</div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="pillbtn gold" data-clang="fr">${T.comp_fr}</button>
+        <button class="pillbtn" data-clang="en">${T.comp_en}</button></div>
+    </div>
     ${pub ? "" : `<button class="pillbtn ${nOpen ? "dark" : "gold"}" id="wb-publish" ${nOpen ? "disabled" : ""}>${T.wb04_publish}</button>`}
     <div class="popover" id="share-pop">
       <div class="kicker">${T.po_t}</div>
@@ -3247,19 +3308,25 @@ function attachWorkbench() {
     else setStatus((await r.json()).detail || "!", true);
   });
   const compBtn = $("#wb-compose");
-  if (compBtn) compBtn.addEventListener("click", async () => {
-    compBtn.disabled = true;
-    setStatus(T.comp_generating);
-    // empty blocks = every block the pipeline computed for this workbook
-    const r = await fetch(`/analyses/${current}/compose-report`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ blocks: [], lang: LANG }) });
-    compBtn.disabled = false;
-    if (r.ok) {
-      const b = await r.json();
-      setStatus(T.comp_done(b.version, b.blocks.length));
-    } else setStatus((await r.json()).detail || "!", true);
-  });
+  // language is an explicit choice at compose time: the operator's UI
+  // toggle must never silently decide what a client reads
+  if (compBtn) compBtn.addEventListener("click", () =>
+    $("#compose-pop").classList.toggle("open"));
+  $$("#compose-pop [data-clang]").forEach(el =>
+    el.addEventListener("click", async () => {
+      $("#compose-pop").classList.remove("open");
+      compBtn.disabled = true;
+      setStatus(T.comp_generating);
+      // empty blocks = every block the pipeline computed for this workbook
+      const r = await fetch(`/analyses/${current}/compose-report`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ blocks: [], lang: el.dataset.clang }) });
+      compBtn.disabled = false;
+      if (r.ok) {
+        const b = await r.json();
+        setStatus(T.comp_done(b.version, b.blocks.length));
+      } else setStatus((await r.json()).detail || "!", true);
+    }));
   const rp = $("#wb-republish");
   if (rp) rp.addEventListener("click", () => doPublish(rp));
   const rmPub = $("#rm-publish");
@@ -3551,22 +3618,49 @@ function renderExecOverview() {
   const a = AUDIT, m = a.n_mismatched_relations;
   const head = execHead(null, null);
   const vis = visCharts().filter(c => !c.pseudo);
-  const primary = vis.filter(c => c.chart.kind === "timeseries")
+  let primary = vis.filter(c => c.chart.kind === "timeseries")
     .sort((x, y) => y.chart.periods.length - x.chart.periods.length)[0];
+  const mo = REPORT.model && REPORT.model.monthly;
+  if (!primary && mo && Object.keys(mo.metrics || {}).length) {
+    // monthly-only workbook: the production story IS the story — the
+    // overview must never open on an empty page when the pipeline
+    // computed monthly actuals (they live one tab away otherwise).
+    // Volume roles only: tonnes and USD on one axis flatten the tonnes.
+    const roles = Object.entries(mo.metrics)
+      .filter(([r]) => r === "volume" || r === "volume_secondary");
+    const lines = (roles.length ? roles : Object.entries(mo.metrics).slice(0, 1))
+      .map(([role, s], k) => ({
+        label: `${ROLE_LABELS[role] || role} — ${s.label.slice(0, 26)}`,
+        values: s.values, color: SERIES_COLORS[k % SERIES_COLORS.length],
+        on: true }));
+    primary = { pseudo: true, sheet: T.pr_chart, loc: null,
+      chart: { kind: "timeseries", periods: mo.periods, series: [],
+               other: null, truncated: false },
+      lines, i: CHARTS.length, range: null };
+    CHARTS.push(primary);
+  }
   // KPI strip in business terms: the primary series' peak and latest reading,
   // plus the figures' own reliability — never rows, fill or sheet counts
   const cells = [];
+  const pva = (mo && mo.plan_vs_actual) || {};
+  for (const role of ["volume", "volume_secondary", "opex"]) {
+    const v = pva[role];
+    if (v && v.pct_of_plan_total != null)
+      cells.push(`<div class="kcell"><div class="kl">${ROLE_LABELS[role] || role}</div>
+        <div class="kv">${pctFmt(v.pct_of_plan_total, 1)}</div>
+        <div class="ks">${T.k_of_plan}</div></div>`);
+  }
   if (primary && primary.lines.length) {
     const l = primary.lines[0], vals = l.values;
     let pk = -1, last = -1;
     vals.forEach((v, i) => { if (v != null) {
       if (pk < 0 || v > vals[pk]) pk = i; last = i; } });
-    if (pk >= 0) cells.push(`<div class="kcell"><div class="kl">${T.ch_peak} — ${esc(titleCase(String(l.label).slice(0, 18)))}</div>
+    if (pk >= 0) cells.push(`<div class="kcell"><div class="kl">${T.ch_peak} — ${esc(titleCase(String(l.label).split(" — ")[0].slice(0, 18)))}</div>
       <div class="kv">${compact(vals[pk])}</div>
-      <div class="ks">${esc(String(primary.chart.periods[pk]))}</div></div>`);
+      <div class="ks">${esc(fmtPeriod(primary.chart.periods[pk]))}</div></div>`);
     if (last >= 0 && last !== pk) cells.push(`<div class="kcell"><div class="kl">${T.ch_latest}</div>
       <div class="kv">${compact(vals[last])}</div>
-      <div class="ks">${esc(String(primary.chart.periods[last]))}</div></div>`);
+      <div class="ks">${esc(fmtPeriod(primary.chart.periods[last]))}</div></div>`);
   }
   const checksTot = a.n_verified_relations + m;
   if (checksTot) cells.push(`<div class="kcell"><div class="kl">${T.t_verified}</div>
@@ -3703,7 +3797,7 @@ function storyChartExec(c) {
   const cap = execCapline(c);
   return `<div class="storyblock" data-sheet="${esc(c.sheet)}">
     <div class="card-head"><span class="stt">${esc(titleCase(c.sheet))}</span>
-      <span class="cs">${esc(String(c.chart.periods[lo]))} — ${esc(String(c.chart.periods[hi]))}</span></div>
+      <span class="cs">${esc(fmtPeriod(c.chart.periods[lo]))} — ${esc(fmtPeriod(c.chart.periods[hi]))}</span></div>
     <div class="plot">${svgTimeseries(c)}</div>${legend}
     ${cap ? `<p class="chcap" style="max-width:54ch">${cap}</p>` : ""}
   </div>`;
@@ -3717,8 +3811,8 @@ function execCapline(c) {
   vals.forEach((v, i) => { if (v != null) { if (pk < 0 || v > vals[pk]) pk = i; last = i; } });
   if (pk < 0 || pk === last) return "";
   return T.cap_line(esc(s.label.slice(0, 30)), compact(vals[pk]),
-    esc(String(c.chart.periods[pk])), compact(vals[last]),
-    esc(String(c.chart.periods[last])));
+    esc(fmtPeriod(c.chart.periods[pk])), compact(vals[last]),
+    esc(fmtPeriod(c.chart.periods[last])));
 }
 
 /* ---------- redesigned overview: analyst (terminal-grade) ---------- */
@@ -4494,7 +4588,7 @@ function renderExecDashboard() {
     const varr = ub.variance_pct[ai];
     if (av != null) cells.push(`<div class="kcell ${varr > 0 ? "crit" : ""}"><div class="kl">${T.xd_cost_actual}</div>
       <div class="kv">${compact(av)}</div>
-      <div class="ks">${esc(String(m.monthly.periods[ai]))} · ${T.xd_vsb(compact(ub.target))}${varr != null
+      <div class="ks">${esc(fmtPeriod(m.monthly.periods[ai]))} · ${T.xd_vsb(compact(ub.target))}${varr != null
         ? ` · ${varr >= 0 ? "+" : "−"}${Math.abs(varr).toFixed(0)}%` : ""}</div></div>`);
   } else if (cu && cu[0] != null) {
     const cuVol = cuOut ? met.volume_secondary : met.volume;
@@ -5116,7 +5210,7 @@ function renderProduction() {
   if (prim) {
     let pi = -1, pv = -Infinity;
     prim.values.forEach((v, i) => { if (v != null && v > pv) { pv = v; pi = i; } });
-    if (pi >= 0) stats.push(`<span>${T.pr_peak} <b>${esc(String(mo.periods[pi]))}</b>
+    if (pi >= 0) stats.push(`<span>${T.pr_peak} <b>${esc(fmtPeriod(mo.periods[pi]))}</b>
       <span class="muted">(${compact(pv)})</span></span>`);
   }
 
@@ -5921,7 +6015,7 @@ function svgTimeseries(c) {
   const step = Math.max(1, Math.ceil(n / 6));
   for (let i = 0; i < n; i += step) {
     out += baselineTick(sx(i), y0) +
-      `<text x="${sx(i)}" y="${H - 8}" text-anchor="middle" ${AXIS_FONT}>${esc(String(c.chart.periods[idx(i)]).slice(0, 10))}</text>`;
+      `<text x="${sx(i)}" y="${H - 8}" text-anchor="middle" ${AXIS_FONT}>${esc(fmtPeriod(c.chart.periods[idx(i)]))}</text>`;
   }
   // primary = the first visible series: gold, heavier; the rest are context
   const primary = on[0];
@@ -5965,7 +6059,7 @@ function svgTimeseries(c) {
       last = i;
     }
     if (pk != null) {
-      const per = i => String(c.chart.periods[idx(i)]).slice(0, 10);
+      const per = i => fmtPeriod(c.chart.periods[idx(i)]);
       out += annotate(sx(pk), sy(pv[idx(pk)]), `${T.ch_peak} · ${per(pk)}`,
         compact(pv[idx(pk)]), pk > n * .8 ? "end" : pk < n * .15 ? "start" : "middle");
       if (last != null && last !== pk)
@@ -6023,7 +6117,7 @@ function svgProfile(c) {
       out += `<text x="${(x + bw / 2).toFixed(1)}" y="${top - 6}" text-anchor="middle" font-size="10.5"
         font-weight="${i === iMax ? "600" : "400"}" fill="#201d17"
         font-family="'IBM Plex Mono',ui-monospace,monospace">${compact(v)}</text>`;
-    if (i % step === 0) out += `<text x="${x + bw / 2}" y="${H - 8}" text-anchor="middle" ${AXIS_FONT}>${esc(String(c.chart.x[i]).slice(0, 12))}</text>`;
+    if (i % step === 0) out += `<text x="${x + bw / 2}" y="${H - 8}" text-anchor="middle" ${AXIS_FONT}>${esc(fmtPeriod(c.chart.x[i]).slice(0, 12))}</text>`;
   });
   if (cum) {
     const mean = ys.reduce((a, b) => a + b, 0) / n, my = sy(mean);

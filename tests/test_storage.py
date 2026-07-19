@@ -63,7 +63,7 @@ def test_list_analyses_newest_first_metadata_only():
     assert set(meta) == {"id", "filename", "uploaded_at", "reran_at",
                          "size_bytes", "n_sheets", "client", "open_findings",
                          "published_version", "stale",
-                         "checks_ok", "checks_total", "at_stake"}
+                         "checks_ok", "checks_total", "at_stake", "origin"}
 
 
 def test_listing_rollup_reads_columns_not_blobs(monkeypatch):

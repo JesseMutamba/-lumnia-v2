@@ -159,3 +159,26 @@ def test_unknown_and_uncomputable_blocks_are_refused():
     assert client.post(f"/analyses/{aid}/compose-report",
                        json={"blocks": ["cash"], "lang": "en"}
                        ).status_code == 422
+
+
+def test_error_details_and_month_labels_speak_both_languages():
+    """Errors surface raw in a bilingual UI — they carry both languages
+    (EN · FR). Month labels in the composed report read as months, not
+    ISO dates."""
+    # gate errors are bilingual
+    aid = _analysis(client_name=None)
+    r = client.post(f"/analyses/{aid}/compose-report",
+                    json={"blocks": [], "lang": "en"})
+    assert r.status_code == 409
+    assert " · " in r.json()["detail"]
+    assert "Rattachez" in r.json()["detail"]
+    # upload errors too
+    r2 = client.post("/analyze", files={
+        "file": ("vide.xlsx", b"", "application/octet-stream")})
+    assert "Fichier vide" in r2.json()["detail"]
+    # month labels: janv. 2026 / Jan 2026, never 2026-01
+    aid2 = _analysis(client_name="MWENGA")
+    client.post(f"/analyses/{aid2}/compose-report",
+                json={"blocks": [], "lang": "fr"})
+    html_fr = _hub_html("MWENGA", "mois@mwenga.cd", "Rapport d'exploitation")
+    assert "janv. 2026" in html_fr and "2026-01" not in html_fr
