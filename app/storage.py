@@ -183,6 +183,9 @@ def _connect() -> sqlite3.Connection:
         "ALTER TABLE analyses ADD COLUMN at_stake REAL",
         "ALTER TABLE analyses ADD COLUMN mapping TEXT",
         "ALTER TABLE analyses ADD COLUMN origin TEXT",
+        # per-client gate: the exec view is the product; analyst depth opens
+        # only when a client's own analysts need it (0/NULL = exec only)
+        "ALTER TABLE clients ADD COLUMN analyst_access INTEGER",
     ):
         try:
             con.execute(migration)
@@ -719,13 +722,33 @@ def list_clients() -> List[Dict[str, Any]]:
     the spine of the workbench access panel."""
     with _connect() as con:
         rows = con.execute(
-            "SELECT c.id, c.name, c.slug, c.created_at, "
+            "SELECT c.id, c.name, c.slug, c.created_at, c.analyst_access, "
             "  (SELECT COUNT(*) FROM client_users u "
             "   WHERE u.client_id = c.id) AS n_users, "
             "  (SELECT COUNT(*) FROM deliverables d "
             "   WHERE d.client_id = c.id) AS n_deliverables "
             "FROM clients c ORDER BY c.name").fetchall()
-    return [dict(r) for r in rows]
+    return [{**dict(r), "analyst_access": bool(r["analyst_access"])}
+            for r in rows]
+
+
+def set_client_analyst_access(client_name: str,
+                              enabled: bool) -> Optional[bool]:
+    """Flip the per-client analyst gate. None for an unknown client."""
+    with _connect() as con:
+        cur = con.execute(
+            "UPDATE clients SET analyst_access = ? WHERE name = ?",
+            (1 if enabled else 0, client_name))
+        if cur.rowcount == 0:
+            return None
+    return bool(enabled)
+
+
+def client_analyst_access(client_id: str) -> bool:
+    with _connect() as con:
+        row = con.execute("SELECT analyst_access FROM clients WHERE id = ?",
+                          (client_id,)).fetchone()
+    return bool(row and row["analyst_access"])
 
 
 def add_client_user(client_name: str, email: str) -> Optional[Dict[str, Any]]:
@@ -900,10 +923,13 @@ def list_deliverables_admin(client_name: str) -> Optional[List[Dict[str, Any]]]:
     return [dict(r) for r in rows]
 
 
-def get_deliverable(client_id: str, deliverable_id: str) -> Optional[Dict[str, Any]]:
+def get_deliverable(client_id: str, deliverable_id: str,
+                    with_source: bool = False) -> Optional[Dict[str, Any]]:
     """One deliverable, ownership re-checked IN the query: a foreign
     client_id can never match, so cross-tenant reads are indistinguishable
-    from missing ids (404, not 403)."""
+    from missing ids (404, not 403). ``with_source`` exposes the source_ref
+    under a private key for SERVER-SIDE use only — the caller must pop it
+    before anything serializes."""
     with _connect() as con:
         row = con.execute(
             "SELECT id, title, kind, grp, version, published_at, status, "
@@ -913,6 +939,8 @@ def get_deliverable(client_id: str, deliverable_id: str) -> Optional[Dict[str, A
             return None
         out = dict(row)
         source_ref = out.pop("source_ref")    # storage keys never leave here
+        if with_source:
+            out["_source_ref"] = source_ref
         if out["kind"] == "dashboard":
             snap = con.execute("SELECT snapshot FROM published "
                                "WHERE analysis_id = ?",

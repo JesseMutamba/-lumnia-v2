@@ -729,6 +729,19 @@ def client_deliverables_admin(client: str) -> list[dict]:
     return out
 
 
+@app.post("/clients/{client}/analyst-access")
+async def set_analyst_access(client: str, request: Request) -> dict:
+    """Operator: open or close the analyst gate for one client. The exec
+    view is the product; analyst depth (live audit detail on their
+    deliverables) opens only when the client's own analysts need it."""
+    body = await request.json()
+    result = storage.set_client_analyst_access(client,
+                                               bool(body.get("enabled")))
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"No client '{client}'.")
+    return {"client": client, "analyst_access": result}
+
+
 @app.post("/clients/{client}/users")
 async def add_portal_user(client: str, request: Request) -> dict:
     """Mint a login identity + its signed link ({"email": ...}). The analyst
@@ -1190,11 +1203,28 @@ def portal_deliverables(request: Request) -> list[DeliverableMeta]:
 def portal_deliverable(deliverable_id: str, request: Request) -> dict:
     """One deliverable. Dashboards return the frozen exec-only snapshot —
     the same curated payload the public token link serves, no new render
-    path. Cross-tenant ids 404: we don't confirm they exist."""
+    path. Cross-tenant ids 404: we don't confirm they exist.
+
+    When the client's analyst gate is OPEN (off by default, operator's
+    explicit choice), dashboards also carry ``audit_detail`` — the LIVE
+    reconciliation audit of the source workbook, read-only, for the
+    client's own analysts."""
     user = _client_identity(request)
-    d = storage.get_deliverable(user["client_id"], deliverable_id)
+    d = storage.get_deliverable(user["client_id"], deliverable_id,
+                                with_source=True)
     if d is None or (d["kind"] == "dashboard" and d.get("snapshot") is None):
         raise HTTPException(status_code=404, detail="No such deliverable.")
+    source_ref = d.pop("_source_ref", None)   # server-side only, never out
+    if (d["kind"] == "dashboard" and source_ref
+            and storage.client_analyst_access(user["client_id"])):
+        report = storage.get_report(source_ref)
+        if report is not None:
+            agg = aggregate_findings(report)
+            d["audit_detail"] = {
+                k: agg.get(k) for k in
+                ("n_verified_relations", "n_mismatched_relations",
+                 "n_unverified_relations", "total_abs_delta",
+                 "findings", "unverified")}
     if d["kind"] == "file":       # mint the signed URL only post-check
         token = auth.make_expiring_token("file", d["id"],
                                          storage.app_secret(), FILE_URL_TTL)

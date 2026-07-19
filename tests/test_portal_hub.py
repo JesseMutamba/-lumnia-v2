@@ -233,3 +233,30 @@ def test_dashboard_deliverable_title_is_humanized():
     c = _login("PVAK", "titre@pvak.cd")
     titles = [d["title"] for d in c.get("/portal/deliverables").json()]
     assert "PVAK T1 2026" in titles
+
+
+def test_analyst_gate_is_closed_by_default_and_opens_per_client():
+    """The executive view is the product: a client's dashboard deliverable
+    carries NO analyst material unless the operator opens the gate for
+    that client — then the live audit detail rides along, read-only."""
+    _published_analysis(b"gate-a", "PVAK")
+    c = _login("PVAK", "auditeur@pvak.cd")
+    did = c.get("/portal/deliverables").json()[0]["id"]
+    d = c.get(f"/portal/deliverables/{did}").json()
+    assert "audit_detail" not in d                 # closed by default
+    assert "_source_ref" not in d and "source_ref" not in d
+
+    assert client.post("/clients/PVAK/analyst-access",
+                       json={"enabled": True}).status_code == 200
+    d2 = c.get(f"/portal/deliverables/{did}").json()
+    assert "audit_detail" in d2
+    ad = d2["audit_detail"]
+    assert {"n_verified_relations", "n_mismatched_relations",
+            "findings"} <= set(ad)
+    assert "_source_ref" not in d2 and "source_ref" not in d2
+
+    # the gate closes again, and other clients were never affected
+    client.post("/clients/PVAK/analyst-access", json={"enabled": False})
+    assert "audit_detail" not in c.get(f"/portal/deliverables/{did}").json()
+    assert client.post("/clients/Inconnu/analyst-access",
+                       json={"enabled": True}).status_code == 404
