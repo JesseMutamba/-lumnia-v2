@@ -1030,6 +1030,13 @@ const STR = {
     pr_peak: "Peak period", pr_chart: "Monthly volumes",
     pr_ratio_chart: "Conversion rate by period",
     pr_avg: p => `average ${p}`, pr_src: s => `from ${s}`,
+    pr_xsheet: (out, inp) => `${out} ÷ ${inp}`,
+    pr_gap_ratio: "Conversion rate not computed — the two volume series share fewer than 3 periods across sheets.",
+    pr_outside: n => `(${n} period${n === 1 ? "" : "s"} outside the window excluded)`,
+    pva_chart: r => `Plan vs actual — ${r}`,
+    pva_plan: "Plan", pva_actual: "Actual",
+    pva_of_plan: p => `${p}% of plan`,
+    pva_gap: "A plan sheet was found, but fewer than 3 periods align with the actuals — plan vs actual not computed.",
     pr_cost_chart: "Cost per tonne — actual vs budget",
     pr_cost_target: (t, y) => `budget target ${t} (${y})`,
     pr_budget_line: y => `Budget ${y}`,
@@ -1148,6 +1155,9 @@ const STR = {
     cc_hub: "Report hub",
     cc_lede: "Audited dashboards, briefs and workbooks in one place — versioned, publish-gated, every figure traceable to source.",
     // client access panel (onboarding)
+    cl_deliver: "Deliver a file",
+    cl_deliver_sub: "PDF, HTML dashboard or spreadsheet — lands in the client's hub, versioned by title.",
+    cl_delivered: (t, v) => `Delivered — “${t}” v${v} is live in the client's hub.`,
     cl_kicker: "Clients",
     cl_meta: (u, d) => `${u} contact${u === 1 ? "" : "s"} · ${d} deliverable${d === 1 ? "" : "s"}`,
     cl_none: "No clients yet — assign a workbook to a client and it appears here.",
@@ -1500,6 +1510,13 @@ const STR = {
     pr_peak: "Période de pointe", pr_chart: "Volumes mensuels",
     pr_ratio_chart: "Taux de conversion par période",
     pr_avg: p => `moyenne ${p}`, pr_src: s => `depuis ${s}`,
+    pr_xsheet: (out, inp) => `${out} ÷ ${inp}`,
+    pr_gap_ratio: "Taux de conversion non calculé — les deux séries de volume partagent moins de 3 périodes entre les feuilles.",
+    pr_outside: n => `(${n} période${n === 1 ? "" : "s"} hors fenêtre exclue${n === 1 ? "" : "s"})`,
+    pva_chart: r => `Plan vs réel — ${r}`,
+    pva_plan: "Plan", pva_actual: "Réel",
+    pva_of_plan: p => `${p} % du plan`,
+    pva_gap: "Une feuille de plan a été trouvée, mais moins de 3 périodes coïncident avec le réel — comparaison plan/réel non calculée.",
     pr_cost_chart: "Coût par tonne — réel vs budget",
     pr_cost_target: (t, y) => `cible budget ${t} (${y})`,
     pr_budget_line: y => `Budget ${y}`,
@@ -1618,6 +1635,9 @@ const STR = {
     cc_hub: "Centre de rapports",
     cc_lede: "Tableaux de bord audités, notes et classeurs au même endroit — versionnés, publication contrôlée, chaque chiffre traçable à la source.",
     // panneau d'accès clients (onboarding)
+    cl_deliver: "Remettre un fichier",
+    cl_deliver_sub: "PDF, tableau de bord HTML ou tableur — arrive dans l'espace du client, versionné par titre.",
+    cl_delivered: (t, v) => `Remis — « ${t} » v${v} est en ligne dans l'espace du client.`,
     cl_kicker: "Clients",
     cl_meta: (u, d) => `${u} contact${u === 1 ? "" : "s"} · ${d} livrable${d === 1 ? "" : "s"}`,
     cl_none: "Aucun client pour l'instant — attribuez un classeur à un client et il apparaîtra ici.",
@@ -2477,7 +2497,7 @@ function renderFileViewer(d) {
   attachLang();
   const isHtml = (d.filename || "").toLowerCase().endsWith(".html");
   const frame = isHtml
-    ? `<iframe src="${esc(d.signed_url)}" sandbox=""
+    ? `<iframe src="${esc(d.signed_url)}" sandbox="allow-scripts"
         style="width:100%;height:80vh;border:1px solid var(--border);background:#fbf9f3"></iframe>`
     : `<embed src="${esc(d.signed_url)}" type="application/pdf"
         style="width:100%;height:80vh;border:1px solid var(--border);background:var(--panel)">`;
@@ -2700,6 +2720,12 @@ async function renderClientsPanel() {
             style="flex:1;font-family:var(--mono);font-size:12px;padding:6px 9px;border:1px solid var(--border-strong);background:var(--card);color:var(--ink)">
           <button type="submit" class="pillbtn gold">${T.cl_add}</button>
         </form>
+        <div style="display:flex;gap:10px;margin-top:10px;align-items:center;flex-wrap:wrap">
+          <button class="pillbtn" data-cfile="${esc(c.name)}">${T.cl_deliver}</button>
+          <span class="qsub" style="flex:1;min-width:200px">${T.cl_deliver_sub}</span>
+          <input type="file" data-cfileinput="${esc(c.name)}"
+            accept=".pdf,.html,.xlsx,.xls,.ods,.csv" style="display:none">
+        </div>
       </div>`;
     }
     blocks.push(`<div class="wbrow" data-cl="${esc(c.name)}" style="cursor:pointer">
@@ -2743,6 +2769,24 @@ async function renderClientsPanel() {
   }));
   $$("#clients-panel [data-cdetail]").forEach(el =>
     el.addEventListener("click", e => e.stopPropagation()));
+  $$("#clients-panel [data-cfile]").forEach(el => el.addEventListener("click", e => {
+    e.stopPropagation();
+    $(`#clients-panel [data-cfileinput="${el.dataset.cfile}"]`).click();
+  }));
+  $$("#clients-panel [data-cfileinput]").forEach(el => el.addEventListener("change", async e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    setStatus(T.hub_sending);
+    const fd = new FormData();
+    fd.append("file", f);
+    const r = await fetch(`/clients/${encodeURIComponent(el.dataset.cfileinput)}/files`,
+      { method: "POST", body: fd });
+    e.target.value = "";
+    if (!r.ok) { setStatus((await r.json()).detail || "!", true); return; }
+    const d = await r.json();
+    setStatus(T.cl_delivered(esc(d.title), d.version));
+    renderClientsPanel();
+  }));
   $$("#clients-panel [data-cplink]").forEach(el => el.addEventListener("click", async e => {
     e.stopPropagation();
     el.disabled = true;
@@ -4977,13 +5021,23 @@ function renderFinancials(execView) {
     unitCard = chartCard(uc, false);
   }
   if (d.volume_ratio && met.volume_secondary) {
+    // only computed periods — a None drawn as a 0% bar is a fabrication
+    const cpts = m.periods.map((p, i) => [p, d.volume_ratio[i]])
+      .filter(([, v]) => v != null);
     const conv = { pseudo: true,
       sheet: T.fin_conv(met.volume_secondary.label.slice(0, 20), met.volume.label.slice(0, 20)),
-      loc: null, chart: { kind: "profile", x: m.periods,
-        y: d.volume_ratio.map(v => v != null ? +(v * 100).toFixed(2) : 0) },
+      loc: null, chart: { kind: "profile", x: cpts.map(p => p[0]),
+        y: cpts.map(([, v]) => +(v * 100).toFixed(2)) },
       i: CHARTS.length, range: null };
     CHARTS.push(conv);
     convCard = chartCard(conv, false);
+  } else if (((REPORT.model && REPORT.model.gaps) || [])
+      .some(g => g.metric === "volume_ratio" && g.grain === "yearly")) {
+    // a yearly ratio pair the pipeline could not align: honest gap here,
+    // where the conversion card would have rendered
+    convCard = `<div class="card"><div class="card-head">
+        <span class="ct">${T.pr_ratio_chart}</span></div>
+      <p class="chcap" style="margin-top:10px">${T.pr_gap_ratio}</p></div>`;
   }
 
   // breakdown panels: ranked bars — fill fades by rank, ONE shared scale
@@ -5026,7 +5080,9 @@ function renderProduction() {
   const met = mo.metrics;
 
   const stats = Object.entries(met).map(([role, s]) =>
-    `<span>${T.pr_total(ROLE_LABELS[role] || role)} <b>${compact(sum(s.values))}</b></span>`);
+    `<span>${T.pr_total(ROLE_LABELS[role] || role)} <b>${compact(sum(s.values))}</b>${
+      s.dropped_outside_axis
+        ? ` <span class="muted">${T.pr_outside(s.dropped_outside_axis)}</span>` : ""}</span>`);
   const vr = mo.derived.volume_ratio;
   let avg = null;
   if (vr) {
@@ -5055,13 +5111,32 @@ function renderProduction() {
 
   let ratioCard = "";
   if (vr && vr.some(v => v != null)) {
+    // provenance: when the pair spans two sheets, say so — output ÷ input.
+    // Suppressed on the exec/published page like every sheet-name caption.
+    const xs = PAGE !== "exec" && met.volume && met.volume_secondary
+      && met.volume.sheet !== met.volume_secondary.sheet
+      ? T.pr_xsheet(esc(met.volume_secondary.sheet), esc(met.volume.sheet))
+      : null;
+    // only periods the pipeline actually computed — a None period drawn
+    // as a 0% bar would be a fabricated number
+    const pts = mo.periods.map((p, i) => [p, vr[i]])
+      .filter(([, v]) => v != null);
     const rc = { pseudo: true, sheet: T.pr_ratio_chart,
-      loc: avg != null ? T.pr_avg(`${(avg * 100).toFixed(1)}%`) : null,
-      chart: { kind: "profile", x: mo.periods,
-               y: vr.map(v => v != null ? +(v * 100).toFixed(2) : 0) },
+      loc: [avg != null ? T.pr_avg(`${(avg * 100).toFixed(1)}%`) : null, xs]
+        .filter(Boolean).join(" · ") || null,
+      chart: { kind: "profile", x: pts.map(p => p[0]),
+               y: pts.map(([, v]) => +(v * 100).toFixed(2)) },
       i: CHARTS.length, range: null };
     CHARTS.push(rc);
     ratioCard = chartCard(rc, false);
+  } else if (((REPORT.model && REPORT.model.gaps) || [])
+      .some(g => g.metric === "volume_ratio" && g.grain === "monthly")) {
+    // the pipeline found a MONTHLY ratio pair it could not align: honest
+    // gap, no number, no placeholder — ever (yearly gaps belong to
+    // Financials, not this view)
+    ratioCard = `<div class="card"><div class="card-head">
+        <span class="ct">${T.pr_ratio_chart}</span></div>
+      <p class="chcap" style="margin-top:10px">${T.pr_gap_ratio}</p></div>`;
   }
 
   // actual $/t against the plan — everything here is pipeline-computed
@@ -5093,9 +5168,32 @@ function renderProduction() {
     costCard = chartCard(cc, false);
   }
 
+  // plan vs actual: pipeline-computed attainment — this block only formats
+  const pva = mo.plan_vs_actual || {};
+  const pvaCards = Object.entries(pva).slice(0, 3).map(([role, v]) => {
+    if (v.pct_of_plan_total != null)
+      stats.push(`<span>${ROLE_LABELS[role] || role} <b>${T.pva_of_plan(v.pct_of_plan_total)}</b></span>`);
+    const cc = { pseudo: true, sheet: T.pva_chart(ROLE_LABELS[role] || role),
+      loc: PAGE === "exec" ? null : T.pr_src(esc(String(v.plan_sheet || "").trim())),
+      chart: { kind: "timeseries", periods: mo.periods, series: [],
+               other: null, truncated: false },
+      lines: [
+        { label: `${ROLE_LABELS[role] || role} — ${T.pva_actual}`,
+          values: (met[role] || {}).values || [],
+          color: SERIES_COLORS[0], on: true },
+        { label: T.pva_plan, values: v.plan, color: OTHER_COLOR, on: true },
+      ], i: CHARTS.length, range: null };
+    CHARTS.push(cc);
+    return chartCard(cc, false);
+  }).join("");
+  const pvaGap = ((REPORT.model && REPORT.model.gaps) || [])
+    .some(g => g.metric === "plan_vs_actual" && g.grain === "monthly")
+    ? `<p class="chcap" style="margin-top:12px">${T.pva_gap}</p>` : "";
+
   return `<section id="sec-production"><span class="kicker">${T.pr_kicker}</span>
     ${stats.length ? `<div class="statbar">${stats.join("")}</div>` : ""}
-    <div class="grid2">${chartCard(volChart, false)}${ratioCard}${costCard}</div>
+    <div class="grid2">${chartCard(volChart, false)}${ratioCard}${costCard}${pvaCards}</div>
+    ${pvaGap}
   </section>`;
 }
 

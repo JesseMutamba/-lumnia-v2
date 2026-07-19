@@ -132,3 +132,26 @@ def test_upload_rejects_the_oversized_and_the_clientless():
     r = client.post("/clients/%20/files",
                     files={"file": ("a.pdf", PDF, "application/pdf")})
     assert r.status_code == 422
+
+
+def test_html_serves_sandboxed_with_scripts_but_no_origin():
+    """Interactive HTML dashboards must render their charts (scripts run)
+    without ever being able to act on the client's session: the CSP sandbox
+    keeps the document in an opaque origin — no cookies, no same-origin API."""
+    page = b"<!DOCTYPE html><html><body><canvas></canvas><script>1</script></body></html>"
+    r = client.post("/clients/PVAK/files",
+                    files={"file": ("tableau_q1.html", page, "text/html")})
+    assert r.status_code == 200, r.text
+    c = _login("PVAK", "html@pvak.cd")
+    did = c.get("/portal/deliverables").json()[0]["id"]
+    url = c.get(f"/portal/deliverables/{did}").json()["signed_url"]
+    resp = client.get(url)
+    assert resp.status_code == 200
+    assert resp.headers["Content-Security-Policy"] == "sandbox allow-scripts"
+    assert resp.headers["Content-Disposition"].startswith("inline")
+    # pdf stays CSP-free: no scripts to contain
+    _upload("PVAK", "revue_q1.pdf", PDF)
+    did2 = [d["id"] for d in c.get("/portal/deliverables").json()
+            if d["title"] == "revue_q1"][0]
+    url2 = c.get(f"/portal/deliverables/{did2}").json()["signed_url"]
+    assert "Content-Security-Policy" not in client.get(url2).headers

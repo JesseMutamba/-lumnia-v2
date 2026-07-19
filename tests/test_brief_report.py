@@ -121,9 +121,12 @@ def test_brief_delivered_versioned_and_served_sandboxed(monkeypatch):
     assert served.status_code == 200
     assert served.headers["content-type"].startswith("text/html")
     assert "inline" in served.headers["content-disposition"]
-    assert served.headers["content-security-policy"] == "sandbox"
+    # opaque origin is the invariant (no cookies, no session reach);
+    # allow-scripts exists for interactive analyst dashboards, and the
+    # generated brief carries no scripts of its own either way
+    assert served.headers["content-security-policy"] == "sandbox allow-scripts"
     html = served.text
-    # Claude's prose is in; the deterministic figures are in; scripts are not
+    # Claude's prose is in; the deterministic figures are in
     assert "UNITCOST-SECTION" in html and "DELIVERS-SECTION" in html
     assert "540" in html                       # budget target, from the model
     assert "<script" not in html.lower()

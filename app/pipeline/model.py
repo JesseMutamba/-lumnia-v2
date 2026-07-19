@@ -51,6 +51,10 @@ ROLE_PATTERNS: List[tuple] = [
 
 MAX_BREAKDOWNS = 6
 
+# a series from another sheet joins the spine only when at least this many
+# aligned periods carry values — fewer is an honest gap, never a metric
+MIN_XSHEET_OVERLAP = 3
+
 # TOTAL/CUMUL series are aggregates of the others — never a role series
 # (same rule as build_matrix_semantics, which imports its copy from here)
 DERIVED_SERIES_RX = re.compile(r"total|cumul|sous.?tot|grand.?tot",
@@ -68,9 +72,11 @@ RATE_SERIES_RX = re.compile(
 
 # The actual-vs-budget comparison only renders when the year spine really IS
 # a plan — an honest "vs budget" claim needs a budget-shaped source, not any
-# historical year series that happens to share the axis.
-BUDGET_SHEET_RX = re.compile(r"budget|pr[ée]vision(nel)?s?|forecast|\bplan\b",
-                             re.IGNORECASE)
+# historical year series that happens to share the axis. The same shape marks
+# a MONTHLY sheet as a plan pool: compared to actuals, never merged into them.
+BUDGET_SHEET_RX = re.compile(
+    r"budget|pr[ée]vision(nel)?s?|forecast|\bplan\b|projections?",
+    re.IGNORECASE)
 
 
 def _tidies(report_sheets) -> List[tuple]:
@@ -99,17 +105,24 @@ def _year_charts(report_sheets) -> List[tuple]:
     return out
 
 
-def _tag_roles(chart: dict) -> Dict[str, dict]:
+def _tag_roles(chart: dict, plan: bool = False) -> Dict[str, dict]:
     """role -> best matching series (largest |total|) within one chart.
 
     When TWO distinct series role-tag as volume (e.g. FFB harvested and CPO
     produced), the runner-up is kept as ``volume_secondary`` so the model can
     derive a conversion ratio between them.
+
+    ``plan=True`` (a chart from a plan-shaped sheet) skips the generic
+    "budget" pattern so a prévu-labeled row falls through to its SUBSTANTIVE
+    role — "PRODUCTION PRÉVUE" on a plan sheet is a production plan, not a
+    budget line.
     """
     matches: Dict[str, List[dict]] = {}
     for s in chart["series_all"]:
         label = s["label"]
         for role, rx in ROLE_PATTERNS:
+            if plan and role == "budget":
+                continue
             if role != "price" and RATE_SERIES_RX.search(str(label)):
                 continue                 # a rate row is no level series
             if rx.search(label):
@@ -130,6 +143,116 @@ def _tag_roles(chart: dict) -> Dict[str, dict]:
         if role == "volume" and len(pick) > 1 and pick[1]["_total"] > 0:
             roles["volume_secondary"] = pick[1]
     return roles
+
+
+def _reindex(values: List, periods: List[str],
+             spine_periods: List[str]) -> List:
+    """A foreign series re-indexed onto the spine axis by exact period-string
+    equality; None where the spine period is absent from the foreign axis.
+    The spine axis is authoritative — it never grows or reorders, and no
+    positional zip ever crosses differing axes. A period string appearing
+    MORE THAN ONCE in the foreign axis is unknowable — which column is
+    truth? — so it joins as None rather than silently last-wins."""
+    counts: Dict[str, int] = {}
+    for p in periods:
+        counts[p] = counts.get(p, 0) + 1
+    by_p = {p: v for p, v in zip(periods, values) if counts[p] == 1}
+    return [by_p.get(p) for p in spine_periods]
+
+
+def _dropped_outside(values: List, periods: List[str],
+                     spine_periods: List[str]) -> int:
+    """Non-empty foreign cells whose period falls outside the spine axis —
+    excluded from the join, and DECLARED so no total quietly understates
+    what the workbook holds."""
+    spine = set(spine_periods)
+    return sum(1 for p, v in zip(periods, values)
+               if v is not None and p not in spine)
+
+
+def _pair_volumes(roles: Dict[str, dict], entry: dict,
+                  gaps: List[Dict[str, str]], grain: str) -> None:
+    """A volume series from another sheet against the spine's own: the larger
+    over the aligned cells is the raw input (e.g. FFB) and takes ``volume``,
+    the smaller (e.g. CPO) becomes ``volume_secondary`` — keeping
+    volume_ratio = output/input, an extraction rate below 1, the same
+    largest-first convention as _tag_roles."""
+    if "volume_secondary" in roles:
+        return                        # a pair already exists — first wins
+    spine_vol = roles["volume"]
+    if str(entry["label"]).strip() == str(spine_vol["label"]).strip():
+        return                        # the same line copied across sheets
+    both = [(a, b) for a, b in zip(spine_vol["values"], entry["values"])
+            if a is not None and b is not None]
+    if len(both) < MIN_XSHEET_OVERLAP:
+        gaps.append({
+            "metric": "volume_ratio",
+            "grain": grain,
+            "reason": "volume series found on two sheets but fewer than "
+                      f"{MIN_XSHEET_OVERLAP} shared periods carry values",
+            "requires": f"{MIN_XSHEET_OVERLAP}+ overlapping periods "
+                        "across sheets"})
+        return
+    if sum(abs(b) for _, b in both) > sum(abs(a) for a, _ in both):
+        roles["volume_secondary"] = spine_vol      # swap: keeps its own sheet
+        roles["volume"] = entry
+    else:
+        roles["volume_secondary"] = entry
+
+
+def _supplement(spine_periods: List[str], roles: Dict[str, dict],
+                others: List[tuple], grain: str,
+                plan: bool = False) -> List[Dict[str, str]]:
+    """Fill roles the spine chart lacks from OTHER charts of the same grain,
+    re-indexed onto the spine axis. A second volume series found on another
+    sheet becomes the conversion pair (volume_secondary) via _pair_volumes;
+    a sheet's OWN pair travels together (its secondary rides along when its
+    primary took the spine's volume slot). An identical axis keeps the old
+    unconditional admission — the >=3 overlap gate exists for genuinely
+    cross-axis joins. Returns the alignment gaps of THIS grain only; the
+    completed-pair wipe never reaches another grain's gaps."""
+    sgaps: List[Dict[str, str]] = []
+    for name, ch in others:
+        ch_periods = [str(p) for p in ch["periods"]]
+        identical = ch_periods == spine_periods
+        # _tag_roles inserts volume before volume_secondary, so a sheet's
+        # primary always lands before its secondary rides along
+        for role, series in _tag_roles(ch, plan=plan).items():
+            vals = series["values"] if identical \
+                else _reindex(series["values"], ch_periods, spine_periods)
+            entry = {**series, "values": vals, "_sheet": name}
+            dropped = _dropped_outside(series["values"], ch_periods,
+                                       spine_periods)
+            if dropped:
+                entry["_dropped_outside"] = dropped
+            if role == "volume" and "volume" in roles:
+                _pair_volumes(roles, entry, sgaps, grain)
+                continue
+            if role == "volume_secondary":
+                if ("volume_secondary" not in roles
+                        and roles.get("volume", {}).get("_sheet") == name):
+                    roles["volume_secondary"] = entry
+                continue
+            if role in roles:
+                continue
+            if not identical and sum(
+                    v is not None for v in vals) < MIN_XSHEET_OVERLAP:
+                continue
+            roles[role] = entry
+    if "volume_secondary" in roles:
+        # a later sheet completed this grain's pair — its gaps are moot
+        sgaps = [g for g in sgaps if g["metric"] != "volume_ratio"]
+    return sgaps
+
+
+def _dedupe_gaps(gaps: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    seen, out = set(), []
+    for g in gaps:
+        key = (g["metric"], g.get("grain"))
+        if key not in seen:
+            seen.add(key)
+            out.append(g)
+    return out
 
 
 def derive_metrics(metrics: Dict[str, dict]) -> Dict[str, Any]:
@@ -224,8 +347,14 @@ def _cash_split(monthly: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     cpx = (met.get("capex") or {}).get("values")
     if not opx or not cpx:
         return None
-    opex_total = sum(v for v in opx if v is not None)
-    capex_total = sum(v for v in cpx if v is not None)
+    # apples to apples: cross-sheet series may cover different windows, so
+    # the invested share only counts periods where BOTH sides are tracked
+    both = [(o, c) for o, c in zip(opx, cpx)
+            if o is not None and c is not None]
+    if not both:
+        return None
+    opex_total = sum(o for o, _ in both)
+    capex_total = sum(c for _, c in both)
     total = opex_total + capex_total
     if total <= 0:
         return None
@@ -265,44 +394,147 @@ def _unit_cost_budget(periods: List[str], year_derived: Dict[str, Any],
     }
 
 
-def _monthly_block(report_sheets) -> Optional[Dict[str, Any]]:
+def _monthly_block(report_sheets,
+                   gaps: List[Dict[str, str]]) -> Optional[Dict[str, Any]]:
     """Actuals: the date-axis chart where the most roles tag — volumes in,
     volumes out, per period — with the same derived arithmetic (the monthly
-    conversion ratio IS the extraction rate). None when nothing tags."""
-    best = None
+    conversion ratio IS the extraction rate). Other date-axis charts
+    supplement missing roles across sheets, joined on the spine axis.
+
+    Charts from plan-shaped sheets (BUDGET/PLAN/PREVISIONS/PROJECTIONS) are
+    a SEPARATE pool: plan series are compared to the actuals, never merged
+    into them — a plan number presented as an actual is a fabrication.
+    None when nothing tags."""
+    charts, plan_charts = [], []
     for name, _, tidy in _tidies(report_sheets):
         ch = (tidy.get("summary") or {}).get("chart")
-        if not (ch and ch.get("kind") == "timeseries"
+        if (ch and ch.get("kind") == "timeseries"
                 and ch.get("axis") != "year" and ch.get("series_all")):
-            continue
+            if BUDGET_SHEET_RX.search(str(name)):
+                plan_charts.append((name, ch))
+            else:
+                charts.append((name, ch))
+    best = None
+    for name, ch in charts:
         roles = _tag_roles(ch)
         if roles and (best is None or len(roles) > len(best[2])):
             best = (name, ch, roles)
     if best is None:
         return None
     name, ch, roles = best
-    metrics = {
-        role: {"label": s["label"], "sheet": name, "values": s["values"]}
-        for role, s in roles.items()
-    }
-    return {"periods": [str(p) for p in ch["periods"]],
-            "source_sheet": name,
-            "metrics": metrics,
-            "derived": derive_metrics(metrics)}
+    periods = [str(p) for p in ch["periods"]]
+    gaps.extend(_supplement(periods, roles,
+                            [(n, c) for n, c in charts if c is not ch],
+                            "monthly"))
+    metrics = _public_metrics(roles, name)
+    mo = {"periods": periods,
+          "source_sheet": name,
+          "metrics": metrics,
+          "derived": derive_metrics(metrics)}
+    pva = _plan_vs_actual(mo, plan_charts, gaps)
+    if pva:
+        mo["plan_vs_actual"] = pva
+    return mo
+
+
+def _plan_block(plan_charts: List[tuple]) -> Optional[Dict[str, Any]]:
+    """The plan pool folded into one role map, same spine-and-supplement
+    shape as the actuals. Plan-internal alignment gaps are not surfaced —
+    the plan is a comparison source, not a rendered story."""
+    best = None
+    for name, ch in plan_charts:
+        roles = _tag_roles(ch, plan=True)
+        if roles and (best is None or len(roles) > len(best[2])):
+            best = (name, ch, roles)
+    if best is None:
+        return None
+    name, ch, roles = best
+    periods = [str(p) for p in ch["periods"]]
+    _supplement(periods, roles,
+                [(n, c) for n, c in plan_charts if c is not ch],
+                "monthly", plan=True)
+    return {"periods": periods, "source_sheet": name,
+            "metrics": _public_metrics(roles, name)}
+
+
+def _plan_vs_actual(monthly: Dict[str, Any], plan_charts: List[tuple],
+                    gaps: List[Dict[str, str]]) -> Optional[Dict[str, Any]]:
+    """Attainment against the plan, role by role: the plan re-indexed onto
+    the ACTUALS axis (exact period-string equality), pct_of_plan cell by
+    cell, totals over the common window only. Fewer than 3 aligned pairs
+    for every shared role is an honest gap, never a number."""
+    plan = _plan_block(plan_charts)
+    if plan is None:
+        return None
+    out: Dict[str, Any] = {}
+    misaligned = False
+    for role, pm in plan["metrics"].items():
+        if role == "volume_secondary":
+            continue                   # the pair story belongs to actuals
+        am = monthly["metrics"].get(role)
+        if am is None:
+            continue                   # a plan with no actual: no claim
+        vals = _reindex(pm["values"], plan["periods"], monthly["periods"])
+        both = [(a, p) for a, p in zip(am["values"], vals)
+                if a is not None and p is not None]
+        if len(both) < MIN_XSHEET_OVERLAP:
+            misaligned = True
+            continue
+        plan_total = sum(p for _, p in both)
+        actual_total = sum(a for a, _ in both)
+        out[role] = {
+            "plan": vals,
+            "plan_label": pm["label"],
+            "plan_sheet": pm["sheet"],
+            "pct_of_plan": [round(a / p * 100, 1)
+                            if a is not None and p is not None and p != 0
+                            else None
+                            for a, p in zip(am["values"], vals)],
+            "plan_total": round(plan_total, 4),
+            "actual_total": round(actual_total, 4),
+            "pct_of_plan_total": round(actual_total / plan_total * 100, 1)
+            if plan_total else None,
+        }
+    if not out and misaligned:
+        gaps.append({
+            "metric": "plan_vs_actual",
+            "grain": "monthly",
+            "reason": "a plan sheet was found but fewer than "
+                      f"{MIN_XSHEET_OVERLAP} periods align with the actuals",
+            "requires": f"{MIN_XSHEET_OVERLAP}+ overlapping periods "
+                        "between plan and actuals"})
+    return out or None
+
+
+def _public_metrics(roles: Dict[str, dict],
+                    spine_sheet: Optional[str]) -> Dict[str, dict]:
+    """Strip the private underscore fields; declare out-of-window drops."""
+    out: Dict[str, dict] = {}
+    for role, s in roles.items():
+        m = {"label": s["label"], "sheet": s.get("_sheet", spine_sheet),
+             "values": s["values"]}
+        if s.get("_dropped_outside"):
+            m["dropped_outside_axis"] = s["_dropped_outside"]
+        out[role] = m
+    return out
 
 
 def build_model(report_sheets) -> Optional[Dict[str, Any]]:
     """Assemble the business model, or ``None`` when nothing role-tags."""
+    gaps: List[Dict[str, str]] = []
     charts = _year_charts(report_sheets)
-    monthly = _monthly_block(report_sheets)
+    monthly = _monthly_block(report_sheets, gaps)
     if not charts:
         if monthly is None:
             return None
         # actuals with no projections: the Production view still deserves
         # a model — there is just nothing to simulate
-        return {"periods": [], "source_sheet": None, "metrics": {},
-                "derived": {}, "breakdowns": [], "scenario_ready": False,
-                "monthly": monthly}
+        out = {"periods": [], "source_sheet": None, "metrics": {},
+               "derived": {}, "breakdowns": [], "scenario_ready": False,
+               "monthly": monthly}
+        if gaps:
+            out["gaps"] = _dedupe_gaps(gaps)
+        return out
 
     # spine = the year chart where the most roles were found
     best_sheet, best_roles, best_chart = None, {}, None
@@ -315,22 +547,13 @@ def build_model(report_sheets) -> Optional[Dict[str, Any]]:
 
     periods = [str(p) for p in best_chart["periods"]]
 
-    # supplement missing roles from other year charts with IDENTICAL periods
-    for name, ch in charts:
-        if ch is best_chart:
-            continue
-        if [str(p) for p in ch["periods"]] != periods:
-            continue
-        for role, series in _tag_roles(ch).items():
-            if role not in best_roles:
-                series["_sheet"] = name
-                best_roles[role] = series
+    # supplement missing roles from other year charts, joined onto the spine
+    # axis by exact period-string equality (cross-sheet ratio pairs included)
+    gaps.extend(_supplement(periods, best_roles,
+                            [(n, c) for n, c in charts if c is not best_chart],
+                            "yearly"))
 
-    metrics = {
-        role: {"label": s["label"], "sheet": s.get("_sheet", best_sheet),
-               "values": s["values"]}
-        for role, s in best_roles.items()
-    }
+    metrics = _public_metrics(best_roles, best_sheet)
     derived = derive_metrics(metrics)
 
     if monthly:
@@ -349,7 +572,7 @@ def build_model(report_sheets) -> Optional[Dict[str, Any]]:
             breakdowns.append({"sheet": name, **bd})
     breakdowns.sort(key=lambda b: -sum(abs(i["value"]) for i in b["items"]))
 
-    return {
+    out = {
         "periods": periods,
         "source_sheet": best_sheet,
         "metrics": metrics,
@@ -361,3 +584,6 @@ def build_model(report_sheets) -> Optional[Dict[str, Any]]:
         "scenario_ready": bool(metrics.get("revenue")),
         "monthly": monthly,
     }
+    if gaps:
+        out["gaps"] = _dedupe_gaps(gaps)
+    return out
