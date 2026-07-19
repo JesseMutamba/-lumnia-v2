@@ -632,6 +632,21 @@
   /* one-line insight caption under a chart */
   .chcap { font-size: 11.5px; color: var(--ink-4); margin-top: 8px; line-height: 1.5; }
 
+  /* "understand this chart": provenance + definition + reading, on demand */
+  .explain { margin-top: 8px; }
+  .explain summary { font-family: var(--mono); font-size: 9.5px;
+    letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3);
+    cursor: pointer; list-style: none; }
+  .explain summary::-webkit-details-marker { display: none; }
+  .explain summary:hover { color: var(--gold); }
+  .explain[open] summary { color: var(--gold); margin-bottom: 8px; }
+  .explain .xrow { display: grid; grid-template-columns: 72px minmax(0, 1fr);
+    gap: 10px; font-size: 11.5px; line-height: 1.55; color: var(--ink-2);
+    padding: 4px 0; border-top: 1px solid var(--hairline); }
+  .explain .xk { font-family: var(--mono); font-size: 8.5px;
+    letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3);
+    padding-top: 2px; }
+
   /* actions: triage rows with serif numerals and an at-stake column */
   .acrow { display: grid; grid-template-columns: 44px minmax(0, 1fr) 132px;
     gap: 14px; padding: 20px 0; border-bottom: 1px solid var(--hairline); }
@@ -1041,6 +1056,24 @@ const STR = {
     pva_plan: "Plan", pva_actual: "Actual",
     pva_of_plan: p => `${p}% of plan`,
     pva_gap: "A plan sheet was found, but fewer than 3 periods align with the actuals — plan vs actual not computed.",
+    tr_intro: "Every time series Lumnia extracted from your workbook, sheet by sheet, exactly as uploaded — nothing modeled, nothing adjusted. Open “Understand this chart” under any chart for its source and reading.",
+    pr_intro: "Monthly actuals read from your sheets, with the derived rates Lumnia computed from them (conversion, cost per tonne, plan attainment). Each chart explains itself below.",
+    xp_t: "Understand this chart",
+    xp_src_k: "Source", xp_what_k: "What it is", xp_read_k: "Reading",
+    xp_src_raw: sheet => `Read directly from sheet “${sheet}” of your uploaded workbook — values as uploaded, nothing adjusted.`,
+    xp_src_model: "Computed by Lumnia from the audited series of your workbook — the source rows are named in the legend.",
+    xp_what_raw: labels => `Each line is one labeled row of the sheet (${labels}); the horizontal axis is the sheet's own period columns.`,
+    xp_what_prof: "Each bar is one column or category of the sheet, as uploaded.",
+    xp_window: (a, av, b, bv, chg) => `From ${a} (${av}) to ${b} (${bv})${chg ? ` — ${chg} over the window` : ""}.`,
+    xp_defs: {
+      prod_vol: "Monthly production actuals: each line is one volume series found in your sheets — raw input harvested and output produced.",
+      conv: "Conversion rate = output ÷ input, month by month (e.g. tonnes of CPO produced per tonne of FFB harvested). A falling rate means more raw material is being used for the same output.",
+      cost_budget: "Actual unit cost per period against the budget target from your plan sheet. Points above the budget line cost more per tonne than planned.",
+      pva: "The plan series from your plan sheet beside the actuals from your journal, aligned month by month by exact period. The gap between the lines is the shortfall or surplus against plan.",
+      fin_traj: "The yearly financial series found in your workbook (revenue, costs, investment), exactly as extracted.",
+      fin_margin: "Margin = revenue − operating costs, period by period; the percentage is margin ÷ revenue.",
+      fin_unit: "Per-unit economics: revenue and cost divided by the volume series, period by period — what one unit earns and what it costs.",
+    },
     pr_cost_chart: "Cost per tonne — actual vs budget",
     pr_cost_target: (t, y) => `budget target ${t} (${y})`,
     pr_budget_line: y => `Budget ${y}`,
@@ -1542,6 +1575,24 @@ const STR = {
     pva_plan: "Plan", pva_actual: "Réel",
     pva_of_plan: p => `${p} % du plan`,
     pva_gap: "Une feuille de plan a été trouvée, mais moins de 3 périodes coïncident avec le réel — comparaison plan/réel non calculée.",
+    tr_intro: "Toutes les séries temporelles extraites de votre classeur, feuille par feuille, telles que déposées — rien de modélisé, rien d'ajusté. Ouvrez « Comprendre ce graphique » sous chaque graphique pour sa source et sa lecture.",
+    pr_intro: "Les réels mensuels lus dans vos feuilles, avec les taux que Lumnia en dérive (conversion, coût par tonne, atteinte du plan). Chaque graphique s'explique ci-dessous.",
+    xp_t: "Comprendre ce graphique",
+    xp_src_k: "Source", xp_what_k: "Définition", xp_read_k: "Lecture",
+    xp_src_raw: sheet => `Lu directement dans la feuille « ${sheet} » de votre classeur — valeurs telles que déposées, rien d'ajusté.`,
+    xp_src_model: "Calculé par Lumnia à partir des séries auditées de votre classeur — les lignes sources sont nommées dans la légende.",
+    xp_what_raw: labels => `Chaque courbe est une ligne étiquetée de la feuille (${labels}) ; l'axe horizontal reprend les colonnes de période de la feuille.`,
+    xp_what_prof: "Chaque barre est une colonne ou catégorie de la feuille, telle que déposée.",
+    xp_window: (a, av, b, bv, chg) => `De ${a} (${av}) à ${b} (${bv})${chg ? ` — ${chg} sur la fenêtre` : ""}.`,
+    xp_defs: {
+      prod_vol: "Réels mensuels de production : chaque courbe est une série de volume trouvée dans vos feuilles — matière première récoltée et production sortie.",
+      conv: "Taux de conversion = production ÷ matière première, mois par mois (ex. tonnes de CPO produites par tonne de FFB récoltée). Un taux qui baisse signifie plus de matière première pour la même production.",
+      cost_budget: "Coût unitaire réel par période contre la cible budget de votre feuille de plan. Un point au-dessus de la ligne budget coûte plus cher par tonne que prévu.",
+      pva: "La série du plan (feuille de plan) à côté du réel (journal), alignées mois par mois par période exacte. L'écart entre les courbes est le retard ou l'avance sur le plan.",
+      fin_traj: "Les séries financières annuelles trouvées dans votre classeur (revenus, charges, investissements), telles qu'extraites.",
+      fin_margin: "Marge = revenus − charges d'exploitation, période par période ; le pourcentage est marge ÷ revenus.",
+      fin_unit: "Économie unitaire : revenus et charges divisés par la série de volume, période par période — ce qu'une unité rapporte et ce qu'elle coûte.",
+    },
     pr_cost_chart: "Coût par tonne — réel vs budget",
     pr_cost_target: (t, y) => `cible budget ${t} (${y})`,
     pr_budget_line: y => `Budget ${y}`,
@@ -3698,7 +3749,7 @@ function renderExecOverview() {
         label: `${ROLE_LABELS[role] || role} — ${s.label.slice(0, 26)}`,
         values: s.values, color: SERIES_COLORS[k % SERIES_COLORS.length],
         on: true }));
-    primary = { pseudo: true, sheet: T.pr_chart, loc: null,
+    primary = { pseudo: true, sheet: T.pr_chart, loc: null, explain: "prod_vol",
       chart: { kind: "timeseries", periods: mo.periods, series: [],
                other: null, truncated: false },
       lines, i: CHARTS.length, range: null };
@@ -5167,7 +5218,7 @@ function renderFinancials(execView) {
     values: s.values, color: SERIES_COLORS[k % SERIES_COLORS.length], on: true,
   }));
   // exec page shows no source-sheet name; the analyst keeps the provenance
-  const traj = { pseudo: true, loc: null,
+  const traj = { pseudo: true, loc: null, explain: "fin_traj",
     sheet: execView ? T.fin_traj_x : T.fin_traj(m.source_sheet.trim()),
     chart: { kind: "timeseries", periods: m.periods, series: [], other: null,
              truncated: false }, lines, i: CHARTS.length, range: null };
@@ -5175,7 +5226,7 @@ function renderFinancials(execView) {
 
   let marginCard = "";
   if (mp && mp.some(v => v != null)) {
-    const bars = { pseudo: true, sheet: T.fin_margin, loc: null,
+    const bars = { pseudo: true, sheet: T.fin_margin, loc: null, explain: "fin_margin",
       chart: { kind: "profile", x: m.periods,
                y: mp.map(v => v ?? 0) }, i: CHARTS.length, range: null };
     CHARTS.push(bars);
@@ -5193,7 +5244,7 @@ function renderFinancials(execView) {
     if (d.opex_per_volume) ulines.push({
       label: LANG === "fr" ? "Coût par unité" : "Cost per unit",
       values: d.opex_per_volume, color: SERIES_COLORS[2], on: true });
-    const uc = { pseudo: true, sheet: T.fin_unit,
+    const uc = { pseudo: true, sheet: T.fin_unit, explain: "fin_unit",
       loc: T.fin_per(met.volume.label.slice(0, 24)),
       chart: { kind: "timeseries", periods: m.periods, series: [], other: null,
                truncated: false }, lines: ulines, i: CHARTS.length, range: null };
@@ -5204,7 +5255,7 @@ function renderFinancials(execView) {
     // only computed periods — a None drawn as a 0% bar is a fabrication
     const cpts = m.periods.map((p, i) => [p, d.volume_ratio[i]])
       .filter(([, v]) => v != null);
-    const conv = { pseudo: true,
+    const conv = { pseudo: true, explain: "conv",
       sheet: T.fin_conv(met.volume_secondary.label.slice(0, 20), met.volume.label.slice(0, 20)),
       loc: null, chart: { kind: "profile", x: cpts.map(p => p[0]),
         y: cpts.map(([, v]) => +(v * 100).toFixed(2)) },
@@ -5283,7 +5334,7 @@ function renderProduction() {
     label: `${ROLE_LABELS[role] || role} — ${s.label.slice(0, 26)}`,
     values: s.values, color: SERIES_COLORS[k % SERIES_COLORS.length], on: true,
   }));
-  const volChart = { pseudo: true, sheet: T.pr_chart,
+  const volChart = { pseudo: true, sheet: T.pr_chart, explain: "prod_vol",
     loc: PAGE === "exec" ? null : T.pr_src(String(mo.source_sheet || "").trim()),
     chart: { kind: "timeseries", periods: mo.periods, series: [], other: null,
              truncated: false }, lines, i: CHARTS.length, range: null };
@@ -5301,7 +5352,7 @@ function renderProduction() {
     // as a 0% bar would be a fabricated number
     const pts = mo.periods.map((p, i) => [p, vr[i]])
       .filter(([, v]) => v != null);
-    const rc = { pseudo: true, sheet: T.pr_ratio_chart,
+    const rc = { pseudo: true, sheet: T.pr_ratio_chart, explain: "conv",
       loc: [avg != null ? T.pr_avg(`${(avg * 100).toFixed(1)}%`) : null, xs]
         .filter(Boolean).join(" · ") || null,
       chart: { kind: "profile", x: pts.map(p => p[0]),
@@ -5333,7 +5384,7 @@ function renderProduction() {
       stats.push(`<span>${derLabel(ub.basis)} <b>${compact(actual[lastIdx])}</b>
         <b style="color:var(--${over ? "critical" : "good"})">${T.pr_vs_budget(pct, ub.target_period)}</b></span>`);
     }
-    const cc = { pseudo: true, sheet: T.pr_cost_chart,
+    const cc = { pseudo: true, sheet: T.pr_cost_chart, explain: "cost_budget",
       loc: T.pr_cost_target(compact(ub.target), ub.target_period),
       chart: { kind: "timeseries", periods: mo.periods, series: [],
                other: null, truncated: false },
@@ -5353,7 +5404,7 @@ function renderProduction() {
   const pvaCards = Object.entries(pva).slice(0, 3).map(([role, v]) => {
     if (v.pct_of_plan_total != null)
       stats.push(`<span>${ROLE_LABELS[role] || role} <b>${T.pva_of_plan(v.pct_of_plan_total)}</b></span>`);
-    const cc = { pseudo: true, sheet: T.pva_chart(ROLE_LABELS[role] || role),
+    const cc = { pseudo: true, sheet: T.pva_chart(ROLE_LABELS[role] || role), explain: "pva",
       loc: PAGE === "exec" ? null : T.pr_src(esc(String(v.plan_sheet || "").trim())),
       chart: { kind: "timeseries", periods: mo.periods, series: [],
                other: null, truncated: false },
@@ -5371,6 +5422,7 @@ function renderProduction() {
     ? `<p class="chcap" style="margin-top:12px">${T.pva_gap}</p>` : "";
 
   return `<section id="sec-production"><span class="kicker">${T.pr_kicker}</span>
+    <p class="chcap" style="margin:6px 0 10px;max-width:80ch">${T.pr_intro}</p>
     ${stats.length ? `<div class="statbar">${stats.join("")}</div>` : ""}
     <div class="grid2">${chartCard(volChart, false)}${ratioCard}${costCard}${pvaCards}</div>
     ${pvaGap}
@@ -5960,6 +6012,7 @@ let SHOWALL = false;
 function renderChartGrid() {
   const vis = visCharts().filter(c => !c.pseudo);
   if (!vis.length) return `<div class="card muted">${CHARTS.length ? T.ch_none_f : T.ch_none}</div>`;
+  const intro = `<p class="chcap" style="margin:0 0 12px;max-width:80ch">${T.tr_intro}</p>`;
   // progressive disclosure: a uniform grid of the first six, the rest
   // behind an explicit overflow card
   const show = (SHOWALL || vis.length <= 6) ? vis : vis.slice(0, 5);
@@ -5970,7 +6023,53 @@ function renderChartGrid() {
         vis.slice(show.length, show.length + 4).map(c => esc(c.sheet.trim().slice(0, 22))).join(", ")}…</div>
       <span class="seeall">${T.tr_showall} →</span>
     </div>` : "";
-  return `<div class="grid2">${show.map(c => chartCard(c, false)).join("")}${over}</div>`;
+  return `${intro}<div class="grid2">${show.map(c => chartCard(c, false)).join("")}${over}</div>`;
+}
+
+/* every chart can explain itself: where the numbers come from, what the
+   chart is, and what the values did — all deterministic, computed or
+   quoted from the pipeline, never invented */
+function explainBlock(c) {
+  const T2 = T.xp_defs || {};
+  let src, what;
+  if (c.pseudo) {
+    if (!c.explain || !T2[c.explain]) return "";
+    src = T.xp_src_model;
+    what = T2[c.explain];
+  } else {
+    src = T.xp_src_raw(esc(String(c.sheet).trim()));
+    const labels = (c.lines || []).slice(0, 4).map(l => esc(l.label.slice(0, 30)));
+    what = c.chart.kind === "timeseries"
+      ? T.xp_what_raw(labels.join(" · ") || "—")
+      : T.xp_what_prof;
+  }
+  const reads = [];
+  const line = (c.lines || [])[0];
+  if (line && c.chart.kind === "timeseries") {
+    const v = line.values, per = c.chart.periods;
+    const fi = v.findIndex(x => x != null);
+    let li = -1; v.forEach((x, i) => { if (x != null) li = i; });
+    if (fi >= 0 && li > fi) {
+      const chg = v[fi] ? Math.round((v[li] / v[fi] - 1) * 100) : null;
+      reads.push(`${esc(String(line.label).slice(0, 28))} — ` +
+        T.xp_window(esc(fmtPeriod(per[fi])), compact(v[fi]),
+          esc(fmtPeriod(per[li])), compact(v[li]),
+          chg != null ? `${chg >= 0 ? "+" : "−"}${Math.abs(chg)}%` : null));
+    }
+  }
+  if (!c.pseudo) {
+    // the backend's own bilingual insight sentences for this sheet
+    (REPORT.insights || [])
+      .filter(i => i.sheet === c.sheet && (i.message || i.message_fr))
+      .slice(0, 2)
+      .forEach(i => reads.push(esc(
+        (LANG === "fr" ? i.message_fr : i.message) || i.message)));
+  }
+  const row = (k, v) => v ? `<div class="xrow"><span class="xk">${k}</span><span>${v}</span></div>` : "";
+  return `<details class="explain"><summary>ⓘ ${T.xp_t}</summary>
+    ${row(T.xp_src_k, src)}${row(T.xp_what_k, what)}
+    ${reads.map(r => row(T.xp_read_k, r)).join("")}
+  </details>`;
 }
 
 function chartCard(c, isPrimary) {
@@ -6005,7 +6104,7 @@ function chartCard(c, isPrimary) {
     <div class="card-head"><span class="ct">${esc(c.sheet)}</span><span class="cs">${esc(sub)}</span>
       <span class="grow"></span>${cumBtn}${csvBtn}</div>
     <div class="plot">${c.chart.kind === "timeseries" ? svgTimeseries(c) : svgProfile(c)}</div>
-    ${legend}${cap ? `<div class="chcap">${cap}</div>` : ""}${hint}<div class="tooltip"></div></div>`;
+    ${legend}${cap ? `<div class="chcap">${cap}</div>` : ""}${explainBlock(c)}${hint}<div class="tooltip"></div></div>`;
 }
 
 function yScale(vals) {
