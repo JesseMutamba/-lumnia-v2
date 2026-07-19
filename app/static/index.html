@@ -850,9 +850,6 @@
   .kv .ksfx { font-family: var(--sans); font-size: 12.5px; font-weight: 650;
     letter-spacing: 0; }
   .kv .ksfx.warn { color: var(--warning); } .kv .ksfx.good { color: var(--good); }
-  .ccgrid { display: grid; grid-template-columns: 1.55fr 1fr; gap: 46px;
-    align-items: start; margin-top: 28px; }
-  @media (max-width: 1000px) { .ccgrid { grid-template-columns: 1fr; } }
   .qrow2 { display: grid; grid-template-columns: 66px minmax(0, 1fr) auto;
     gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--hairline);
     align-items: center; }
@@ -1017,6 +1014,13 @@ const compact = v => {
 const deltaPct = f => (f >= 1 ? "+" : "−") + Math.abs((f - 1) * 100).toFixed(0) + (LANG === "fr" ? " %" : "%");
 const pctFmt = (v, d = 0) => new Intl.NumberFormat(LOCALE, { maximumFractionDigits: d, minimumFractionDigits: d })
   .format(v) + (LANG === "fr" ? " %" : "%");
+// period labels: "2025-08-28" reads "août 2025" — formatting only; years
+// and anything not year-month shaped pass through untouched
+const perIntl = new Intl.DateTimeFormat(LOCALE, { month: "short", year: "numeric" });
+const fmtPeriod = p => {
+  const m = /^(\d{4})-(0[1-9]|1[0-2])/.exec(String(p));
+  return m ? perIntl.format(new Date(Date.UTC(+m[1], +m[2] - 1, 15))) : String(p);
+};
 
 /* Every customer-facing string, EN + FR. Values are strings or functions of
    the interpolated parts. Backend-computed text (formulas, EDA insight
@@ -3653,10 +3657,10 @@ function renderExecOverview() {
       if (pk < 0 || v > vals[pk]) pk = i; last = i; } });
     if (pk >= 0) cells.push(`<div class="kcell"><div class="kl">${T.ch_peak} — ${esc(titleCase(String(l.label).split(" — ")[0].slice(0, 18)))}</div>
       <div class="kv">${compact(vals[pk])}</div>
-      <div class="ks">${esc(String(primary.chart.periods[pk]))}</div></div>`);
+      <div class="ks">${esc(fmtPeriod(primary.chart.periods[pk]))}</div></div>`);
     if (last >= 0 && last !== pk) cells.push(`<div class="kcell"><div class="kl">${T.ch_latest}</div>
       <div class="kv">${compact(vals[last])}</div>
-      <div class="ks">${esc(String(primary.chart.periods[last]))}</div></div>`);
+      <div class="ks">${esc(fmtPeriod(primary.chart.periods[last]))}</div></div>`);
   }
   const checksTot = a.n_verified_relations + m;
   if (checksTot) cells.push(`<div class="kcell"><div class="kl">${T.t_verified}</div>
@@ -3793,7 +3797,7 @@ function storyChartExec(c) {
   const cap = execCapline(c);
   return `<div class="storyblock" data-sheet="${esc(c.sheet)}">
     <div class="card-head"><span class="stt">${esc(titleCase(c.sheet))}</span>
-      <span class="cs">${esc(String(c.chart.periods[lo]))} — ${esc(String(c.chart.periods[hi]))}</span></div>
+      <span class="cs">${esc(fmtPeriod(c.chart.periods[lo]))} — ${esc(fmtPeriod(c.chart.periods[hi]))}</span></div>
     <div class="plot">${svgTimeseries(c)}</div>${legend}
     ${cap ? `<p class="chcap" style="max-width:54ch">${cap}</p>` : ""}
   </div>`;
@@ -3807,8 +3811,8 @@ function execCapline(c) {
   vals.forEach((v, i) => { if (v != null) { if (pk < 0 || v > vals[pk]) pk = i; last = i; } });
   if (pk < 0 || pk === last) return "";
   return T.cap_line(esc(s.label.slice(0, 30)), compact(vals[pk]),
-    esc(String(c.chart.periods[pk])), compact(vals[last]),
-    esc(String(c.chart.periods[last])));
+    esc(fmtPeriod(c.chart.periods[pk])), compact(vals[last]),
+    esc(fmtPeriod(c.chart.periods[last])));
 }
 
 /* ---------- redesigned overview: analyst (terminal-grade) ---------- */
@@ -4584,7 +4588,7 @@ function renderExecDashboard() {
     const varr = ub.variance_pct[ai];
     if (av != null) cells.push(`<div class="kcell ${varr > 0 ? "crit" : ""}"><div class="kl">${T.xd_cost_actual}</div>
       <div class="kv">${compact(av)}</div>
-      <div class="ks">${esc(String(m.monthly.periods[ai]))} · ${T.xd_vsb(compact(ub.target))}${varr != null
+      <div class="ks">${esc(fmtPeriod(m.monthly.periods[ai]))} · ${T.xd_vsb(compact(ub.target))}${varr != null
         ? ` · ${varr >= 0 ? "+" : "−"}${Math.abs(varr).toFixed(0)}%` : ""}</div></div>`);
   } else if (cu && cu[0] != null) {
     const cuVol = cuOut ? met.volume_secondary : met.volume;
@@ -5206,7 +5210,7 @@ function renderProduction() {
   if (prim) {
     let pi = -1, pv = -Infinity;
     prim.values.forEach((v, i) => { if (v != null && v > pv) { pv = v; pi = i; } });
-    if (pi >= 0) stats.push(`<span>${T.pr_peak} <b>${esc(String(mo.periods[pi]))}</b>
+    if (pi >= 0) stats.push(`<span>${T.pr_peak} <b>${esc(fmtPeriod(mo.periods[pi]))}</b>
       <span class="muted">(${compact(pv)})</span></span>`);
   }
 
@@ -6011,7 +6015,7 @@ function svgTimeseries(c) {
   const step = Math.max(1, Math.ceil(n / 6));
   for (let i = 0; i < n; i += step) {
     out += baselineTick(sx(i), y0) +
-      `<text x="${sx(i)}" y="${H - 8}" text-anchor="middle" ${AXIS_FONT}>${esc(String(c.chart.periods[idx(i)]).slice(0, 10))}</text>`;
+      `<text x="${sx(i)}" y="${H - 8}" text-anchor="middle" ${AXIS_FONT}>${esc(fmtPeriod(c.chart.periods[idx(i)]))}</text>`;
   }
   // primary = the first visible series: gold, heavier; the rest are context
   const primary = on[0];
@@ -6055,7 +6059,7 @@ function svgTimeseries(c) {
       last = i;
     }
     if (pk != null) {
-      const per = i => String(c.chart.periods[idx(i)]).slice(0, 10);
+      const per = i => fmtPeriod(c.chart.periods[idx(i)]);
       out += annotate(sx(pk), sy(pv[idx(pk)]), `${T.ch_peak} · ${per(pk)}`,
         compact(pv[idx(pk)]), pk > n * .8 ? "end" : pk < n * .15 ? "start" : "middle");
       if (last != null && last !== pk)
@@ -6113,7 +6117,7 @@ function svgProfile(c) {
       out += `<text x="${(x + bw / 2).toFixed(1)}" y="${top - 6}" text-anchor="middle" font-size="10.5"
         font-weight="${i === iMax ? "600" : "400"}" fill="#201d17"
         font-family="'IBM Plex Mono',ui-monospace,monospace">${compact(v)}</text>`;
-    if (i % step === 0) out += `<text x="${x + bw / 2}" y="${H - 8}" text-anchor="middle" ${AXIS_FONT}>${esc(String(c.chart.x[i]).slice(0, 12))}</text>`;
+    if (i % step === 0) out += `<text x="${x + bw / 2}" y="${H - 8}" text-anchor="middle" ${AXIS_FONT}>${esc(fmtPeriod(c.chart.x[i]).slice(0, 12))}</text>`;
   });
   if (cum) {
     const mean = ys.reduce((a, b) => a + b, 0) / n, my = sy(mean);

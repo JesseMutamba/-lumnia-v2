@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import html as _html
+import re as _re
 from typing import Any, Dict, List, Optional
 
 # selectable blocks, in reading order
@@ -90,6 +91,29 @@ _STR = {
 }
 
 
+# month abbreviations, deterministic — no locale machinery
+_MONTHS = {
+    "en": ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+    "fr": ["janv.", "févr.", "mars", "avr.", "mai", "juin",
+           "juil.", "août", "sept.", "oct.", "nov.", "déc."],
+}
+
+_PERIOD_RX = _re.compile(r"^(\d{4})-(\d{2})")
+
+
+def _period(p: str, lang: str) -> str:
+    """'2026-01-28' reads 'janv. 2026' / 'Jan 2026'; anything that isn't a
+    year-month string passes through untouched."""
+    m = _PERIOD_RX.match(str(p))
+    if not m:
+        return str(p)
+    month = int(m.group(2))
+    if not 1 <= month <= 12:
+        return str(p)
+    return f"{_MONTHS[lang][month - 1]} {m.group(1)}"
+
+
 def _fmt(v: Optional[float], lang: str, dec: Optional[int] = None) -> str:
     if v is None:
         return "—"
@@ -156,7 +180,8 @@ def _svg_bars(periods: List[str], series: List[tuple], lang: str,
                 f'width="{bw:.1f}" height="{bh:.1f}" fill="{color}"/>')
         labels.append(
             f'<text x="{ml + i * group + group / 2:.1f}" y="{h - 6}" '
-            f'text-anchor="middle" class="ax">{_html.escape(p[:7])}</text>')
+            f'text-anchor="middle" class="ax">'
+            f'{_html.escape(_period(p, lang))}</text>')
     grid = (f'<line x1="{ml}" y1="{mt + ph}" x2="{w - mr}" y2="{mt + ph}" '
             f'stroke="#ddd4bf"/>'
             f'<text x="{ml}" y="{mt - 3}" class="ax">'
@@ -253,7 +278,8 @@ def _table_section(mo: Dict[str, Any], lang: str) -> str:
                          "revenue") if r in met]
     if not order:
         return ""
-    head = "".join(f"<th>{_html.escape(p[:7])}</th>" for p in periods)
+    head = "".join(f"<th>{_html.escape(_period(p, lang))}</th>"
+                   for p in periods)
     rows = []
     for role in order:
         m = met[role]
@@ -288,7 +314,8 @@ def render_report_html(report: Dict[str, Any], audit: Optional[Dict[str, Any]],
     periods = mo.get("periods") or []
     stem = str(report.get("filename") or "").rsplit(".", 1)[0]
     title = s["title"](stem)
-    window = s["window"](periods[0][:7], periods[-1][:7], len(periods)) \
+    window = s["window"](_period(periods[0], lang),
+                         _period(periods[-1], lang), len(periods)) \
         if periods else ""
     today = _dt.date.today().isoformat()
 

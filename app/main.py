@@ -127,7 +127,8 @@ def run_pipeline(content: bytes, filename: str) -> AnalyzeResponse:
     except Exception as exc:  # unreadable file -> fail honest, don't 500 blindly
         raise HTTPException(
             status_code=422,
-            detail=f"Could not read '{filename}': {exc}",
+            detail=_bi(f"Could not read '{filename}'",
+                       f"Impossible de lire « {filename} »") + f" — {exc}",
         )
 
     total_cells = sum(int(df.shape[0]) * int(df.shape[1])
@@ -135,10 +136,13 @@ def run_pipeline(content: bytes, filename: str) -> AnalyzeResponse:
     if total_cells > MAX_TOTAL_CELLS:
         raise HTTPException(
             status_code=422,
-            detail=f"'{filename}' has {total_cells:,} cells across "
-                   f"{len(sheets)} sheet(s); the limit is "
-                   f"{MAX_TOTAL_CELLS:,}. Split the workbook or remove "
-                   f"unused sheets.")
+            detail=_bi(
+                f"'{filename}' has {total_cells:,} cells; the limit is "
+                f"{MAX_TOTAL_CELLS:,} — split the workbook or remove unused "
+                "sheets.",
+                f"« {filename} » compte {total_cells:,} cellules ; la limite "
+                f"est {MAX_TOTAL_CELLS:,} — scindez le classeur ou retirez "
+                "les feuilles inutiles."))
 
     reports = []
     for name, df in sheets.items():
@@ -217,6 +221,13 @@ def _collect_stories(reports) -> list:
     return [s for _score, s in scored[:MAX_STORIES]]
 
 
+def _bi(en: str, fr: str) -> str:
+    """User-facing error copy: one line, both languages — the UI surfaces
+    these raw and the reader may work in either. EN leads, FR rides, same
+    convention as the sign-in answers."""
+    return f"{en} · {fr}"
+
+
 _INDEX = Path(__file__).parent / "static" / "index.html"
 
 
@@ -255,12 +266,16 @@ def health() -> HealthResponse:
 async def analyze(file: UploadFile = File(...)) -> AnalyzeResponse:
     content = await file.read()
     if not content:
-        raise HTTPException(status_code=400, detail="Empty upload.")
+        raise HTTPException(status_code=400,
+                            detail=_bi("Empty upload.", "Fichier vide."))
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(
             status_code=413,
-            detail=f"File is {len(content) / 1e6:.1f} MB; the limit is "
-                   f"{MAX_UPLOAD_BYTES / 1e6:.0f} MB.")
+            detail=_bi(
+                f"File is {len(content) / 1e6:.1f} MB; the limit is "
+                f"{MAX_UPLOAD_BYTES / 1e6:.0f} MB.",
+                f"Le fichier fait {len(content) / 1e6:.1f} Mo ; la limite "
+                f"est {MAX_UPLOAD_BYTES / 1e6:.0f} Mo."))
 
     # Identical bytes already analyzed -> return the stored analysis instead
     # of silently growing the library with duplicates.
@@ -551,8 +566,11 @@ def publish_analysis(analysis_id: str) -> dict:
     if n_open:
         raise HTTPException(
             status_code=409,
-            detail=f"{n_open} finding(s) still open — decide each one "
-                   f"(approve or flag) before publishing.")
+            detail=_bi(
+                f"{n_open} finding(s) still open — decide each one before "
+                "publishing.",
+                f"{n_open} anomalie(s) en attente — tranchez chacune avant "
+                "de publier."))
     info = storage.publish(analysis_id, build_exec_snapshot(report))
     label = storage.client_label(analysis_id)
     if label:                     # labeled work lands in the client hub too
@@ -600,7 +618,8 @@ def published_snapshot(token: str) -> dict:
     snap = storage.open_published(token)
     if snap is None:
         raise HTTPException(status_code=404,
-                            detail="This link is no longer active.")
+                            detail=_bi("This link is no longer active.",
+                                       "Ce lien n'est plus actif."))
     return snap
 
 
@@ -609,7 +628,8 @@ def published_page(token: str) -> FileResponse:
     """PUBLIC. The executive page shell; it fetches the snapshot above."""
     if not storage.published_token_exists(token):
         raise HTTPException(status_code=404,
-                            detail="This link is no longer active.")
+                            detail=_bi("This link is no longer active.",
+                                       "Ce lien n'est plus actif."))
     return FileResponse(_INDEX, media_type="text/html",
                         headers={"Cache-Control": "no-cache"})
 
@@ -822,8 +842,10 @@ def make_brief_report(analysis_id: str, lang: str = "en") -> dict:
     if not narrative.available():
         raise HTTPException(
             status_code=503,
-            detail="AI narrative is not configured on this server "
-                   "(set the ANTHROPIC_API_KEY secret).")
+            detail=_bi(
+                "AI narrative is not configured on this server.",
+                "La rédaction IA n'est pas configurée sur ce serveur.")
+            + " (ANTHROPIC_API_KEY)")
     report = storage.get_report(analysis_id)
     if report is None:
         raise HTTPException(status_code=404,
@@ -832,8 +854,11 @@ def make_brief_report(analysis_id: str, lang: str = "en") -> dict:
     if not label:
         raise HTTPException(
             status_code=409,
-            detail="Assign this analysis to a client first — the brief is "
-                   "delivered to the client's hub.")
+            detail=_bi(
+                "Assign this analysis to a client first — the brief goes "
+                "to the client's hub.",
+                "Rattachez d'abord cette analyse à un client — le brief "
+                "arrive dans son espace."))
     agg = aggregate_findings(report)
     facts = brief.build_brief_facts(report, agg)
     try:
@@ -867,14 +892,20 @@ def compose_report(analysis_id: str, req: ComposeReportRequest) -> dict:
     if n_open:
         raise HTTPException(
             status_code=409,
-            detail=f"{n_open} finding(s) still open — decide each one "
-                   f"(approve or flag) before delivering a report.")
+            detail=_bi(
+                f"{n_open} finding(s) still open — decide each one before "
+                "delivering a report.",
+                f"{n_open} anomalie(s) en attente — tranchez chacune avant "
+                "de livrer un rapport."))
     label = storage.client_label(analysis_id)
     if not label:
         raise HTTPException(
             status_code=409,
-            detail="Assign this analysis to a client first — the report is "
-                   "delivered to the client's hub.")
+            detail=_bi(
+                "Assign this analysis to a client first — the report goes "
+                "to the client's hub.",
+                "Rattachez d'abord cette analyse à un client — le rapport "
+                "arrive dans son espace."))
     unknown = [b for b in req.blocks if b not in compose.BLOCKS]
     if unknown:
         raise HTTPException(
@@ -888,9 +919,12 @@ def compose_report(analysis_id: str, req: ComposeReportRequest) -> dict:
     if not chosen:
         raise HTTPException(
             status_code=422,
-            detail="None of the requested blocks are computable from this "
-                   "workbook — nothing honest to deliver. "
-                   f"Available: {', '.join(avail) or 'none'}.")
+            detail=_bi(
+                "None of the requested blocks are computable from this "
+                "workbook — nothing honest to deliver.",
+                "Aucun des blocs demandés n'est calculable depuis ce "
+                "classeur — rien d'honnête à livrer.")
+            + f" ({', '.join(avail) or '—'})")
     lang = req.lang if req.lang in ("en", "fr") else "en"
     agg = aggregate_findings(report)
     html = compose.render_report_html(report, agg, label, lang, chosen)
@@ -912,8 +946,11 @@ async def add_client_file(client: str, file: UploadFile = File(...),
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(
             status_code=413,
-            detail=f"'{file.filename}' exceeds the "
-                   f"{MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit.")
+            detail=_bi(
+                f"'{file.filename}' exceeds the "
+                f"{MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit.",
+                f"« {file.filename} » dépasse la limite de "
+                f"{MAX_UPLOAD_BYTES // (1024 * 1024)} Mo."))
     d = storage.add_file_deliverable(client, file.filename or "", content,
                                      group=group, title=title)
     if d is None:
@@ -930,11 +967,13 @@ def portal_file(token: str) -> FileResponse:
     did = auth.read_expiring_token(token, "file", storage.app_secret())
     if did is None:
         raise HTTPException(status_code=404,
-                            detail="This link is no longer active.")
+                            detail=_bi("This link is no longer active.",
+                                       "Ce lien n'est plus actif."))
     found = storage.file_deliverable_path(did)
     if found is None:
         raise HTTPException(status_code=404,
-                            detail="This link is no longer active.")
+                            detail=_bi("This link is no longer active.",
+                                       "Ce lien n'est plus actif."))
     path, name = found
     media = mimetypes.guess_type(name)[0] or "application/octet-stream"
     inline = media in ("application/pdf", "text/html")
@@ -1029,8 +1068,11 @@ async def approve_access_request(request_id: str, request: Request) -> dict:
     if user is None:
         raise HTTPException(
             status_code=422,
-            detail="A client name is required, and the email must not "
-                   "already belong to another client.")
+            detail=_bi(
+                "A client name is required, and the email must not already "
+                "belong to another client.",
+                "Un nom de client est requis, et l'email ne doit pas déjà "
+                "appartenir à un autre client."))
     token = auth.make_client_token("link", user["id"], storage.app_secret())
     url = f"{str(request.base_url).rstrip('/')}/portal/login/{token}"
     emailed = False
@@ -1083,12 +1125,16 @@ async def portal_intake(request: Request,
     user = _client_identity(request)
     content = await file.read()
     if not content:
-        raise HTTPException(status_code=400, detail="Empty upload.")
+        raise HTTPException(status_code=400,
+                            detail=_bi("Empty upload.", "Fichier vide."))
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(
             status_code=413,
-            detail=f"File is {len(content) / 1e6:.1f} MB; the limit is "
-                   f"{MAX_UPLOAD_BYTES / 1e6:.0f} MB.")
+            detail=_bi(
+                f"File is {len(content) / 1e6:.1f} MB; the limit is "
+                f"{MAX_UPLOAD_BYTES / 1e6:.0f} MB.",
+                f"Le fichier fait {len(content) / 1e6:.1f} Mo ; la limite "
+                f"est {MAX_UPLOAD_BYTES / 1e6:.0f} Mo."))
     existing = storage.find_by_content(content)
     if existing is not None:
         # same bytes, no duplicate row — but NEVER reassign an analysis a
@@ -1169,7 +1215,8 @@ def portal_snapshot(token: str) -> dict:
     view = storage.open_portal(token)
     if view is None:
         raise HTTPException(status_code=404,
-                            detail="This link is no longer active.")
+                            detail=_bi("This link is no longer active.",
+                                       "Ce lien n'est plus actif."))
     return view
 
 
@@ -1178,7 +1225,8 @@ def portal_page(token: str) -> FileResponse:
     """PUBLIC. The portal page shell; it fetches the listing above."""
     if not storage.portal_token_exists(token):
         raise HTTPException(status_code=404,
-                            detail="This link is no longer active.")
+                            detail=_bi("This link is no longer active.",
+                                       "Ce lien n'est plus actif."))
     return FileResponse(_INDEX, media_type="text/html",
                         headers={"Cache-Control": "no-cache"})
 
@@ -1194,8 +1242,10 @@ def make_narrative(analysis_id: str, lang: str = "en") -> dict:
     if not narrative.available():
         raise HTTPException(
             status_code=503,
-            detail="AI narrative is not configured on this server "
-                   "(set the ANTHROPIC_API_KEY secret).")
+            detail=_bi(
+                "AI narrative is not configured on this server.",
+                "La rédaction IA n'est pas configurée sur ce serveur.")
+            + " (ANTHROPIC_API_KEY)")
     report = storage.get_report(analysis_id)
     if report is None:
         raise HTTPException(status_code=404,
