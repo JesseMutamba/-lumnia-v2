@@ -1080,6 +1080,17 @@ const STR = {
     pr_vs_budget: (p, y) => p == null ? "" :
       `${p > 0 ? "▲" : "▼"} ${Math.abs(p)}% vs budget ${y}`,
     tab_data: "Data", tab_trends: "Trends", tab_audit: "Audit", tab_actions: "Actions",
+    tab_journal: "Journal",
+    jn_intro: "Deep audit of the cash journals: every line of the consolidated and DGO journals re-checked (matching, balances, codes, duplicates), then re-aggregated by code and month straight from the dates — the Excel SUMIF ranges are not trusted.",
+    jn_rows: "Journal rows", jn_tieout: "Tie-out", jn_rate: "Rate",
+    jn_dgo: "DGO outflows", jn_findings: "Findings",
+    jn_ftitle: "Journal findings",
+    jn_fsub: "rules V1–V8 · ranked by severity, then amount",
+    jn_rule: "Rule", jn_lib: "Label", jn_msg: "What's wrong",
+    jn_clean: "Every journal check passed.",
+    jn_atitle: "Spend by section × month",
+    jn_asub: "CDF sorties, date-driven — the single complete spend series",
+    jn_section: "Section",
     sheets_analyzed: n => `${n} sheet${n === 1 ? "" : "s"} analyzed`,
     shared_view: "shared view", mode_exec: "Executive", mode_analyst: "Analyst",
     btn_report: "Report", btn_share: "Publish", btn_corrections: "Corrections CSV",
@@ -1599,6 +1610,17 @@ const STR = {
     pr_vs_budget: (p, y) => p == null ? "" :
       `${p > 0 ? "▲" : "▼"} ${Math.abs(p)} % vs budget ${y}`,
     tab_data: "Données", tab_trends: "Tendances", tab_audit: "Audit", tab_actions: "À faire",
+    tab_journal: "Journal",
+    jn_intro: "Audit approfondi des journaux de caisse : chaque ligne des journaux consolidé et DGO revérifiée (rapprochement, soldes, codes, doublons), puis réagrégée par code et par mois directement depuis les dates — les plages SUMIF d'Excel ne sont pas de confiance.",
+    jn_rows: "Lignes de journal", jn_tieout: "Rapprochement", jn_rate: "Taux",
+    jn_dgo: "Sorties DGO", jn_findings: "Constats",
+    jn_ftitle: "Constats des journaux",
+    jn_fsub: "règles V1–V8 · classés par gravité, puis montant",
+    jn_rule: "Règle", jn_lib: "Libellé", jn_msg: "Le problème",
+    jn_clean: "Tous les contrôles des journaux sont bons.",
+    jn_atitle: "Dépenses par section × mois",
+    jn_asub: "sorties CDF, pilotées par les dates — la seule série de dépense complète",
+    jn_section: "Section",
     sheets_analyzed: n => `${n} feuille${n === 1 ? "" : "s"} analysée${n === 1 ? "" : "s"}`,
     shared_view: "vue partagée", mode_exec: "Direction", mode_analyst: "Analyste",
     btn_report: "Rapport", btn_share: "Publier", btn_corrections: "CSV corrections",
@@ -2254,6 +2276,7 @@ const TAB_ICONS = {
   production: `<svg width="14" height="14" viewBox="0 0 14 14"><path d="M2 12V8l3 2V8l3 2V8l4-2.5V12z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M10.5 5.5V2.8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>`,
   data: `<svg width="14" height="14" viewBox="0 0 14 14"><path d="M1.5 11l3.4-4 2.7 2.3 4.9-6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   audit: `<svg width="14" height="14" viewBox="0 0 14 14"><path d="M2.5 7.4l3 3L11.5 4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  journal: `<svg width="14" height="14" viewBox="0 0 14 14"><rect x="2" y="1.5" width="10" height="11" rx="1" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M4.5 4.5h5M4.5 7h5M4.5 9.5h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>`,
 };
 
 function availableTabs() {
@@ -2269,6 +2292,7 @@ function availableTabs() {
     t.push(["production", T.tab_production]);
   if (REPORT.model && REPORT.model.scenario_ready) t.push(["whatif", T.tab_whatif]);
   t.push(["data", T.tab_trends]);
+  if (REPORT.journal) t.push(["journal", T.tab_journal]);
   t.push(["audit", T.tab_audit]);
   return t;
 }
@@ -3080,6 +3104,8 @@ function renderAll() {
       `<section id="sec-charts"><span class="kicker">${T.ch_trends}</span>${renderChartGrid()}</section>` +
       `<section id="sec-profile"><span class="kicker">${T.pf_kicker}</span>${renderProfile()}</section>` +
       `<section id="sec-sheets"><span class="kicker">${T.sh_kicker(r.n_sheets)}</span>${renderSheets()}</section>`;
+  } else if (TAB === "journal") {
+    body = renderJournal();
   } else if (TAB === "audit") {
     body = renderFilters() +
       `<section id="sec-audit"><span class="kicker">${T.tab_audit}</span>${renderHighlights()}${renderLeaderboards()}${renderFindingsTable()}</section>`;
@@ -3094,6 +3120,78 @@ function renderAll() {
 /* ---------- the Executive page (7d/7e): read-only over the audited data —
    no edit/map/decision controls; What-if levers stay interactive (they only
    explore, they never mutate the stored figures) ---------------------------- */
+/* ---------- the Journal tab: deep audit of contract cash journals ------- */
+const SEV_COLOR = { BLOCKER: "critical", HIGH: "critical", MED: "warning",
+                    LOW: "good" };
+
+function renderJournal() {
+  const j = REPORT.journal;
+  if (!j) return "";
+  const m = j.meta || {};
+  const stats = `<div class="statbar">
+    <span>${T.jn_rows} <b>${m.n_rows || 0}</b>
+      <span class="muted">(${m.n_site_rows || 0} site · ${m.n_dgo_rows || 0} DGO)</span></span>
+    <span>${T.jn_tieout} <b>${compact(m.tie_out_cdf || 0)}</b> CDF</span>
+    <span>${T.jn_rate} <b>${num(m.rate)}</b></span>
+    <span>${T.jn_dgo} <b>${compact(m.dgo_out_usd || 0)}</b> USD</span>
+    <span class="${m.n_high ? "sbbad" : "sbgood"}">${T.jn_findings} <b>${m.n_findings || 0}</b>
+      ${m.n_high ? `· ${m.n_high} HIGH` : ""}</span>
+  </div>`;
+
+  const frows = (j.findings || []).map(f => `<tr>
+      <td><span class="st" style="color:var(--${SEV_COLOR[f.sev] || "ink-2"})">${esc(f.rule)} · ${esc(f.sev)}</span></td>
+      <td>${esc(f.d || "—")}</td>
+      <td>${esc(f.code || "—")}</td>
+      <td>${esc(String(f.lib || "").slice(0, 44))}</td>
+      <td class="num">${f.usd ? compact(f.usd) : "—"}</td>
+      <td>${esc((LANG === "fr" ? f.msg_fr : f.msg) || f.msg)}</td>
+    </tr>`).join("");
+  const findings = `<div class="card" style="margin-top:14px">
+    <div class="card-head"><span class="ct">${T.jn_ftitle}</span>
+      <span class="cs">${T.jn_fsub}</span></div>
+    ${frows ? `<div class="preview-wrap" style="margin-top:8px"><table>
+      <thead><tr><th>${T.jn_rule}</th><th>Date</th><th>Code</th>
+        <th>${T.jn_lib}</th><th class="num">USD</th><th>${T.jn_msg}</th></tr></thead>
+      <tbody>${frows}</tbody></table></div>`
+    : `<p class="chcap" style="margin-top:10px">✓ ${T.jn_clean}</p>`}
+  </div>`;
+
+  // spend by section × month, sections subtotaled, UNMAPPED flagged
+  const months = j.months || [];
+  const bySec = new Map();
+  for (const c of j.cats || []) {
+    if (!bySec.has(c.sec)) bySec.set(c.sec, []);
+    bySec.get(c.sec).push(c);
+  }
+  const head = months.map(mo => `<th class="num">${esc(fmtPeriod(mo + "-01"))}</th>`).join("");
+  const secRows = [...bySec.entries()].map(([sec, cats]) => {
+    const tot = months.map((_, i) =>
+      cats.reduce((t, c) => t + (c.cdf[i] || 0), 0));
+    if (!tot.some(v => v)) return "";
+    const un = sec === "UNMAPPED";
+    const rows = cats.filter(c => c.cdf.some(v => v)).map(c => `<tr>
+        <td class="rl" style="padding-left:18px">${esc(c.code)} <span class="muted">${esc(String(c.label).slice(0, 26))}</span></td>
+        ${c.cdf.map(v => `<td class="num">${v ? compact(v) : "—"}</td>`).join("")}
+      </tr>`).join("");
+    return `<tr style="font-weight:650${un ? ";color:var(--critical)" : ""}">
+        <td class="rl">${un ? "⚠ " : ""}${esc(sec || "—")}</td>
+        ${tot.map(v => `<td class="num">${compact(v)}</td>`).join("")}
+      </tr>${rows}`;
+  }).join("");
+  const agg = `<div class="card" style="margin-top:14px">
+    <div class="card-head"><span class="ct">${T.jn_atitle}</span>
+      <span class="cs">${T.jn_asub}</span></div>
+    <div class="preview-wrap" style="margin-top:8px"><table>
+      <thead><tr><th>${T.jn_section}</th>${head}</tr></thead>
+      <tbody>${secRows}</tbody></table></div>
+  </div>`;
+
+  return `<section id="sec-journal"><span class="kicker">${T.tab_journal}</span>
+    <p class="chcap" style="margin:6px 0 10px;max-width:82ch">${T.jn_intro}</p>
+    ${stats}${findings}${agg}
+  </section>`;
+}
+
 function renderExecutivePage() {
   MODE = "exec";
   document.body.dataset.mode = "exec";
