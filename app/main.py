@@ -26,12 +26,13 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 
 import datetime as _dt
 
-from . import auth, brief, landing, mailer, narrative, storage
+from . import auth, brief, compose, landing, mailer, narrative, storage
 from .findings import DECISIONS, aggregate_findings, count_open
 from .snapshot import build_exec_snapshot
 from .models import (
     AnalysisMeta,
     AnalyzeResponse,
+    ComposeReportRequest,
     DecisionsRequest,
     DeleteResponse,
     DeliverableMeta,
@@ -811,6 +812,59 @@ def make_brief_report(analysis_id: str, lang: str = "en") -> dict:
     if d is None:                      # label vanished mid-flight
         raise HTTPException(status_code=409, detail="Client no longer exists.")
     return {**d, "lang": lang}
+
+
+@app.post("/analyses/{analysis_id}/compose-report")
+def compose_report(analysis_id: str, req: ComposeReportRequest) -> dict:
+    """Assemble the composed operations report from pipeline-computed blocks
+    and deliver it to the client hub as a versioned file deliverable.
+    Deterministic end to end — no AI, no scripts, charts as inline SVG.
+    Gated like publish (open findings refuse) and like the brief (409
+    without a client). Blocks the data cannot support are skipped and
+    declared; requesting ONLY unsupported blocks is a 422, not an empty
+    deliverable."""
+    report = storage.get_report(analysis_id)
+    if report is None:
+        raise HTTPException(status_code=404,
+                            detail=f"No analysis '{analysis_id}'.")
+    n_open = count_open(report)
+    if n_open:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{n_open} finding(s) still open — decide each one "
+                   f"(approve or flag) before delivering a report.")
+    label = storage.client_label(analysis_id)
+    if not label:
+        raise HTTPException(
+            status_code=409,
+            detail="Assign this analysis to a client first — the report is "
+                   "delivered to the client's hub.")
+    unknown = [b for b in req.blocks if b not in compose.BLOCKS]
+    if unknown:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unknown block(s): {', '.join(sorted(unknown))}. "
+                   f"Valid: {', '.join(compose.BLOCKS)}.")
+    avail = compose.available_blocks(report)
+    wanted = req.blocks or list(compose.BLOCKS)
+    chosen = [b for b in compose.BLOCKS if b in wanted and b in avail]
+    skipped = [b for b in wanted if b not in avail]
+    if not chosen:
+        raise HTTPException(
+            status_code=422,
+            detail="None of the requested blocks are computable from this "
+                   "workbook — nothing honest to deliver. "
+                   f"Available: {', '.join(avail) or 'none'}.")
+    lang = req.lang if req.lang in ("en", "fr") else "en"
+    agg = aggregate_findings(report)
+    html = compose.render_report_html(report, agg, label, lang, chosen)
+    stem = (report.get("filename") or analysis_id).rsplit(".", 1)[0]
+    d = storage.add_file_deliverable(
+        label, f"operations-report-{lang}.html", html.encode("utf-8"),
+        title=f"{compose._STR[lang]['kicker']} — {stem} ({lang.upper()})")
+    if d is None:                      # label vanished mid-flight
+        raise HTTPException(status_code=409, detail="Client no longer exists.")
+    return {**d, "blocks": chosen, "skipped": skipped, "lang": lang}
 
 
 @app.post("/clients/{client}/files")
