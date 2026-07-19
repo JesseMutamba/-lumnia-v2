@@ -1033,6 +1033,10 @@ const STR = {
     pr_xsheet: (out, inp) => `${out} ÷ ${inp}`,
     pr_gap_ratio: "Conversion rate not computed — the two volume series share fewer than 3 periods across sheets.",
     pr_outside: n => `(${n} period${n === 1 ? "" : "s"} outside the window excluded)`,
+    pva_chart: r => `Plan vs actual — ${r}`,
+    pva_plan: "Plan", pva_actual: "Actual",
+    pva_of_plan: p => `${p}% of plan`,
+    pva_gap: "A plan sheet was found, but fewer than 3 periods align with the actuals — plan vs actual not computed.",
     pr_cost_chart: "Cost per tonne — actual vs budget",
     pr_cost_target: (t, y) => `budget target ${t} (${y})`,
     pr_budget_line: y => `Budget ${y}`,
@@ -1509,6 +1513,10 @@ const STR = {
     pr_xsheet: (out, inp) => `${out} ÷ ${inp}`,
     pr_gap_ratio: "Taux de conversion non calculé — les deux séries de volume partagent moins de 3 périodes entre les feuilles.",
     pr_outside: n => `(${n} période${n === 1 ? "" : "s"} hors fenêtre exclue${n === 1 ? "" : "s"})`,
+    pva_chart: r => `Plan vs réel — ${r}`,
+    pva_plan: "Plan", pva_actual: "Réel",
+    pva_of_plan: p => `${p} % du plan`,
+    pva_gap: "Une feuille de plan a été trouvée, mais moins de 3 périodes coïncident avec le réel — comparaison plan/réel non calculée.",
     pr_cost_chart: "Coût par tonne — réel vs budget",
     pr_cost_target: (t, y) => `cible budget ${t} (${y})`,
     pr_budget_line: y => `Budget ${y}`,
@@ -5160,9 +5168,32 @@ function renderProduction() {
     costCard = chartCard(cc, false);
   }
 
+  // plan vs actual: pipeline-computed attainment — this block only formats
+  const pva = mo.plan_vs_actual || {};
+  const pvaCards = Object.entries(pva).slice(0, 3).map(([role, v]) => {
+    if (v.pct_of_plan_total != null)
+      stats.push(`<span>${ROLE_LABELS[role] || role} <b>${T.pva_of_plan(v.pct_of_plan_total)}</b></span>`);
+    const cc = { pseudo: true, sheet: T.pva_chart(ROLE_LABELS[role] || role),
+      loc: PAGE === "exec" ? null : T.pr_src(esc(String(v.plan_sheet || "").trim())),
+      chart: { kind: "timeseries", periods: mo.periods, series: [],
+               other: null, truncated: false },
+      lines: [
+        { label: `${ROLE_LABELS[role] || role} — ${T.pva_actual}`,
+          values: (met[role] || {}).values || [],
+          color: SERIES_COLORS[0], on: true },
+        { label: T.pva_plan, values: v.plan, color: OTHER_COLOR, on: true },
+      ], i: CHARTS.length, range: null };
+    CHARTS.push(cc);
+    return chartCard(cc, false);
+  }).join("");
+  const pvaGap = ((REPORT.model && REPORT.model.gaps) || [])
+    .some(g => g.metric === "plan_vs_actual" && g.grain === "monthly")
+    ? `<p class="chcap" style="margin-top:12px">${T.pva_gap}</p>` : "";
+
   return `<section id="sec-production"><span class="kicker">${T.pr_kicker}</span>
     ${stats.length ? `<div class="statbar">${stats.join("")}</div>` : ""}
-    <div class="grid2">${chartCard(volChart, false)}${ratioCard}${costCard}</div>
+    <div class="grid2">${chartCard(volChart, false)}${ratioCard}${costCard}${pvaCards}</div>
+    ${pvaGap}
   </section>`;
 }
 

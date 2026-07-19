@@ -72,9 +72,11 @@ RATE_SERIES_RX = re.compile(
 
 # The actual-vs-budget comparison only renders when the year spine really IS
 # a plan — an honest "vs budget" claim needs a budget-shaped source, not any
-# historical year series that happens to share the axis.
-BUDGET_SHEET_RX = re.compile(r"budget|pr[ée]vision(nel)?s?|forecast|\bplan\b",
-                             re.IGNORECASE)
+# historical year series that happens to share the axis. The same shape marks
+# a MONTHLY sheet as a plan pool: compared to actuals, never merged into them.
+BUDGET_SHEET_RX = re.compile(
+    r"budget|pr[ée]vision(nel)?s?|forecast|\bplan\b|projections?",
+    re.IGNORECASE)
 
 
 def _tidies(report_sheets) -> List[tuple]:
@@ -103,17 +105,24 @@ def _year_charts(report_sheets) -> List[tuple]:
     return out
 
 
-def _tag_roles(chart: dict) -> Dict[str, dict]:
+def _tag_roles(chart: dict, plan: bool = False) -> Dict[str, dict]:
     """role -> best matching series (largest |total|) within one chart.
 
     When TWO distinct series role-tag as volume (e.g. FFB harvested and CPO
     produced), the runner-up is kept as ``volume_secondary`` so the model can
     derive a conversion ratio between them.
+
+    ``plan=True`` (a chart from a plan-shaped sheet) skips the generic
+    "budget" pattern so a prévu-labeled row falls through to its SUBSTANTIVE
+    role — "PRODUCTION PRÉVUE" on a plan sheet is a production plan, not a
+    budget line.
     """
     matches: Dict[str, List[dict]] = {}
     for s in chart["series_all"]:
         label = s["label"]
         for role, rx in ROLE_PATTERNS:
+            if plan and role == "budget":
+                continue
             if role != "price" and RATE_SERIES_RX.search(str(label)):
                 continue                 # a rate row is no level series
             if rx.search(label):
@@ -192,7 +201,8 @@ def _pair_volumes(roles: Dict[str, dict], entry: dict,
 
 
 def _supplement(spine_periods: List[str], roles: Dict[str, dict],
-                others: List[tuple], grain: str) -> List[Dict[str, str]]:
+                others: List[tuple], grain: str,
+                plan: bool = False) -> List[Dict[str, str]]:
     """Fill roles the spine chart lacks from OTHER charts of the same grain,
     re-indexed onto the spine axis. A second volume series found on another
     sheet becomes the conversion pair (volume_secondary) via _pair_volumes;
@@ -207,7 +217,7 @@ def _supplement(spine_periods: List[str], roles: Dict[str, dict],
         identical = ch_periods == spine_periods
         # _tag_roles inserts volume before volume_secondary, so a sheet's
         # primary always lands before its secondary rides along
-        for role, series in _tag_roles(ch).items():
+        for role, series in _tag_roles(ch, plan=plan).items():
             vals = series["values"] if identical \
                 else _reindex(series["values"], ch_periods, spine_periods)
             entry = {**series, "values": vals, "_sheet": name}
@@ -390,13 +400,20 @@ def _monthly_block(report_sheets,
     volumes out, per period — with the same derived arithmetic (the monthly
     conversion ratio IS the extraction rate). Other date-axis charts
     supplement missing roles across sheets, joined on the spine axis.
+
+    Charts from plan-shaped sheets (BUDGET/PLAN/PREVISIONS/PROJECTIONS) are
+    a SEPARATE pool: plan series are compared to the actuals, never merged
+    into them — a plan number presented as an actual is a fabrication.
     None when nothing tags."""
-    charts = []
+    charts, plan_charts = [], []
     for name, _, tidy in _tidies(report_sheets):
         ch = (tidy.get("summary") or {}).get("chart")
         if (ch and ch.get("kind") == "timeseries"
                 and ch.get("axis") != "year" and ch.get("series_all")):
-            charts.append((name, ch))
+            if BUDGET_SHEET_RX.search(str(name)):
+                plan_charts.append((name, ch))
+            else:
+                charts.append((name, ch))
     best = None
     for name, ch in charts:
         roles = _tag_roles(ch)
@@ -410,10 +427,83 @@ def _monthly_block(report_sheets,
                             [(n, c) for n, c in charts if c is not ch],
                             "monthly"))
     metrics = _public_metrics(roles, name)
-    return {"periods": periods,
-            "source_sheet": name,
-            "metrics": metrics,
-            "derived": derive_metrics(metrics)}
+    mo = {"periods": periods,
+          "source_sheet": name,
+          "metrics": metrics,
+          "derived": derive_metrics(metrics)}
+    pva = _plan_vs_actual(mo, plan_charts, gaps)
+    if pva:
+        mo["plan_vs_actual"] = pva
+    return mo
+
+
+def _plan_block(plan_charts: List[tuple]) -> Optional[Dict[str, Any]]:
+    """The plan pool folded into one role map, same spine-and-supplement
+    shape as the actuals. Plan-internal alignment gaps are not surfaced —
+    the plan is a comparison source, not a rendered story."""
+    best = None
+    for name, ch in plan_charts:
+        roles = _tag_roles(ch, plan=True)
+        if roles and (best is None or len(roles) > len(best[2])):
+            best = (name, ch, roles)
+    if best is None:
+        return None
+    name, ch, roles = best
+    periods = [str(p) for p in ch["periods"]]
+    _supplement(periods, roles,
+                [(n, c) for n, c in plan_charts if c is not ch],
+                "monthly", plan=True)
+    return {"periods": periods, "source_sheet": name,
+            "metrics": _public_metrics(roles, name)}
+
+
+def _plan_vs_actual(monthly: Dict[str, Any], plan_charts: List[tuple],
+                    gaps: List[Dict[str, str]]) -> Optional[Dict[str, Any]]:
+    """Attainment against the plan, role by role: the plan re-indexed onto
+    the ACTUALS axis (exact period-string equality), pct_of_plan cell by
+    cell, totals over the common window only. Fewer than 3 aligned pairs
+    for every shared role is an honest gap, never a number."""
+    plan = _plan_block(plan_charts)
+    if plan is None:
+        return None
+    out: Dict[str, Any] = {}
+    misaligned = False
+    for role, pm in plan["metrics"].items():
+        if role == "volume_secondary":
+            continue                   # the pair story belongs to actuals
+        am = monthly["metrics"].get(role)
+        if am is None:
+            continue                   # a plan with no actual: no claim
+        vals = _reindex(pm["values"], plan["periods"], monthly["periods"])
+        both = [(a, p) for a, p in zip(am["values"], vals)
+                if a is not None and p is not None]
+        if len(both) < MIN_XSHEET_OVERLAP:
+            misaligned = True
+            continue
+        plan_total = sum(p for _, p in both)
+        actual_total = sum(a for a, _ in both)
+        out[role] = {
+            "plan": vals,
+            "plan_label": pm["label"],
+            "plan_sheet": pm["sheet"],
+            "pct_of_plan": [round(a / p * 100, 1)
+                            if a is not None and p is not None and p != 0
+                            else None
+                            for a, p in zip(am["values"], vals)],
+            "plan_total": round(plan_total, 4),
+            "actual_total": round(actual_total, 4),
+            "pct_of_plan_total": round(actual_total / plan_total * 100, 1)
+            if plan_total else None,
+        }
+    if not out and misaligned:
+        gaps.append({
+            "metric": "plan_vs_actual",
+            "grain": "monthly",
+            "reason": "a plan sheet was found but fewer than "
+                      f"{MIN_XSHEET_OVERLAP} periods align with the actuals",
+            "requires": f"{MIN_XSHEET_OVERLAP}+ overlapping periods "
+                        "between plan and actuals"})
+    return out or None
 
 
 def _public_metrics(roles: Dict[str, dict],
