@@ -1162,6 +1162,14 @@ const STR = {
     cl_deliver: "Deliver a file",
     cl_deliver_sub: "PDF, HTML dashboard or spreadsheet — lands in the client's hub, versioned by title.",
     cl_delivered: (t, v) => `Delivered — “${t}” v${v} is live in the client's hub.`,
+    cl_an_off: "Analyst access: off",
+    cl_an_on: "Analyst access: ON",
+    cl_an_sub: "Opens read-only audit detail on this client's dashboards — for their internal analysts. The executive view stays the default.",
+    pd_audit_t: "Audit — analyst detail",
+    pd_audit_sub: "Live reconciliation audit of the source workbook, opened for your analysts by Lumnia. Read-only.",
+    pd_flagged: "flagged", pd_unverified: "unverified",
+    pd_sheet: "Sheet", pd_rel: "Relation", pd_checked: "Checked",
+    pd_mis: "Mismatched", pd_worst: "Largest gap", pd_status: "Status",
     cl_deliv_kicker: "In the client's hub",
     cl_open: "Open",
     cl_link_hint: "Send this sign-in link:",
@@ -1655,6 +1663,14 @@ const STR = {
     cl_deliver: "Remettre un fichier",
     cl_deliver_sub: "PDF, tableau de bord HTML ou tableur — arrive dans l'espace du client, versionné par titre.",
     cl_delivered: (t, v) => `Remis — « ${t} » v${v} est en ligne dans l'espace du client.`,
+    cl_an_off: "Accès analyste : non",
+    cl_an_on: "Accès analyste : OUI",
+    cl_an_sub: "Ouvre le détail d'audit en lecture seule sur les tableaux de bord de ce client — pour ses analystes internes. La vue direction reste la norme.",
+    pd_audit_t: "Audit — détail analyste",
+    pd_audit_sub: "Audit de rapprochement en direct du classeur source, ouvert pour vos analystes par Lumnia. Lecture seule.",
+    pd_flagged: "signalées", pd_unverified: "non vérifiées",
+    pd_sheet: "Feuille", pd_rel: "Relation", pd_checked: "Vérifiés",
+    pd_mis: "Écarts", pd_worst: "Plus grand écart", pd_status: "Statut",
     cl_deliv_kicker: "Dans l'espace du client",
     cl_open: "Ouvrir",
     cl_link_hint: "Envoyez ce lien de connexion :",
@@ -2286,7 +2302,36 @@ async function select(id) {
 }
 
 /* ---------- the public published page: frozen exec snapshot only -------- */
-function renderPublishedPage(snap) {
+function auditDetailSection(a) {
+  const rows = (a.findings || []).concat(a.unverified || []).slice(0, 40)
+    .map(f => {
+      const worst = (f.mismatches || [])[0];
+      const st = f.status || "unverified";
+      return `<tr><td>${esc(String(f.sheet || ""))}</td>
+        <td>${esc(String(f.target || ""))} = ${esc((f.inputs || []).join(" + ").slice(0, 42))}</td>
+        <td class="num">${f.n_checked ?? "—"}</td>
+        <td class="num">${f.n_mismatched ?? "—"}</td>
+        <td>${worst ? `${esc(String(worst.label || "").slice(0, 24))}: ${compact(worst.expected)} ≠ ${compact(worst.actual)} (Δ ${compact(worst.delta)})` : "—"}</td>
+        <td><span class="st ${esc(st)}">${esc(st)}</span></td></tr>`;
+    }).join("");
+  return `<section style="margin-top:36px">
+    <span class="kicker">${T.pd_audit_t}</span>
+    <p class="vlede" style="margin:8px 0 12px">${T.pd_audit_sub}</p>
+    <div class="statbar">
+      <span class="sbgood">${T.t_verified} <b>${a.n_verified_relations || 0}</b></span>
+      <span class="sbbad">${T.pd_flagged} <b>${a.n_mismatched_relations || 0}</b></span>
+      <span class="sbwarn">${T.pd_unverified} <b>${a.n_unverified_relations || 0}</b></span>
+      <span>${T.k_stake} <b>${compact(a.total_abs_delta || 0)}</b></span>
+    </div>
+    <div class="preview-wrap"><table>
+      <thead><tr><th>${T.pd_sheet}</th><th>${T.pd_rel}</th>
+        <th class="num">${T.pd_checked}</th><th class="num">${T.pd_mis}</th>
+        <th>${T.pd_worst}</th><th>${T.pd_status}</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>
+  </section>`;
+}
+
+function renderPublishedPage(snap, auditDetail) {
   // The public link renders the SAME business-voice dashboard as the in-app
   // exec preview: hydrate the globals the exec renderers read from the frozen
   // snapshot, then delegate to renderExecDashboard / renderExecOverview.
@@ -2322,6 +2367,11 @@ function renderPublishedPage(snap) {
     <span class="ropill">${T.ex_readonly}</span></div>`;
   attachLang();
   renderExecBody(`${T.pub_frozen} · ${T.ex_provenance}`);
+  // analyst gate open for this client: the live audit rides below the
+  // frozen exec page — read-only, their own data, Lumnia's working proof
+  if (auditDetail)
+    $("#content").insertAdjacentHTML("beforeend",
+      auditDetailSection(auditDetail));
 }
 
 /* ---------- Public client portal: /portal/{token}/page.
@@ -2511,7 +2561,7 @@ async function openDeliverable(id) {
     return;
   }
   if (!d.snapshot) return;
-  renderPublishedPage(d.snapshot);
+  renderPublishedPage(d.snapshot, d.audit_detail);
   $("#topbar .topbar").insertAdjacentHTML("afterbegin",
     `<a class="seeall" id="hub-back" style="margin-right:14px;cursor:pointer">← ${T.hub_back}</a>`);
   $("#hub-back").addEventListener("click", bootHub);
@@ -2768,6 +2818,11 @@ async function renderClientsPanel() {
           <input type="file" data-cfileinput="${esc(c.name)}"
             accept=".pdf,.html,.xlsx,.xls,.ods,.csv" style="display:none">
         </div>
+        <div style="display:flex;gap:10px;margin-top:10px;align-items:center;flex-wrap:wrap">
+          <button class="pillbtn ${c.analyst_access ? "gold" : ""}"
+            data-canalyst="${esc(c.name)}" data-anon="${c.analyst_access ? 1 : 0}">${c.analyst_access ? T.cl_an_on : T.cl_an_off}</button>
+          <span class="qsub" style="flex:1;min-width:200px">${T.cl_an_sub}</span>
+        </div>
         ${delivs.length ? `
         <div class="kicker" style="display:block;margin-top:14px">${T.cl_deliv_kicker} · ${delivs.length}</div>
         ${delivs.map(d => `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--border)">
@@ -2846,6 +2901,16 @@ async function renderClientsPanel() {
     if (!r.ok) { setStatus((await r.json()).detail || "!", true); return; }
     const d = await r.json();
     setStatus(T.cl_delivered(esc(d.title), d.version));
+    renderClientsPanel();
+  }));
+  $$("#clients-panel [data-canalyst]").forEach(el => el.addEventListener("click", async e => {
+    e.stopPropagation();
+    el.disabled = true;
+    const r = await fetch(`/clients/${encodeURIComponent(el.dataset.canalyst)}/analyst-access`,
+      { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: el.dataset.anon !== "1" }) });
+    el.disabled = false;
+    if (!r.ok) { setStatus((await r.json()).detail || "!", true); return; }
     renderClientsPanel();
   }));
   $$("#clients-panel [data-cplink]").forEach(el => el.addEventListener("click", async e => {

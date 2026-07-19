@@ -434,6 +434,18 @@ def _monthly_block(report_sheets,
     pva = _plan_vs_actual(mo, plan_charts, gaps)
     if pva:
         mo["plan_vs_actual"] = pva
+        # the plan pool's OWN axis, uncut: plan_vs_actual re-indexes the
+        # plan onto the actuals window, but the outlook story (rest-of-year
+        # plan vs the run-rate so far) needs the months the window drops
+        plan = _plan_block(plan_charts)
+        if plan is not None:
+            mo["plan"] = {
+                "periods": plan["periods"],
+                "source_sheet": plan["source_sheet"],
+                "metrics": {role: {"label": m["label"],
+                                   "values": m["values"]}
+                            for role, m in plan["metrics"].items()},
+            }
     return mo
 
 

@@ -16,9 +16,11 @@ import re as _re
 from typing import Any, Dict, List, Optional
 
 # selectable blocks, in reading order
-BLOCKS = ("kpi", "plan_vs_actual", "conversion", "cash", "monthly_table")
+BLOCKS = ("kpi", "plan_vs_actual", "unit_cost", "conversion", "cash",
+          "outlook", "net_cash", "breakdowns", "monthly_table")
 
 GOLD, PALE, INK3 = "#a8821f", "#d5c391", "#99917e"
+CRIT, WARN, GOOD = "#a33b32", "#a07d1c", "#3e6f4e"
 
 _ROLES = {
     "en": {"volume": "Volume", "volume_secondary": "Output",
@@ -53,6 +55,29 @@ _STR = {
         "period": "Period", "actual": "Actual", "plan": "Plan",
         "pct": "% of plan",
         "opex_lbl": "Operating", "capex_lbl": "Invested",
+        "unit_cost_t": "Cost per tonne",
+        "blended_sub": "blended over the tracked window",
+        "vs_budget_sub": lambda t, r: f"vs {t} budget — {r}×",
+        "vs_plan_sub": lambda p, pc: f"vs {p} planned — {pc} attainment",
+        "vs_plan_spend_sub": lambda p, pc, w: f"vs {p} planned — {pc} · {w}",
+        "under": "under plan", "over": "over plan",
+        "invested_t": "Invested share",
+        "invested_sub": "CAPEX share of tracked spend",
+        "conv_t2": "Conversion rate",
+        "conv_sub": lambda n: f"average over {n} month(s)",
+        "uc_t": "Cost per tonne — actual vs references",
+        "uc_cap": lambda v: f"latest actual {v} per tonne.",
+        "ref_budget": lambda y: f"budget {y}",
+        "ref_phased": "phased plan",
+        "outlook_t": "Full plan vs the run-rate so far",
+        "ref_required": "required/month",
+        "outlook_cap": lambda tot, req, n, avg: (
+            f"To still reach the {tot} plan, the remaining {n} month(s) "
+            f"need {req}/month (plan average: {avg})."),
+        "net_t": "The plan being defended — net balance",
+        "breakeven": lambda p: f"breakeven {p}",
+        "bridge": lambda v: f"capital bridge {v}",
+        "bd_t": "Largest line items",
         "audit_line": lambda ok, bad, un: (
             f"Audit: {ok} relation(s) verified · {bad} flagged · "
             f"{un} unverified"),
@@ -81,6 +106,29 @@ _STR = {
         "period": "Période", "actual": "Réel", "plan": "Plan",
         "pct": "% du plan",
         "opex_lbl": "Exploitation", "capex_lbl": "Investi",
+        "unit_cost_t": "Coût par tonne",
+        "blended_sub": "moyenne sur la fenêtre suivie",
+        "vs_budget_sub": lambda t, r: f"contre budget {t} — {r}×",
+        "vs_plan_sub": lambda p, pc: f"contre {p} au plan — {pc} atteints",
+        "vs_plan_spend_sub": lambda p, pc, w: f"contre {p} au plan — {pc} · {w}",
+        "under": "sous le plan", "over": "au-dessus du plan",
+        "invested_t": "Part investie",
+        "invested_sub": "part CAPEX de la dépense suivie",
+        "conv_t2": "Taux de conversion",
+        "conv_sub": lambda n: f"moyenne sur {n} mois",
+        "uc_t": "Coût par tonne — réel contre références",
+        "uc_cap": lambda v: f"dernier réel {v} par tonne.",
+        "ref_budget": lambda y: f"budget {y}",
+        "ref_phased": "plan phasé",
+        "outlook_t": "Plan complet contre le rythme constaté",
+        "ref_required": "requis/mois",
+        "outlook_cap": lambda tot, req, n, avg: (
+            f"Pour atteindre le plan de {tot}, les {n} mois restants "
+            f"exigent {req}/mois (moyenne du plan : {avg})."),
+        "net_t": "Le plan défendu — solde net",
+        "breakeven": lambda p: f"équilibre {p}",
+        "bridge": lambda v: f"besoin de financement {v}",
+        "bd_t": "Principaux postes",
         "audit_line": lambda ok, bad, un: (
             f"Audit : {ok} relation(s) vérifiée(s) · {bad} signalée(s) · "
             f"{un} non vérifiée(s)"),
@@ -135,35 +183,68 @@ def _monthly(report: Dict[str, Any]) -> Dict[str, Any]:
     return (report.get("model") or {}).get("monthly") or {}
 
 
+def _vol_role(pva: Dict[str, Any]) -> Optional[str]:
+    """The volume-flavored plan-vs-actual pair, output first."""
+    for role in ("volume_secondary", "volume"):
+        if role in pva:
+            return role
+    return None
+
+
 def available_blocks(report: Dict[str, Any]) -> List[str]:
     """Blocks the stored model can actually support — the honest menu."""
+    model = report.get("model") or {}
     mo = _monthly(report)
     met = mo.get("metrics") or {}
     der = mo.get("derived") or {}
+    pva = mo.get("plan_vs_actual") or {}
     out: List[str] = []
     if met:
         out.append("kpi")
-    if mo.get("plan_vs_actual"):
+    if pva:
         out.append("plan_vs_actual")
+    if any(v is not None
+           for b in ("opex_per_volume_out", "opex_per_volume")
+           for v in der.get(b) or []):
+        out.append("unit_cost")
     if any(v is not None for v in der.get("volume_ratio") or []):
         out.append("conversion")
     if mo.get("cash"):
         out.append("cash")
+    plan = mo.get("plan") or {}
+    if (_vol_role(pva) and plan.get("periods")
+            and len(plan["periods"]) > len(mo.get("periods") or [])):
+        out.append("outlook")
+    if any(v is not None
+           for v in (model.get("derived") or {}).get("net_cash") or []):
+        out.append("net_cash")
+    if model.get("breakdowns"):
+        out.append("breakdowns")
     if met:
         out.append("monthly_table")
     return out
 
 
 def _svg_bars(periods: List[str], series: List[tuple], lang: str,
-              w: int = 640, h: int = 200) -> str:
+              w: int = 640, h: int = 200,
+              refs: List[tuple] = (), colors: Optional[List] = None,
+              neg_ok: bool = False) -> str:
     """Grouped bars, one group per period; series = (values, color). None
-    cells simply have no bar — absence is drawn as absence."""
-    ml, mr, mt, mb = 8, 8, 14, 22
+    cells simply have no bar — absence is drawn as absence. ``refs`` draws
+    dashed horizontal reference lines (label, value, color); ``colors``
+    overrides the fill per cell for a single series; ``neg_ok`` keeps a
+    zero baseline mid-chart so negative bars hang below it."""
+    ml, mr, mt, mb = 8, 8, 16, 22
     pw, ph = w - ml - mr, h - mt - mb
-    mx = max((abs(v) for vals, _ in series for v in vals if v is not None),
-             default=0)
+    allv = [v for vals, _ in series for v in vals if v is not None]
+    refv = [r[1] for r in refs if r[1] is not None]
+    mx = max([abs(v) for v in allv + refv], default=0)
     if mx == 0:
         return ""
+    lo = min(allv + [0]) if neg_ok else 0
+    span = mx - lo if mx > lo else mx
+    y_of = lambda v: mt + ph - (v - lo) / span * ph  # noqa: E731
+    y0 = y_of(0)
     n = max(1, len(periods))
     group = pw / n
     bw = group * 0.72 / len(series)
@@ -174,41 +255,105 @@ def _svg_bars(periods: List[str], series: List[tuple], lang: str,
             v = vals[i] if i < len(vals) else None
             if v is None:
                 continue
-            bh = abs(v) / mx * ph
+            fill = (colors[i] if colors and i < len(colors) and colors[i]
+                    else color)
+            top = min(y_of(v), y0)
             bars.append(
-                f'<rect x="{x0 + k * bw:.1f}" y="{mt + ph - bh:.1f}" '
-                f'width="{bw:.1f}" height="{bh:.1f}" fill="{color}"/>')
-        labels.append(
-            f'<text x="{ml + i * group + group / 2:.1f}" y="{h - 6}" '
-            f'text-anchor="middle" class="ax">'
-            f'{_html.escape(_period(p, lang))}</text>')
-    grid = (f'<line x1="{ml}" y1="{mt + ph}" x2="{w - mr}" y2="{mt + ph}" '
+                f'<rect x="{x0 + k * bw:.1f}" y="{top:.1f}" '
+                f'width="{bw:.1f}" height="{abs(y_of(v) - y0):.1f}" '
+                f'fill="{fill}"/>')
+        step = 1 if n <= 8 else 2 if n <= 16 else 3
+        if i % step == 0:
+            labels.append(
+                f'<text x="{ml + i * group + group / 2:.1f}" y="{h - 6}" '
+                f'text-anchor="middle" class="ax">'
+                f'{_html.escape(_period(p, lang))}</text>')
+    ref_svg = "".join(
+        f'<line x1="{ml}" y1="{y_of(rv):.1f}" x2="{w - mr}" y2="{y_of(rv):.1f}" '
+        f'stroke="{rc}" stroke-dasharray="5 4" stroke-width="1.3"/>'
+        f'<text x="{w - mr}" y="{y_of(rv) - 4:.1f}" text-anchor="end" '
+        f'class="ax" fill="{rc}">{_html.escape(rl)} '
+        f'{_html.escape(_fmt(rv, lang))}</text>'
+        for rl, rv, rc in refs if rv is not None)
+    grid = (f'<line x1="{ml}" y1="{y0:.1f}" x2="{w - mr}" y2="{y0:.1f}" '
             f'stroke="#ddd4bf"/>'
-            f'<text x="{ml}" y="{mt - 3}" class="ax">'
+            f'<text x="{ml}" y="{mt - 4}" class="ax">'
             f'{_html.escape(_fmt(mx, lang))}</text>')
     return (f'<svg viewBox="0 0 {w} {h}" role="img">'
-            f"{grid}{''.join(bars)}{''.join(labels)}</svg>")
+            f"{grid}{''.join(bars)}{ref_svg}{''.join(labels)}</svg>")
+
+
+def _blended_unit_cost(mo: Dict[str, Any]) -> Optional[float]:
+    """Total opex over total output across months where BOTH are tracked —
+    the quarter's blended $/t, same apples-to-apples rule as _cash_split."""
+    met = mo.get("metrics") or {}
+    opx = (met.get("opex") or {}).get("values") or []
+    vol = (met.get("volume_secondary") or met.get("volume") or {}
+           ).get("values") or []
+    both = [(o, v) for o, v in zip(opx, vol)
+            if o is not None and v is not None and v != 0]
+    if not both:
+        return None
+    total_v = sum(v for _, v in both)
+    return round(sum(o for o, _ in both) / total_v, 2) if total_v else None
 
 
 def _tiles(mo: Dict[str, Any], lang: str) -> List[tuple]:
+    """(label, value, sub, state) — states are rule-based and declared:
+    volume attainment <70% bad / <100% warn; spend over plan warn, >120%
+    bad; unit cost >1.25x budget bad, over budget warn."""
     s, roles = _STR[lang], _ROLES[lang]
     met = mo.get("metrics") or {}
     pva = mo.get("plan_vs_actual") or {}
     tiles: List[tuple] = []
-    for role in ("volume", "volume_secondary", "opex"):
-        m = met.get(role)
-        if m:
-            total = sum(v for v in m["values"] if v is not None)
-            tiles.append((s["total_tile"](str(m["label"])[:26]),
-                          _fmt(total, lang)))
-    for role in ("volume", "volume_secondary", "opex", "capex"):
-        v = pva.get(role)
-        if v and v.get("pct_of_plan_total") is not None:
-            tiles.append((s["of_plan_tile"](roles.get(role, role)),
-                          _pct(v["pct_of_plan_total"], lang)))
+
+    blended = _blended_unit_cost(mo)
+    ucb = mo.get("unit_cost_budget")
+    if blended is not None:
+        sub, state = s["blended_sub"], ""
+        if ucb and ucb.get("target"):
+            ratio = blended / ucb["target"]
+            sub = s["vs_budget_sub"](_fmt(ucb["target"], lang),
+                                     _fmt(round(ratio, 1), lang, 1))
+            state = "bad" if ratio > 1.25 else "warn" if ratio > 1 else "good"
+        tiles.append((s["unit_cost_t"], _fmt(blended, lang), sub, state))
+
+    vrole = _vol_role(pva)
+    if vrole and pva[vrole].get("pct_of_plan_total") is not None:
+        v = pva[vrole]
+        pct = v["pct_of_plan_total"]
+        tiles.append((
+            str((met.get(vrole) or {}).get("label", roles[vrole]))[:26],
+            _fmt(v["actual_total"], lang),
+            s["vs_plan_sub"](_fmt(v["plan_total"], lang), _pct(pct, lang)),
+            "bad" if pct < 70 else "warn" if pct < 100 else "good"))
+
+    if "opex" in pva and pva["opex"].get("pct_of_plan_total") is not None:
+        v = pva["opex"]
+        pct = v["pct_of_plan_total"]
+        tiles.append((
+            roles["opex"], _fmt(v["actual_total"], lang),
+            s["vs_plan_spend_sub"](_fmt(v["plan_total"], lang),
+                                   _pct(pct, lang),
+                                   s["under"] if pct <= 100 else s["over"]),
+            "good" if pct <= 100 else "warn" if pct <= 120 else "bad"))
+    elif met.get("opex"):
+        m = met["opex"]
+        tiles.append((s["total_tile"](str(m["label"])[:24]),
+                      _fmt(sum(v for v in m["values"] if v is not None),
+                           lang), "", ""))
+
     cash = mo.get("cash")
     if cash:
-        tiles.append((s["capex_lbl"] + " %", _pct(cash["invested_pct"], lang)))
+        tiles.append((s["invested_t"], _pct(cash["invested_pct"], lang),
+                      s["invested_sub"], ""))
+
+    vr = (mo.get("derived") or {}).get("volume_ratio") or []
+    known = [v for v in vr if v is not None]
+    if known:
+        tiles.append((s["conv_t2"],
+                      _pct(round(sum(known) / len(known) * 100, 1), lang),
+                      s["conv_sub"](len(known)), ""))
     return tiles[:5]
 
 
@@ -228,7 +373,7 @@ def _pva_sections(mo: Dict[str, Any], lang: str) -> str:
         cap = s["pva_cap"](_pct(v["pct_of_plan_total"], lang), n_aligned,
                            str(met.get(role, {}).get("label", "")),
                            str(v["plan_label"]))
-        out.append(f'<section><h2>{_html.escape(s["pva_t"](roles.get(role, role)))}</h2>'
+        out.append(f'<section class="blk"><h2>{_html.escape(s["pva_t"](roles.get(role, role)))}</h2>'
                    f'{svg}<p class="cap">{_html.escape(cap)}</p></section>')
     return "".join(out)
 
@@ -244,7 +389,7 @@ def _conversion_section(mo: Dict[str, Any], lang: str) -> str:
     avg = sum(known) / len(known) * 100
     svg = _svg_bars(periods, [(pcts, GOLD)], lang)
     cap = s["conv_cap"](_pct(round(avg, 1), lang), len(known))
-    return (f'<section><h2>{_html.escape(s["conv_t"])}</h2>{svg}'
+    return (f'<section class="blk"><h2>{_html.escape(s["conv_t"])}</h2>{svg}'
             f'<p class="cap">{_html.escape(cap)}</p></section>')
 
 
@@ -265,8 +410,134 @@ def _cash_section(mo: Dict[str, Any], lang: str) -> str:
            f'{_html.escape(s["opex_lbl"])} '
            f'{_html.escape(_fmt(cash["opex_total"], lang))}</text></svg>')
     cap = s["cash_cap"](_pct(cash["invested_pct"], lang))
-    return (f'<section><h2>{_html.escape(s["cash_t"])}</h2>{bar}'
+    return (f'<section class="blk"><h2>{_html.escape(s["cash_t"])}</h2>{bar}'
             f'<p class="cap">{_html.escape(cap)}</p></section>')
+
+
+def _unit_cost_section(mo: Dict[str, Any], lang: str) -> str:
+    """Monthly $/t bars against the references the data supports: the FY
+    budget target (unit_cost_budget) and the phased plan (plan opex ÷ plan
+    output, month by month, collapsed to its mean as a line)."""
+    s = _STR[lang]
+    der = mo.get("derived") or {}
+    basis = next((b for b in ("opex_per_volume_out", "opex_per_volume")
+                  if any(v is not None for v in der.get(b) or [])), None)
+    if basis is None:
+        return ""
+    vals = der[basis]
+    refs = []
+    ucb = mo.get("unit_cost_budget")
+    if ucb and ucb.get("target"):
+        refs.append((s["ref_budget"](ucb["target_period"]), ucb["target"],
+                     GOOD))
+    pva = mo.get("plan_vs_actual") or {}
+    vrole = _vol_role(pva)
+    if vrole and "opex" in pva:
+        cells = [(o, v) for o, v in zip(pva["opex"]["plan"],
+                                        pva[vrole]["plan"])
+                 if o is not None and v is not None and v != 0]
+        total_v = sum(v for _, v in cells)
+        if total_v:
+            refs.append((s["ref_phased"],
+                         round(sum(o for o, _ in cells) / total_v, 2), WARN))
+    # bars colored by state against the tightest reference
+    tight = min((r[1] for r in refs), default=None)
+    colors = [None if v is None or tight is None
+              else CRIT if v > tight * 1.25
+              else WARN if v > tight else GOLD for v in vals]
+    svg = _svg_bars(mo.get("periods") or [], [(vals, GOLD)], lang,
+                    refs=refs, colors=colors)
+    last = next((v for v in reversed(vals) if v is not None), None)
+    cap = s["uc_cap"](_fmt(last, lang)) if last is not None else ""
+    return (f'<section class="blk"><h2>{_html.escape(s["uc_t"])}</h2>{svg}'
+            f'<p class="cap">{_html.escape(cap)}</p></section>')
+
+
+def _outlook_section(mo: Dict[str, Any], lang: str) -> str:
+    """The full plan axis vs the run-rate so far: what monthly pace the
+    REMAINING months demand to still land the plan — (plan total − actual
+    so far) ÷ remaining planned months. Declared, never assumed."""
+    s = _STR[lang]
+    pva = mo.get("plan_vs_actual") or {}
+    plan = mo.get("plan") or {}
+    vrole = _vol_role(pva)
+    if not (vrole and plan.get("periods")):
+        return ""
+    label = pva[vrole]["plan_label"]
+    pm = next((m for m in (plan.get("metrics") or {}).values()
+               if str(m["label"]) == str(label)), None)
+    if pm is None:
+        return ""
+    p_periods = [str(p) for p in plan["periods"]]
+    p_vals = pm["values"]
+    actual = dict(zip(mo.get("periods") or [],
+                      (mo.get("metrics") or {}).get(vrole, {})
+                      .get("values") or []))
+    a_vals = [actual.get(p) for p in p_periods]
+    last_a = max((i for i, v in enumerate(a_vals) if v is not None),
+                 default=-1)
+    rem = [v for v in p_vals[last_a + 1:] if v is not None]
+    plan_total = sum(v for v in p_vals if v is not None)
+    act_total = sum(v for v in a_vals if v is not None)
+    refs = []
+    cap = ""
+    if rem and plan_total > act_total:
+        required = round((plan_total - act_total) / len(rem), 1)
+        known_plan = [v for v in p_vals if v is not None]
+        refs.append((s["ref_required"], required, CRIT))
+        cap = s["outlook_cap"](_fmt(plan_total, lang), _fmt(required, lang),
+                               len(rem),
+                               _fmt(round(sum(known_plan)
+                                          / len(known_plan), 1), lang))
+    svg = _svg_bars(p_periods, [(p_vals, PALE), (a_vals, GOLD)], lang,
+                    refs=refs)
+    return (f'<section class="blk"><h2>{_html.escape(s["outlook_t"])}</h2>'
+            f'{svg}<p class="cap">{_html.escape(cap)}</p></section>')
+
+
+def _net_cash_section(model: Dict[str, Any], lang: str) -> str:
+    """The plan being defended: yearly net balance bars, red below zero,
+    with the breakeven year and capital bridge the model already derived."""
+    s = _STR[lang]
+    net = (model.get("derived") or {}).get("net_cash") or []
+    if not any(v is not None for v in net):
+        return ""
+    periods = model.get("periods") or []
+    colors = [None if v is None else (CRIT if v < 0 else GOOD) for v in net]
+    svg = _svg_bars(periods, [(net, GOOD)], lang, colors=colors, neg_ok=True)
+    ins = model.get("insights") or {}
+    parts = []
+    if ins.get("cash_positive_period"):
+        parts.append(s["breakeven"](ins["cash_positive_period"]))
+    if ins.get("capital_bridge") is not None:
+        parts.append(s["bridge"](_fmt(ins["capital_bridge"], lang)))
+    cap = " · ".join(parts)
+    return (f'<section class="blk"><h2>{_html.escape(s["net_t"])}</h2>{svg}'
+            f'<p class="cap">{_html.escape(cap)}</p></section>')
+
+
+def _breakdown_section(model: Dict[str, Any], lang: str) -> str:
+    """Ranked destinations from the largest line-item breakdown the
+    extraction already computed — where the money actually went."""
+    s = _STR[lang]
+    bds = model.get("breakdowns") or []
+    if not bds:
+        return ""
+    bd = bds[0]
+    items = (bd.get("items") or [])[:6]
+    if not items:
+        return ""
+    mx = max(abs(i["value"]) for i in items) or 1
+    rows = "".join(
+        f'<div class="brow"><span class="bl">{_html.escape(str(i["label"])[:38])}</span>'
+        f'<span class="btrack"><span style="width:{max(2, abs(i["value"]) / mx * 100):.0f}%"></span></span>'
+        f'<span class="bv">{_html.escape(_fmt(i["value"], lang))}</span></div>'
+        for i in items)
+    return (f'<section class="blk"><h2>{_html.escape(s["bd_t"])}</h2>'
+            f'<p class="cap" style="margin:0 0 8px">'
+            f'{_html.escape(str(bd.get("sheet", "")))} · '
+            f'{_html.escape(str(bd.get("value_col", ""))[:30])}</p>'
+            f'{rows}</section>')
 
 
 def _table_section(mo: Dict[str, Any], lang: str) -> str:
@@ -319,20 +590,35 @@ def render_report_html(report: Dict[str, Any], audit: Optional[Dict[str, Any]],
         if periods else ""
     today = _dt.date.today().isoformat()
 
+    model = report.get("model") or {}
     parts: List[str] = []
     if "kpi" in blocks:
-        tiles = "".join(
-            f'<div class="tile"><div class="tl">{esc(k)}</div>'
-            f'<div class="tv">{esc(v)}</div></div>'
-            for k, v in _tiles(mo, lang))
-        if tiles:
-            parts.append(f'<div class="tiles">{tiles}</div>')
+        tile_html = []
+        for k, v, sub, state in _tiles(mo, lang):
+            sub_div = f'<div class="ts">{esc(sub)}</div>' if sub else ""
+            tile_html.append(
+                f'<div class="tile {state}"><div class="tl">{esc(k)}</div>'
+                f'<div class="tv">{esc(v)}</div>{sub_div}</div>')
+        if tile_html:
+            parts.append(f'<div class="tiles">{"".join(tile_html)}</div>')
+    cards: List[str] = []
     if "plan_vs_actual" in blocks:
-        parts.append(_pva_sections(mo, lang))
+        cards.append(_pva_sections(mo, lang))
+    if "unit_cost" in blocks:
+        cards.append(_unit_cost_section(mo, lang))
     if "conversion" in blocks:
-        parts.append(_conversion_section(mo, lang))
+        cards.append(_conversion_section(mo, lang))
     if "cash" in blocks:
-        parts.append(_cash_section(mo, lang))
+        cards.append(_cash_section(mo, lang))
+    if "outlook" in blocks:
+        cards.append(_outlook_section(mo, lang))
+    if "net_cash" in blocks:
+        cards.append(_net_cash_section(model, lang))
+    if "breakdowns" in blocks:
+        cards.append(_breakdown_section(model, lang))
+    grid = "".join(c for c in cards if c)
+    if grid:
+        parts.append(f'<div class="grid">{grid}</div>')
     if "monthly_table" in blocks:
         parts.append(_table_section(mo, lang))
 
@@ -365,6 +651,23 @@ def render_report_html(report: Dict[str, Any], audit: Optional[Dict[str, Any]],
     text-transform:uppercase; color:var(--ink3); }}
   .tv {{ font-family:"Source Serif 4","Didot",Georgia,serif; font-size:22px;
     font-weight:600; margin-top:4px; }}
+  .ts {{ font-size:11px; color:var(--ink3); margin-top:3px; line-height:1.4; }}
+  .tile {{ border-top:3px solid transparent; }}
+  .tile.bad {{ border-top-color:{CRIT}; }} .tile.bad .tv {{ color:{CRIT}; }}
+  .tile.warn {{ border-top-color:{WARN}; }} .tile.warn .tv {{ color:{WARN}; }}
+  .tile.good {{ border-top-color:{GOOD}; }}
+  .grid {{ display:grid; grid-template-columns:repeat(auto-fit,
+    minmax(330px,1fr)); gap:18px; margin:0 0 26px; }}
+  .blk {{ background:#fbf9f3; border:1px solid var(--border);
+    padding:14px 16px 16px; }}
+  .blk h2 {{ margin-top:0; }}
+  .blk svg {{ border:none; background:transparent; }}
+  .brow {{ display:grid; grid-template-columns:minmax(110px,1fr) 2fr auto;
+    gap:10px; align-items:center; padding:5px 0; font-size:12px; }}
+  .brow .bl {{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
+  .brow .btrack {{ height:8px; background:#eee6d2; display:block; }}
+  .brow .btrack span {{ display:block; height:100%; background:{GOLD}; }}
+  .brow .bv {{ font-variant-numeric:tabular-nums; white-space:nowrap; }}
   h2 {{ font:11px/1.4 ui-monospace,Menlo,monospace; letter-spacing:.16em;
     text-transform:uppercase; color:var(--gold); margin:30px 0 10px; }}
   svg {{ display:block; width:100%; height:auto; background:#fbf9f3;
