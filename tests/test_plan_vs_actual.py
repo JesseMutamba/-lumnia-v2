@@ -122,3 +122,44 @@ def test_workbook_without_plan_sheet_is_untouched():
     mo = rep["model"]["monthly"]
     assert "plan_vs_actual" not in mo
     assert not rep["model"].get("gaps")
+
+
+FFB = [50, 200, 250, 500, 400, 80]     # raw input, out-sums CPO -> primary
+
+
+def _actuals_both(months=MONTHS) -> pd.DataFrame:
+    return _sheet("JOURNAL PRODUCTION", [
+        ["RECOLTE FFB (T)", *FFB],
+        ["PRODUCTION CPO (T)", *CPO],
+        ["CHARGES OPEX", *OPEX],
+    ], months)
+
+
+def test_plan_pairs_with_the_matching_volume_series_not_the_role_slot():
+    """The journal carries FFB (input, primary volume) AND CPO (output,
+    secondary); the plan only plans CPO. Attainment must compare CPO to
+    CPO — pairing the FFB actual against a CPO plan fabricated a 139%
+    attainment on a quantity nobody planned."""
+    rep = _analyze(_book(("JOURNAL", _actuals_both()),
+                         ("BUDGET 2025", _plan())))
+    pva = rep["model"]["monthly"]["plan_vs_actual"]
+    assert "volume" not in pva                     # FFB has no plan
+    v = pva["volume_secondary"]
+    assert v["plan_label"] == "PRODUCTION CPO PREVUE (T)"
+    assert v["pct_of_plan"] == [50.0] * 6
+    assert v["pct_of_plan_total"] == 50.0
+    assert rep["model"]["monthly"]["metrics"]["volume_secondary"]["label"] \
+        == "PRODUCTION CPO (T)"
+
+
+def test_unmatchable_plan_volume_gaps_instead_of_guessing():
+    """A generic 'TONNAGE PREVU' plan against BOTH an FFB and a CPO actual:
+    which quantity was planned is unknowable — honest gap, no attainment."""
+    plan = _sheet("PLAN", [["TONNAGE PREVU", *PLAN_CPO]])
+    rep = _analyze(_book(("JOURNAL", _actuals_both()),
+                         ("BUDGET 2025", plan)))
+    pva = rep["model"]["monthly"].get("plan_vs_actual") or {}
+    assert "volume" not in pva and "volume_secondary" not in pva
+    gaps = rep["model"].get("gaps") or []
+    assert ("plan_vs_actual", "monthly") in [(g["metric"], g["grain"])
+                                             for g in gaps]

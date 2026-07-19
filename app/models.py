@@ -163,3 +163,10 @@ class DeliverableMeta(BaseModel):
     version: int
     published_at: Optional[str] = None
     status: Optional[str] = None
+
+
+class ComposeReportRequest(BaseModel):
+    """Compose the operations report from pipeline-computed blocks.
+    Empty ``blocks`` means every block the data supports."""
+    blocks: List[str] = []
+    lang: str = "en"

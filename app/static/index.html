@@ -1499,6 +1499,9 @@ const STR = {
     hub_sub: "Everything we've turned in for you — read-only, versioned.",
     hub_count: n => `${n} deliverable${n === 1 ? "" : "s"}`,
     wb_brief: "AI brief",
+    wb_compose: "Report to hub",
+    comp_generating: "Composing the report…",
+    comp_done: (v, n) => `Report delivered — v${v}, ${n} block${n === 1 ? "" : "s"}, live in the client's hub.`,
     brief_generating: "Writing the analysis brief from the audited figures…",
     brief_done: v => `Analysis brief delivered to the client hub — v${v}.`,
   },
@@ -1979,6 +1982,9 @@ const STR = {
     hub_sub: "Tout ce que nous vous avons remis — lecture seule, versionné.",
     hub_count: n => `${n} livrable${n === 1 ? "" : "s"}`,
     wb_brief: "Brief IA",
+    wb_compose: "Rapport → espace",
+    comp_generating: "Composition du rapport…",
+    comp_done: (v, n) => `Rapport remis — v${v}, ${n} bloc${n === 1 ? "" : "s"}, en ligne dans l'espace client.`,
     brief_generating: "Rédaction du brief d'analyse à partir des chiffres audités…",
     brief_done: v => `Brief d'analyse remis au portail client — v${v}.`,
   },
@@ -3126,6 +3132,7 @@ function renderWorkbench() {
     <button class="pillbtn dark" id="wb-preview">◉ ${T.pv_as_exec}</button>
     ${pub ? `<button class="pillbtn amber" id="wb-share">⧉ ${T.wb04_share}</button>` : ""}
     ${NARR_READY ? `<button class="pillbtn dark" id="wb-brief">✎ ${T.wb_brief}</button>` : ""}
+    <button class="pillbtn dark" id="wb-compose" ${nOpen ? "disabled" : ""}>⧈ ${T.wb_compose}</button>
     ${pub ? "" : `<button class="pillbtn ${nOpen ? "dark" : "gold"}" id="wb-publish" ${nOpen ? "disabled" : ""}>${T.wb04_publish}</button>`}
     <div class="popover" id="share-pop">
       <div class="kicker">${T.po_t}</div>
@@ -3238,6 +3245,20 @@ function attachWorkbench() {
     briefBtn.disabled = false;
     if (r.ok) setStatus(T.brief_done((await r.json()).version));
     else setStatus((await r.json()).detail || "!", true);
+  });
+  const compBtn = $("#wb-compose");
+  if (compBtn) compBtn.addEventListener("click", async () => {
+    compBtn.disabled = true;
+    setStatus(T.comp_generating);
+    // empty blocks = every block the pipeline computed for this workbook
+    const r = await fetch(`/analyses/${current}/compose-report`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ blocks: [], lang: LANG }) });
+    compBtn.disabled = false;
+    if (r.ok) {
+      const b = await r.json();
+      setStatus(T.comp_done(b.version, b.blocks.length));
+    } else setStatus((await r.json()).detail || "!", true);
   });
   const rp = $("#wb-republish");
   if (rp) rp.addEventListener("click", () => doPublish(rp));

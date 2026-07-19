@@ -457,20 +457,63 @@ def _plan_block(plan_charts: List[tuple]) -> Optional[Dict[str, Any]]:
             "metrics": _public_metrics(roles, name)}
 
 
+# plan-flavored words carry no identity: "PRODUCTION CPO PREVUE" and
+# "PRODUCTION CPO" describe the same quantity
+_PLANISH_TOKEN_RX = re.compile(
+    r"^(pr[ée]vu[es]?|pr[ée]vision\w*|plan\w*|budget\w*|forecast\w*"
+    r"|projet[ée]?[es]?)$", re.IGNORECASE)
+
+
+def _sig_tokens(label: Any) -> set:
+    """The label's identity tokens: alphabetic runs of 3+ chars, minus the
+    plan-flavored words. Deterministic; no stemming, no guessing."""
+    toks = re.findall(r"[A-Za-zÀ-ÿ]{3,}", str(label))
+    return {t.upper() for t in toks if not _PLANISH_TOKEN_RX.match(t)}
+
+
+def _match_plan_volume(pm: Dict[str, Any],
+                       actual_metrics: Dict[str, dict]) -> Optional[str]:
+    """Which ACTUAL volume series does this plan volume series describe?
+    Matched by shared label tokens — a CPO plan must meet the CPO actual,
+    never the FFB actual that happens to hold the primary volume slot.
+    Returns the actual role name, or None when the pairing is unknowable
+    (two candidates, no token says which)."""
+    cands = [r for r in ("volume", "volume_secondary") if r in actual_metrics]
+    if not cands:
+        return None
+    if len(cands) == 1:
+        return cands[0]
+    pt = _sig_tokens(pm["label"])
+    scores = {r: len(pt & _sig_tokens(actual_metrics[r]["label"]))
+              for r in cands}
+    best = max(scores.values())
+    winners = [r for r in cands if scores[r] == best]
+    return winners[0] if len(winners) == 1 else None
+
+
 def _plan_vs_actual(monthly: Dict[str, Any], plan_charts: List[tuple],
                     gaps: List[Dict[str, str]]) -> Optional[Dict[str, Any]]:
     """Attainment against the plan, role by role: the plan re-indexed onto
     the ACTUALS axis (exact period-string equality), pct_of_plan cell by
     cell, totals over the common window only. Fewer than 3 aligned pairs
-    for every shared role is an honest gap, never a number."""
+    for every shared role is an honest gap, never a number. Volume plans
+    pair by label identity (see _match_plan_volume) — an unknowable
+    pairing is a gap, never a guess."""
     plan = _plan_block(plan_charts)
     if plan is None:
         return None
     out: Dict[str, Any] = {}
     misaligned = False
+    unmatched = False
     for role, pm in plan["metrics"].items():
-        if role == "volume_secondary":
-            continue                   # the pair story belongs to actuals
+        if role in ("volume", "volume_secondary"):
+            target = _match_plan_volume(pm, monthly["metrics"])
+            if target is None:
+                unmatched = "volume" in monthly["metrics"]
+                continue
+            if target in out:
+                continue               # first plan series claimed it
+            role = target
         am = monthly["metrics"].get(role)
         if am is None:
             continue                   # a plan with no actual: no claim
@@ -495,14 +538,19 @@ def _plan_vs_actual(monthly: Dict[str, Any], plan_charts: List[tuple],
             "pct_of_plan_total": round(actual_total / plan_total * 100, 1)
             if plan_total else None,
         }
-    if not out and misaligned:
+    if not out and (misaligned or unmatched):
         gaps.append({
             "metric": "plan_vs_actual",
             "grain": "monthly",
-            "reason": "a plan sheet was found but fewer than "
-                      f"{MIN_XSHEET_OVERLAP} periods align with the actuals",
-            "requires": f"{MIN_XSHEET_OVERLAP}+ overlapping periods "
-                        "between plan and actuals"})
+            "reason": ("a plan sheet was found but fewer than "
+                       f"{MIN_XSHEET_OVERLAP} periods align with the actuals")
+            if misaligned else
+            ("a plan volume series could not be matched to a single "
+             "actuals series"),
+            "requires": (f"{MIN_XSHEET_OVERLAP}+ overlapping periods "
+                         "between plan and actuals")
+            if misaligned else
+            "plan labels that name the quantity they plan"})
     return out or None
 
 
