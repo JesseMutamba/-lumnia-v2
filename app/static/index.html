@@ -1081,6 +1081,16 @@ const STR = {
       `${p > 0 ? "▲" : "▼"} ${Math.abs(p)}% vs budget ${y}`,
     tab_data: "Data", tab_trends: "Trends", tab_audit: "Audit", tab_actions: "Actions",
     tab_journal: "Journal",
+    jx_t: "Where the tracked cash went",
+    jx_kinds: { opex: "Operations", capex: "Investment",
+                overhead: "Head office", unmapped: "Outside the glossary",
+                dgo: "DGO journal (not consolidated)" },
+    jx_foot: (n, tot, rate) => `${n} month(s) · ${tot} USD total out · CDF converted at ${rate}`,
+    jx_exc_k: "Entries to clarify",
+    jx_exc: (n, usd) => `${n} journal entr${n === 1 ? "y needs" : "ies need"} clarification — ${usd} USD at stake. Your analyst has the line-level detail.`,
+    jx_clean: "Every journal check passed.",
+    xs_journal: n => `Clarify ${n} journal entr${n === 1 ? "y" : "ies"}`,
+    xs_journal_s: usd => `${usd} USD of movements need an explanation before the books close clean.`,
     jn_intro: "Deep audit of the cash journals: every line of the consolidated and DGO journals re-checked (matching, balances, codes, duplicates), then re-aggregated by code and month straight from the dates — the Excel SUMIF ranges are not trusted.",
     jn_rows: "Journal rows", jn_tieout: "Tie-out", jn_rate: "Rate",
     jn_dgo: "DGO outflows", jn_findings: "Findings",
@@ -1611,6 +1621,16 @@ const STR = {
       `${p > 0 ? "▲" : "▼"} ${Math.abs(p)} % vs budget ${y}`,
     tab_data: "Données", tab_trends: "Tendances", tab_audit: "Audit", tab_actions: "À faire",
     tab_journal: "Journal",
+    jx_t: "Où est allé l'argent suivi",
+    jx_kinds: { opex: "Exploitation", capex: "Investissement",
+                overhead: "Siège", unmapped: "Hors glossaire",
+                dgo: "Journal DGO (non consolidé)" },
+    jx_foot: (n, tot, rate) => `${n} mois · ${tot} USD de sorties totales · CDF convertis à ${rate}`,
+    jx_exc_k: "Écritures à clarifier",
+    jx_exc: (n, usd) => `${n} écriture${n === 1 ? "" : "s"} de journal ${n === 1 ? "demande" : "demandent"} une clarification — ${usd} USD en jeu. Votre analyste dispose du détail ligne à ligne.`,
+    jx_clean: "Tous les contrôles des journaux sont bons.",
+    xs_journal: n => `Clarifier ${n} écriture${n === 1 ? "" : "s"} de journal`,
+    xs_journal_s: usd => `${usd} USD de mouvements demandent une explication avant de clore les comptes proprement.`,
     jn_intro: "Audit approfondi des journaux de caisse : chaque ligne des journaux consolidé et DGO revérifiée (rapprochement, soldes, codes, doublons), puis réagrégée par code et par mois directement depuis les dates — les plages SUMIF d'Excel ne sont pas de confiance.",
     jn_rows: "Lignes de journal", jn_tieout: "Rapprochement", jn_rate: "Taux",
     jn_dgo: "Sorties DGO", jn_findings: "Constats",
@@ -2416,7 +2436,8 @@ function renderPublishedPage(snap, auditDetail) {
   document.body.dataset.mode = "exec";
   document.body.classList.add("home");
   REPORT = { filename: snap.filename, n_sheets: snap.n_sheets,
-             model: snap.model || null, sheets: [], plan: null, brief: null };
+             model: snap.model || null, sheets: [], plan: null, brief: null,
+             journal: snap.journal ? { exec: snap.journal } : null };
   const ad = snap.audit || {};
   AUDIT = { n_mismatched_relations: ad.n_mismatched_relations || 0,
             n_unverified_relations: ad.n_unverified_relations || 0,
@@ -3897,13 +3918,43 @@ function renderExecOverview() {
       <div>${primary ? storyChartExec(primary)
         : `<div class="muted" style="padding:40px 0">${T.no_ts}</div>`}</div>
       <div><span class="kicker">${T.nx_kicker}</span>${stepRows}</div>
-    </div>`;
+    </div>
+    ${execJournalSection()}`;
+}
+
+/* journal audit, exec voice: where the cash went + what needs clarifying —
+   aggregates only, never journal lines (lives in live exec AND published) */
+function execJournalSection() {
+  const jx = REPORT.journal && REPORT.journal.exec;
+  if (!jx || !(jx.destinations || []).length) return "";
+  const mx = Math.max(...jx.destinations.map(d => d.usd), 1);
+  const rows = jx.destinations.map((d, k) => `<div class="rrow ${k === 0 ? "top" : ""}">
+      <span class="rl">${T.jx_kinds[d.kind] || d.kind}</span>
+      <span class="rtrack"><span style="width:${Math.max(2, d.usd / mx * 100).toFixed(1)}%;background:${d.kind === "dgo" || d.kind === "unmapped" ? "var(--critical)" : "var(--gold)"}"></span></span>
+      <span class="rv">${compact(d.usd)} <span class="muted">· ${d.pct != null ? pctFmt(d.pct, 1) : "—"}</span></span>
+    </div>`).join("");
+  const exc = jx.exceptions || {};
+  return `<section style="margin-top:38px"><span class="kicker">${T.jx_t}</span>
+    <div class="execgrid" style="margin-top:10px">
+      <div>${rows}
+        <div class="rfoot">${T.jx_foot(jx.months.length, compact(jx.total_out_usd), num(jx.rate))}</div></div>
+      <div>${exc.n ? `<div class="verdict" style="--vcolor:var(--${exc.n_high ? "critical" : "warning"})">
+          <span class="vic">◆</span>
+          <div><span class="vlabel">${T.jx_exc_k}</span>
+          <p>${T.jx_exc(exc.n, compact(exc.at_stake_usd))}</p></div></div>`
+        : `<p class="vlede">✓ ${T.jx_clean}</p>`}</div>
+    </div>
+  </section>`;
 }
 
 /* exec voice: business actions, never cell coordinates — the analyst
    workbench keeps the per-sheet confirm steps */
 function execStepsBiz() {
   const out = [];
+  const jx = REPORT.journal && REPORT.journal.exec;
+  if (jx && jx.exceptions && jx.exceptions.n_high)
+    out.push({ t: T.xs_journal(jx.exceptions.n_high),
+               s: T.xs_journal_s(compact(jx.exceptions.at_stake_usd)) });
   if (AUDIT.n_mismatched_relations)
     out.push({ t: T.xs_resolve(AUDIT.n_mismatched_relations),
       s: T.xs_resolve_sub(compact(AUDIT.total_abs_delta)) });

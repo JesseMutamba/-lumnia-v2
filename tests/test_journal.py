@@ -176,3 +176,66 @@ def test_non_contract_workbooks_get_no_journal_block():
     r = client.post("/analyze", files={
         "file": ("plain.xlsx", buf.getvalue(), "application/octet-stream")})
     assert r.json()["journal"] is None
+
+
+def test_exec_summary_carries_destinations_and_exceptions():
+    j = _journal()
+    jx = j["exec"]
+    assert jx["site_out_cdf"] == 12_425_000
+    assert jx["site_out_usd"] == 5522.22
+    assert jx["total_out_usd"] == 7222.22        # + 1,700 USD DGO journal
+    d = {x["kind"]: x for x in jx["destinations"]}
+    assert d["opex"]["usd"] == 3722.22           # 8,375,000 CDF / 2250
+    assert d["dgo"]["usd"] == 1700 and d["dgo"]["pct"] == 23.5
+    assert d["unmapped"]["usd"] == 1000
+    assert d["overhead"]["usd"] == 800           # the Rawbank transfer
+    exc = jx["exceptions"]
+    assert exc["n"] == 7 and exc["n_high"] == 3
+    assert exc["at_stake_usd"] == 3400           # 1200+800+1000+400
+
+
+def test_published_snapshot_carries_exec_journal_only():
+    """The public path gets destinations and exception counts — never
+    findings, line labels, or code x month detail."""
+    from app.snapshot import build_exec_snapshot
+    r = client.post("/analyze", files={
+        "file": ("SUIVI PVAK snap.xlsx", _book(),
+                 "application/octet-stream")})
+    snap = build_exec_snapshot(r.json())
+    jx = snap["journal"]
+    assert jx and jx["destinations"]
+    flat = str(jx)
+    assert "findings" not in jx
+    assert "cats" not in jx
+    assert "Rawbank" not in flat and "Salaires" not in flat
+
+
+def test_composed_report_tells_the_cash_destination_story():
+    r = client.post("/analyze", files={
+        "file": ("SUIVI PVAK compose.xlsx", _book(),
+                 "application/octet-stream")})
+    aid = r.json()["id"]
+    assert client.post(f"/analyses/{aid}/client",
+                       json={"client": "PVAK"}).status_code == 200
+    fs = client.get(f"/analyses/{aid}/findings").json()
+    dec = {f["id"]: "approved" for f in fs["findings"]}
+    dec.update({f["id"]: "flagged" for f in fs["unverified"]})
+    if dec:
+        client.post(f"/analyses/{aid}/decisions", json={"decisions": dec})
+    rep = client.post(f"/analyses/{aid}/compose-report",
+                      json={"blocks": ["cash", "monthly_table", "kpi"],
+                            "lang": "en"})
+    assert rep.status_code == 200, rep.text
+    assert "cash" in rep.json()["blocks"]
+    # fetch the served html via the portal
+    cu = client.post("/clients/PVAK/users", json={"email": "cash@pvak.cd"})
+    hub = TestClient(app)
+    assert hub.get(cu.json()["login_url"],
+                   follow_redirects=False).status_code == 303
+    items = hub.get("/portal/deliverables").json()
+    did = next(d["id"] for d in items if "Operations report" in d["title"])
+    url = hub.get(f"/portal/deliverables/{did}").json()["signed_url"]
+    html = client.get(url).text
+    assert "DGO journal (not consolidated)" in html
+    assert "23.5%" in html
+    assert "clarification" in html

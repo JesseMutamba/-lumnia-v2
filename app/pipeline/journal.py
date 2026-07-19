@@ -302,7 +302,41 @@ def build_journal_block(
     sev_rank = {"BLOCKER": 0, "HIGH": 1, "MED": 2, "LOW": 3}
     findings.sort(key=lambda x: (sev_rank.get(x["sev"], 9), -abs(x["usd"])))
     dgo_out = round(sum(r["outU"] for r in rows if r["j"] == "dgo"), 2)
+
+    # exec voice: destinations and exceptions as aggregates — the ONLY part
+    # of the journal audit that travels to published/portal surfaces. Shares
+    # are of ALL cash out (site converted at the pivot + the DGO journal),
+    # the reference deliverable's own convention.
+    site_usd = round(total_journal / pivot, 2)
+    all_out = round(site_usd + dgo_out, 2)
+    dests = []
+    for kind in ("opex", "capex", "overhead", "unmapped"):
+        cdf_t = round(sum(sum(c["cdf"]) for c in agg if c["kind"] == kind), 2)
+        if not cdf_t:
+            continue
+        usd_t = round(cdf_t / pivot, 2)
+        dests.append({"kind": kind, "usd": usd_t,
+                      "pct": round(usd_t / all_out * 100, 1)
+                      if all_out else None})
+    if dgo_out:
+        dests.append({"kind": "dgo", "usd": dgo_out,
+                      "pct": round(dgo_out / all_out * 100, 1)
+                      if all_out else None})
+    dests.sort(key=lambda x: -x["usd"])
+    exec_block = {
+        "months": months, "rate": pivot,
+        "site_out_cdf": total_journal, "site_out_usd": site_usd,
+        "total_out_usd": all_out,
+        "destinations": dests,
+        "exceptions": {
+            "n": len(findings),
+            "n_high": sum(1 for x in findings
+                          if x["sev"] in ("HIGH", "BLOCKER")),
+            "at_stake_usd": round(sum(abs(x["usd"]) for x in findings), 2),
+        },
+    }
     return {
+        "exec": exec_block,
         "months": months,
         "cats": agg,
         "findings": findings,

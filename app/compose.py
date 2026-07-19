@@ -74,6 +74,13 @@ _STR = {
         "outlook_cap": lambda tot, req, n, avg: (
             f"To still reach the {tot} plan, the remaining {n} month(s) "
             f"need {req}/month (plan average: {avg})."),
+        "jx_t": "Where the cash actually went",
+        "jx_cap": lambda n, tot: (
+            f"All cash out over {n} month(s): {tot} USD — site journal "
+            "converted at the fixed rate, plus the DGO journal."),
+        "jx_exc": lambda n, usd: (
+            f"{n} journal entr{'y' if n == 1 else 'ies'} still need "
+            f"clarification ({usd} USD at stake)."),
         "net_t": "The plan being defended — net balance",
         "breakeven": lambda p: f"breakeven {p}",
         "bridge": lambda v: f"capital bridge {v}",
@@ -125,6 +132,14 @@ _STR = {
         "outlook_cap": lambda tot, req, n, avg: (
             f"Pour atteindre le plan de {tot}, les {n} mois restants "
             f"exigent {req}/mois (moyenne du plan : {avg})."),
+        "jx_t": "Où est allé l'argent réellement",
+        "jx_cap": lambda n, tot: (
+            f"Sorties totales sur {n} mois : {tot} USD — journal du site "
+            "converti au taux fixe, plus le journal DGO."),
+        "jx_exc": lambda n, usd: (
+            f"{n} écriture{'' if n == 1 else 's'} de journal "
+            f"{'demande' if n == 1 else 'demandent'} encore une "
+            f"clarification ({usd} USD en jeu)."),
         "net_t": "Le plan défendu — solde net",
         "breakeven": lambda p: f"équilibre {p}",
         "bridge": lambda v: f"besoin de financement {v}",
@@ -209,7 +224,8 @@ def available_blocks(report: Dict[str, Any]) -> List[str]:
         out.append("unit_cost")
     if any(v is not None for v in der.get("volume_ratio") or []):
         out.append("conversion")
-    if mo.get("cash"):
+    if mo.get("cash") or ((report.get("journal") or {}).get("exec") or {}
+                          ).get("destinations"):
         out.append("cash")
     plan = mo.get("plan") or {}
     if (_vol_role(pva) and plan.get("periods")
@@ -391,6 +407,43 @@ def _conversion_section(mo: Dict[str, Any], lang: str) -> str:
     cap = s["conv_cap"](_pct(round(avg, 1), lang), len(known))
     return (f'<section class="blk"><h2>{_html.escape(s["conv_t"])}</h2>{svg}'
             f'<p class="cap">{_html.escape(cap)}</p></section>')
+
+
+_JX_KINDS = {
+    "en": {"opex": "Operations", "capex": "Investment",
+           "overhead": "Head office", "unmapped": "Outside the glossary",
+           "dgo": "DGO journal (not consolidated)"},
+    "fr": {"opex": "Exploitation", "capex": "Investissement",
+           "overhead": "Siège", "unmapped": "Hors glossaire",
+           "dgo": "Journal DGO (non consolidé)"},
+}
+
+
+def _cash_destinations_section(jx: Dict[str, Any], lang: str) -> str:
+    """Where the cash actually went, from the journal engine: ranked
+    destination bars including the DGO journal — the reference
+    deliverable's own story."""
+    s = _STR[lang]
+    dests = jx.get("destinations") or []
+    if not dests:
+        return ""
+    mx = max(d["usd"] for d in dests) or 1
+    rows = "".join(
+        f'<div class="brow"><span class="bl">'
+        f'{_html.escape(_JX_KINDS[lang].get(d["kind"], d["kind"]))}</span>'
+        f'<span class="btrack"><span style="width:{max(2, d["usd"] / mx * 100):.0f}%'
+        f'{";background:" + CRIT if d["kind"] in ("dgo", "unmapped") else ""}'
+        f'"></span></span>'
+        f'<span class="bv">{_html.escape(_fmt(d["usd"], lang))} · '
+        f'{_html.escape(_pct(d["pct"], lang))}</span></div>'
+        for d in dests)
+    exc = jx.get("exceptions") or {}
+    cap = s["jx_cap"](len(jx.get("months") or []),
+                      _fmt(jx.get("total_out_usd"), lang))
+    if exc.get("n"):
+        cap += " " + s["jx_exc"](exc["n"], _fmt(exc["at_stake_usd"], lang))
+    return (f'<section class="blk"><h2>{_html.escape(s["jx_t"])}</h2>'
+            f'{rows}<p class="cap">{_html.escape(cap)}</p></section>')
 
 
 def _cash_section(mo: Dict[str, Any], lang: str) -> str:
@@ -609,7 +662,9 @@ def render_report_html(report: Dict[str, Any], audit: Optional[Dict[str, Any]],
     if "conversion" in blocks:
         cards.append(_conversion_section(mo, lang))
     if "cash" in blocks:
-        cards.append(_cash_section(mo, lang))
+        jx = (report.get("journal") or {}).get("exec")
+        cards.append(_cash_destinations_section(jx, lang) if jx
+                     else _cash_section(mo, lang))
     if "outlook" in blocks:
         cards.append(_outlook_section(mo, lang))
     if "net_cash" in blocks:
