@@ -83,3 +83,21 @@ def test_unreadable_intake_fails_honest():
         "file": ("junk.xlsx", b"not a spreadsheet at all",
                  "application/octet-stream")})
     assert r.status_code == 422
+
+
+def test_intake_is_marked_with_its_origin():
+    """A client-submitted workbook must be distinguishable from an analyst
+    upload — an unmarked intake is a dropped ball waiting to happen."""
+    hub = _hub("Kivu Agro", "chef@kivuagro.cd")
+    hub.post("/portal/intake", files={
+        "file": ("recolte_avril.xlsx", _book("origine"),
+                 "application/octet-stream")})
+    metas = client.get("/analyses").json()
+    mine = next(a for a in metas if a["filename"] == "recolte_avril.xlsx")
+    assert mine["origin"] == "intake"
+    # analyst uploads carry no origin
+    r = client.post("/analyze", files={
+        "file": ("mien.xlsx", _book("analyste"), "application/octet-stream")})
+    metas = client.get("/analyses").json()
+    assert next(a for a in metas
+                if a["filename"] == "mien.xlsx")["origin"] is None

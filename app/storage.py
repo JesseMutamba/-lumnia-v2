@@ -182,6 +182,7 @@ def _connect() -> sqlite3.Connection:
         "ALTER TABLE analyses ADD COLUMN last_decided_at TEXT",
         "ALTER TABLE analyses ADD COLUMN at_stake REAL",
         "ALTER TABLE analyses ADD COLUMN mapping TEXT",
+        "ALTER TABLE analyses ADD COLUMN origin TEXT",
     ):
         try:
             con.execute(migration)
@@ -226,8 +227,11 @@ def _rollup(report: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def save_analysis(filename: str, content: bytes, report: Dict[str, Any]) -> str:
-    """Persist a new analysis; returns its id (also stamped into the report)."""
+def save_analysis(filename: str, content: bytes, report: Dict[str, Any],
+                  origin: Optional[str] = None) -> str:
+    """Persist a new analysis; returns its id (also stamped into the report).
+    ``origin='intake'`` marks a client-submitted workbook so the operator's
+    hub can flag it — a client upload nobody notices is a dropped ball."""
     analysis_id = uuid.uuid4().hex[:12]
     report = {**report, "id": analysis_id}
     roll = _rollup(report)
@@ -235,14 +239,15 @@ def save_analysis(filename: str, content: bytes, report: Dict[str, Any]) -> str:
         mapping = report.get("mapping")
         con.execute(
             "INSERT INTO analyses (id, filename, uploaded_at, size_bytes, sha256, content, report, "
-            "open_findings, n_sheets, checks_ok, checks_total, last_decided_at, at_stake, mapping) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "open_findings, n_sheets, checks_ok, checks_total, last_decided_at, at_stake, mapping, origin) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (analysis_id, filename, _now(), len(content),
              hashlib.sha256(content).hexdigest(), content,
              json.dumps(report, ensure_ascii=False),
              roll["open_findings"], roll["n_sheets"], roll["checks_ok"],
              roll["checks_total"], roll["last_decided_at"], roll["at_stake"],
-             json.dumps(mapping, ensure_ascii=False) if mapping else None),
+             json.dumps(mapping, ensure_ascii=False) if mapping else None,
+             origin),
         )
     return analysis_id
 
@@ -255,7 +260,7 @@ def list_analyses() -> List[Dict[str, Any]]:
         rows = con.execute(
             "SELECT a.id, a.filename, a.uploaded_at, a.reran_at, a.size_bytes, "
             "a.client, a.open_findings, a.n_sheets, a.checks_ok, "
-            "a.checks_total, a.last_decided_at, a.at_stake, "
+            "a.checks_total, a.last_decided_at, a.at_stake, a.origin, "
             "p.version AS pub_version, p.published_at AS pub_at "
             "FROM analyses a LEFT JOIN published p ON p.analysis_id = a.id "
             "ORDER BY a.uploaded_at DESC, a.id"
@@ -287,6 +292,7 @@ def list_analyses() -> List[Dict[str, Any]]:
                 "checks_ok": r["checks_ok"],
                 "checks_total": r["checks_total"],
                 "at_stake": r["at_stake"],
+                "origin": r["origin"],
                 "published_version": r["pub_version"],
                 "stale": ((r["last_decided_at"] or "") > r["pub_at"]
                           if r["pub_version"] is not None else None),
@@ -875,6 +881,22 @@ def list_deliverables(client_id: str) -> List[Dict[str, Any]]:
             "FROM deliverables WHERE client_id = ? "
             "ORDER BY grp IS NULL, grp, published_at DESC, id",
             (client_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def list_deliverables_admin(client_name: str) -> Optional[List[Dict[str, Any]]]:
+    """Operator-side listing WITH source_ref — the analyst owns the data and
+    needs to preview what was turned in. None for an unknown client."""
+    with _connect() as con:
+        c = con.execute("SELECT id FROM clients WHERE name = ?",
+                        (client_name,)).fetchone()
+        if c is None:
+            return None
+        rows = con.execute(
+            "SELECT id, title, kind, grp, version, published_at, status, "
+            "source_ref FROM deliverables WHERE client_id = ? "
+            "ORDER BY grp IS NULL, grp, published_at DESC, id",
+            (c["id"],)).fetchall()
     return [dict(r) for r in rows]
 
 

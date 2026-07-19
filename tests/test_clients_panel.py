@@ -86,3 +86,23 @@ def test_revocation_kills_even_a_fresh_link():
         f"/clients/Comptoir Kivu/users/{uid}").json()["revoked"] is True
     fresh = TestClient(app)
     assert fresh.get(url, follow_redirects=False).status_code == 403
+
+
+def test_operator_deliverables_listing_carries_working_preview_urls():
+    """The analyst previews what was turned in without a client login: file
+    deliverables ride the signed-token path, dashboards their published
+    page. Unknown clients 404."""
+    client.post("/clients/Palmeraie Uvira/users",
+                json={"email": "dg@uvira.cd"})
+    r = client.post("/clients/Palmeraie Uvira/files", files={
+        "file": ("note_q1.pdf", b"%PDF-1.4 fake", "application/pdf")})
+    assert r.status_code == 200, r.text
+    rows = client.get("/clients/Palmeraie Uvira/deliverables").json()
+    assert len(rows) == 1
+    d = rows[0]
+    assert d["kind"] == "file" and d["url"].startswith("/portal/files/")
+    assert "source_ref" not in d
+    served = client.get(d["url"])
+    assert served.status_code == 200
+    assert served.content == b"%PDF-1.4 fake"
+    assert client.get("/clients/Inconnu/deliverables").status_code == 404

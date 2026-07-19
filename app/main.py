@@ -681,6 +681,34 @@ def _deliverable_status(report: dict) -> str | None:
     return "reconciled"
 
 
+@app.get("/clients/{client}/deliverables")
+def client_deliverables_admin(client: str) -> list[dict]:
+    """Operator: what this client's hub holds, each with a preview URL —
+    the analyst must be able to SEE what was turned in without minting
+    themselves a client login. File previews ride the same signed-token
+    serving path the portal uses; dashboards link their published page."""
+    rows = storage.list_deliverables_admin(client)
+    if rows is None:
+        raise HTTPException(status_code=404, detail=f"No client '{client}'.")
+    out = []
+    for d in rows:
+        url = None
+        if d["kind"] == "file":
+            token = auth.make_expiring_token("file", d["id"],
+                                             storage.app_secret(),
+                                             FILE_URL_TTL)
+            url = f"/portal/files/{token}"
+        else:
+            pub = storage.published_info(d["source_ref"])
+            if pub:
+                url = f"/published/{pub['token']}/page"
+        out.append({"id": d["id"], "title": d["title"], "kind": d["kind"],
+                    "group": d["grp"], "version": d["version"],
+                    "published_at": d["published_at"], "status": d["status"],
+                    "url": url})
+    return out
+
+
 @app.post("/clients/{client}/users")
 async def add_portal_user(client: str, request: Request) -> dict:
     """Mint a login identity + its signed link ({"email": ...}). The analyst
@@ -1072,7 +1100,8 @@ async def portal_intake(request: Request,
     report = result.model_dump()
     _inherit_mapping(report)
     result = AnalyzeResponse(**report)
-    aid = storage.save_analysis(result.filename, content, result.model_dump())
+    aid = storage.save_analysis(result.filename, content, result.model_dump(),
+                                origin="intake")
     storage.set_client(aid, user["name"])
     return {"received": True, "filename": result.filename}
 
