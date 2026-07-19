@@ -3562,11 +3562,15 @@ function renderExecOverview() {
   if (!primary && mo && Object.keys(mo.metrics || {}).length) {
     // monthly-only workbook: the production story IS the story — the
     // overview must never open on an empty page when the pipeline
-    // computed monthly actuals (they live one tab away otherwise)
-    const lines = Object.entries(mo.metrics).map(([role, s], k) => ({
-      label: `${ROLE_LABELS[role] || role} — ${s.label.slice(0, 26)}`,
-      values: s.values, color: SERIES_COLORS[k % SERIES_COLORS.length],
-      on: true }));
+    // computed monthly actuals (they live one tab away otherwise).
+    // Volume roles only: tonnes and USD on one axis flatten the tonnes.
+    const roles = Object.entries(mo.metrics)
+      .filter(([r]) => r === "volume" || r === "volume_secondary");
+    const lines = (roles.length ? roles : Object.entries(mo.metrics).slice(0, 1))
+      .map(([role, s], k) => ({
+        label: `${ROLE_LABELS[role] || role} — ${s.label.slice(0, 26)}`,
+        values: s.values, color: SERIES_COLORS[k % SERIES_COLORS.length],
+        on: true }));
     primary = { pseudo: true, sheet: T.pr_chart, loc: null,
       chart: { kind: "timeseries", periods: mo.periods, series: [],
                other: null, truncated: false },
