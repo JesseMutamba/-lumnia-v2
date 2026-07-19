@@ -1496,6 +1496,8 @@ const STR = {
     hub_flagged: "flagged",
     hub_file: "file",
     hub_download: "Download",
+    hub_logout: "Sign out",
+    k_of_plan: "of plan",
     hub_sub: "Everything we've turned in for you — read-only, versioned.",
     hub_count: n => `${n} deliverable${n === 1 ? "" : "s"}`,
     wb_brief: "AI brief",
@@ -1979,6 +1981,8 @@ const STR = {
     hub_flagged: "signalé",
     hub_file: "fichier",
     hub_download: "Télécharger",
+    hub_logout: "Se déconnecter",
+    k_of_plan: "du plan",
     hub_sub: "Tout ce que nous vous avons remis — lecture seule, versionné.",
     hub_count: n => `${n} livrable${n === 1 ? "" : "s"}`,
     wb_brief: "Brief IA",
@@ -2402,7 +2406,8 @@ function renderHubPage(me, items) {
     <span class="tkick">${T.portal_kicker} · ${esc(client)}</span>
     <span class="grow"></span>
     <span class="cs" style="font-family:var(--mono);font-size:9.5px;color:var(--ink-3)">${esc(me.email)}</span>
-    ${langToggle()}<span class="ropill">${T.ex_readonly}</span></div>`;
+    ${langToggle()}<span class="ropill">${T.ex_readonly}</span>
+    <a class="seeall" href="/portal/logout" style="font-size:11.5px">${T.hub_logout}</a></div>`;
   attachLang();
 
   const row = d => `<div class="rtile" data-did="${esc(d.id)}" role="link" tabindex="0">
@@ -3551,17 +3556,40 @@ function renderExecOverview() {
   const a = AUDIT, m = a.n_mismatched_relations;
   const head = execHead(null, null);
   const vis = visCharts().filter(c => !c.pseudo);
-  const primary = vis.filter(c => c.chart.kind === "timeseries")
+  let primary = vis.filter(c => c.chart.kind === "timeseries")
     .sort((x, y) => y.chart.periods.length - x.chart.periods.length)[0];
+  const mo = REPORT.model && REPORT.model.monthly;
+  if (!primary && mo && Object.keys(mo.metrics || {}).length) {
+    // monthly-only workbook: the production story IS the story — the
+    // overview must never open on an empty page when the pipeline
+    // computed monthly actuals (they live one tab away otherwise)
+    const lines = Object.entries(mo.metrics).map(([role, s], k) => ({
+      label: `${ROLE_LABELS[role] || role} — ${s.label.slice(0, 26)}`,
+      values: s.values, color: SERIES_COLORS[k % SERIES_COLORS.length],
+      on: true }));
+    primary = { pseudo: true, sheet: T.pr_chart, loc: null,
+      chart: { kind: "timeseries", periods: mo.periods, series: [],
+               other: null, truncated: false },
+      lines, i: CHARTS.length, range: null };
+    CHARTS.push(primary);
+  }
   // KPI strip in business terms: the primary series' peak and latest reading,
   // plus the figures' own reliability — never rows, fill or sheet counts
   const cells = [];
+  const pva = (mo && mo.plan_vs_actual) || {};
+  for (const role of ["volume", "volume_secondary", "opex"]) {
+    const v = pva[role];
+    if (v && v.pct_of_plan_total != null)
+      cells.push(`<div class="kcell"><div class="kl">${ROLE_LABELS[role] || role}</div>
+        <div class="kv">${pctFmt(v.pct_of_plan_total, 1)}</div>
+        <div class="ks">${T.k_of_plan}</div></div>`);
+  }
   if (primary && primary.lines.length) {
     const l = primary.lines[0], vals = l.values;
     let pk = -1, last = -1;
     vals.forEach((v, i) => { if (v != null) {
       if (pk < 0 || v > vals[pk]) pk = i; last = i; } });
-    if (pk >= 0) cells.push(`<div class="kcell"><div class="kl">${T.ch_peak} — ${esc(titleCase(String(l.label).slice(0, 18)))}</div>
+    if (pk >= 0) cells.push(`<div class="kcell"><div class="kl">${T.ch_peak} — ${esc(titleCase(String(l.label).split(" — ")[0].slice(0, 18)))}</div>
       <div class="kv">${compact(vals[pk])}</div>
       <div class="ks">${esc(String(primary.chart.periods[pk]))}</div></div>`);
     if (last >= 0 && last !== pk) cells.push(`<div class="kcell"><div class="kl">${T.ch_latest}</div>

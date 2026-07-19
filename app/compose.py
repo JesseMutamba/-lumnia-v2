@@ -328,9 +328,11 @@ def render_report_html(report: Dict[str, Any], audit: Optional[Dict[str, Any]],
     font-size:28px; font-weight:600; margin:10px 0 6px; line-height:1.25; }}
   .meta {{ font:10.5px/1.6 ui-monospace,Menlo,monospace; letter-spacing:.08em;
     text-transform:uppercase; color:var(--ink3); margin-bottom:26px; }}
-  .tiles {{ display:flex; border-top:1px solid var(--ink);
+  .tiles {{ display:flex; flex-wrap:wrap; border-top:1px solid var(--ink);
     border-bottom:1px solid var(--border); margin:0 0 28px; }}
-  .tile {{ flex:1; padding:12px 14px 14px; border-right:1px solid var(--border); }}
+  .tile {{ flex:1 1 140px; padding:12px 14px 14px;
+    border-right:1px solid var(--border);
+    border-bottom:1px solid var(--border); margin-bottom:-1px; }}
   .tile:last-child {{ border-right:none; }}
   .tl {{ font:9px/1.4 ui-monospace,Menlo,monospace; letter-spacing:.12em;
     text-transform:uppercase; color:var(--ink3); }}

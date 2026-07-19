@@ -18,7 +18,9 @@ from __future__ import annotations
 
 import logging
 import mimetypes
+import re
 from pathlib import Path
+from typing import Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
@@ -556,11 +558,17 @@ def publish_analysis(analysis_id: str) -> dict:
     if label:                     # labeled work lands in the client hub too
         storage.record_dashboard_deliverable(
             analysis_id, label,
-            title=(report.get("filename") or "").rsplit(".", 1)[0]
-                  or analysis_id,
+            title=_display_title(report.get("filename")) or analysis_id,
             version=info["version"], published_at=info["published_at"],
             status=_deliverable_status(report))
     return {**info, "url": f"/published/{info['token']}"}
+
+
+def _display_title(filename: Optional[str]) -> str:
+    """A filename is not client-facing language: strip the extension, turn
+    separators into spaces — 'PVAK_T1_2026.xlsx' reads 'PVAK T1 2026'."""
+    stem = (filename or "").rsplit(".", 1)[0]
+    return re.sub(r"[_\-]+", " ", stem).strip()
 
 
 @app.get("/analyses/{analysis_id}/publish")
@@ -805,7 +813,7 @@ def make_brief_report(analysis_id: str, lang: str = "en") -> dict:
     except narrative.NarrativeError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
     html = brief.render_brief_html(report, phrased, agg, label, lang)
-    stem = (report.get("filename") or analysis_id).rsplit(".", 1)[0]
+    stem = _display_title(report.get("filename")) or analysis_id
     d = storage.add_file_deliverable(
         label, f"analysis-brief-{lang}.html", html.encode("utf-8"),
         title=f"Analysis brief — {stem} ({lang.upper()})")
@@ -858,7 +866,7 @@ def compose_report(analysis_id: str, req: ComposeReportRequest) -> dict:
     lang = req.lang if req.lang in ("en", "fr") else "en"
     agg = aggregate_findings(report)
     html = compose.render_report_html(report, agg, label, lang, chosen)
-    stem = (report.get("filename") or analysis_id).rsplit(".", 1)[0]
+    stem = _display_title(report.get("filename")) or analysis_id
     d = storage.add_file_deliverable(
         label, f"operations-report-{lang}.html", html.encode("utf-8"),
         title=f"{compose._STR[lang]['kicker']} — {stem} ({lang.upper()})")
@@ -1067,6 +1075,15 @@ async def portal_intake(request: Request,
     aid = storage.save_analysis(result.filename, content, result.model_dump())
     storage.set_client(aid, user["name"])
     return {"received": True, "filename": result.filename}
+
+
+@app.get("/portal/logout", include_in_schema=False)
+def portal_logout() -> RedirectResponse:
+    """CLIENT. Kill the session cookie on this device — shared phones and
+    cybercafé machines are the anchor market's normal case."""
+    resp = RedirectResponse("/portal/signin", status_code=303)
+    resp.delete_cookie(auth.CLIENT_COOKIE)
+    return resp
 
 
 @app.get("/portal/hub", include_in_schema=False)
