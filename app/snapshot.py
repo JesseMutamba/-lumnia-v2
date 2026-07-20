@@ -93,6 +93,10 @@ def build_exec_snapshot(report: Dict[str, Any]) -> Dict[str, Any]:
             "at_stake": agg["total_abs_delta"],
         },
         "model": model,
+        # journal engine, exec voice ONLY: cash destinations + exception
+        # counts. Findings, line labels, and code x month detail never
+        # enter the snapshot.
+        "journal": (report.get("journal") or {}).get("exec"),
         # the story chart is only the fallback when nothing role-tags; when a
         # model exists the dashboard draws from it and this stays out
         "chart": None if model else _story_chart(report),

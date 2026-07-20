@@ -632,6 +632,21 @@
   /* one-line insight caption under a chart */
   .chcap { font-size: 11.5px; color: var(--ink-4); margin-top: 8px; line-height: 1.5; }
 
+  /* "understand this chart": provenance + definition + reading, on demand */
+  .explain { margin-top: 8px; }
+  .explain summary { font-family: var(--mono); font-size: 9.5px;
+    letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3);
+    cursor: pointer; list-style: none; }
+  .explain summary::-webkit-details-marker { display: none; }
+  .explain summary:hover { color: var(--gold); }
+  .explain[open] summary { color: var(--gold); margin-bottom: 8px; }
+  .explain .xrow { display: grid; grid-template-columns: 72px minmax(0, 1fr);
+    gap: 10px; font-size: 11.5px; line-height: 1.55; color: var(--ink-2);
+    padding: 4px 0; border-top: 1px solid var(--hairline); }
+  .explain .xk { font-family: var(--mono); font-size: 8.5px;
+    letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3);
+    padding-top: 2px; }
+
   /* actions: triage rows with serif numerals and an at-stake column */
   .acrow { display: grid; grid-template-columns: 44px minmax(0, 1fr) 132px;
     gap: 14px; padding: 20px 0; border-bottom: 1px solid var(--hairline); }
@@ -1041,12 +1056,51 @@ const STR = {
     pva_plan: "Plan", pva_actual: "Actual",
     pva_of_plan: p => `${p}% of plan`,
     pva_gap: "A plan sheet was found, but fewer than 3 periods align with the actuals — plan vs actual not computed.",
+    tr_intro: "Every time series Lumnia extracted from your workbook, sheet by sheet, exactly as uploaded — nothing modeled, nothing adjusted. Open “Understand this chart” under any chart for its source and reading.",
+    pr_intro: "Monthly actuals read from your sheets, with the derived rates Lumnia computed from them (conversion, cost per tonne, plan attainment). Each chart explains itself below.",
+    xp_t: "Understand this chart",
+    xp_src_k: "Source", xp_what_k: "What it is", xp_read_k: "Reading",
+    xp_src_raw: sheet => `Read directly from sheet “${sheet}” of your uploaded workbook — values as uploaded, nothing adjusted.`,
+    xp_src_model: "Computed by Lumnia from the audited series of your workbook — the source rows are named in the legend.",
+    xp_what_raw: labels => `Each line is one labeled row of the sheet (${labels}); the horizontal axis is the sheet's own period columns.`,
+    xp_what_prof: "Each bar is one column or category of the sheet, as uploaded.",
+    xp_window: (a, av, b, bv, chg) => `From ${a} (${av}) to ${b} (${bv})${chg ? ` — ${chg} over the window` : ""}.`,
+    xp_defs: {
+      prod_vol: "Monthly production actuals: each line is one volume series found in your sheets — raw input harvested and output produced.",
+      conv: "Conversion rate = output ÷ input, month by month (e.g. tonnes of CPO produced per tonne of FFB harvested). A falling rate means more raw material is being used for the same output.",
+      cost_budget: "Actual unit cost per period against the budget target from your plan sheet. Points above the budget line cost more per tonne than planned.",
+      pva: "The plan series from your plan sheet beside the actuals from your journal, aligned month by month by exact period. The gap between the lines is the shortfall or surplus against plan.",
+      fin_traj: "The yearly financial series found in your workbook (revenue, costs, investment), exactly as extracted.",
+      fin_margin: "Margin = revenue − operating costs, period by period; the percentage is margin ÷ revenue.",
+      fin_unit: "Per-unit economics: revenue and cost divided by the volume series, period by period — what one unit earns and what it costs.",
+    },
     pr_cost_chart: "Cost per tonne — actual vs budget",
     pr_cost_target: (t, y) => `budget target ${t} (${y})`,
     pr_budget_line: y => `Budget ${y}`,
     pr_vs_budget: (p, y) => p == null ? "" :
       `${p > 0 ? "▲" : "▼"} ${Math.abs(p)}% vs budget ${y}`,
     tab_data: "Data", tab_trends: "Trends", tab_audit: "Audit", tab_actions: "Actions",
+    tab_journal: "Journal",
+    jx_t: "Where the tracked cash went",
+    jx_kinds: { opex: "Operations", capex: "Investment",
+                overhead: "Head office", unmapped: "Outside the glossary",
+                dgo: "DGO journal (not consolidated)" },
+    jx_foot: (n, tot, rate) => `${n} month(s) · ${tot} USD total out · CDF converted at ${rate}`,
+    jx_exc_k: "Entries to clarify",
+    jx_exc: (n, usd) => `${n} journal entr${n === 1 ? "y needs" : "ies need"} clarification — ${usd} USD at stake. Your analyst has the line-level detail.`,
+    jx_clean: "Every journal check passed.",
+    xs_journal: n => `Clarify ${n} journal entr${n === 1 ? "y" : "ies"}`,
+    xs_journal_s: usd => `${usd} USD of movements need an explanation before the books close clean.`,
+    jn_intro: "Deep audit of the cash journals: every line of the consolidated and DGO journals re-checked (matching, balances, codes, duplicates), then re-aggregated by code and month straight from the dates — the Excel SUMIF ranges are not trusted.",
+    jn_rows: "Journal rows", jn_tieout: "Tie-out", jn_rate: "Rate",
+    jn_dgo: "DGO outflows", jn_findings: "Findings",
+    jn_ftitle: "Journal findings",
+    jn_fsub: "rules V1–V8 · ranked by severity, then amount",
+    jn_rule: "Rule", jn_lib: "Label", jn_msg: "What's wrong",
+    jn_clean: "Every journal check passed.",
+    jn_atitle: "Spend by section × month",
+    jn_asub: "CDF sorties, date-driven — the single complete spend series",
+    jn_section: "Section",
     sheets_analyzed: n => `${n} sheet${n === 1 ? "" : "s"} analyzed`,
     shared_view: "shared view", mode_exec: "Executive", mode_analyst: "Analyst",
     btn_report: "Report", btn_share: "Publish", btn_corrections: "Corrections CSV",
@@ -1542,12 +1596,51 @@ const STR = {
     pva_plan: "Plan", pva_actual: "Réel",
     pva_of_plan: p => `${p} % du plan`,
     pva_gap: "Une feuille de plan a été trouvée, mais moins de 3 périodes coïncident avec le réel — comparaison plan/réel non calculée.",
+    tr_intro: "Toutes les séries temporelles extraites de votre classeur, feuille par feuille, telles que déposées — rien de modélisé, rien d'ajusté. Ouvrez « Comprendre ce graphique » sous chaque graphique pour sa source et sa lecture.",
+    pr_intro: "Les réels mensuels lus dans vos feuilles, avec les taux que Lumnia en dérive (conversion, coût par tonne, atteinte du plan). Chaque graphique s'explique ci-dessous.",
+    xp_t: "Comprendre ce graphique",
+    xp_src_k: "Source", xp_what_k: "Définition", xp_read_k: "Lecture",
+    xp_src_raw: sheet => `Lu directement dans la feuille « ${sheet} » de votre classeur — valeurs telles que déposées, rien d'ajusté.`,
+    xp_src_model: "Calculé par Lumnia à partir des séries auditées de votre classeur — les lignes sources sont nommées dans la légende.",
+    xp_what_raw: labels => `Chaque courbe est une ligne étiquetée de la feuille (${labels}) ; l'axe horizontal reprend les colonnes de période de la feuille.`,
+    xp_what_prof: "Chaque barre est une colonne ou catégorie de la feuille, telle que déposée.",
+    xp_window: (a, av, b, bv, chg) => `De ${a} (${av}) à ${b} (${bv})${chg ? ` — ${chg} sur la fenêtre` : ""}.`,
+    xp_defs: {
+      prod_vol: "Réels mensuels de production : chaque courbe est une série de volume trouvée dans vos feuilles — matière première récoltée et production sortie.",
+      conv: "Taux de conversion = production ÷ matière première, mois par mois (ex. tonnes de CPO produites par tonne de FFB récoltée). Un taux qui baisse signifie plus de matière première pour la même production.",
+      cost_budget: "Coût unitaire réel par période contre la cible budget de votre feuille de plan. Un point au-dessus de la ligne budget coûte plus cher par tonne que prévu.",
+      pva: "La série du plan (feuille de plan) à côté du réel (journal), alignées mois par mois par période exacte. L'écart entre les courbes est le retard ou l'avance sur le plan.",
+      fin_traj: "Les séries financières annuelles trouvées dans votre classeur (revenus, charges, investissements), telles qu'extraites.",
+      fin_margin: "Marge = revenus − charges d'exploitation, période par période ; le pourcentage est marge ÷ revenus.",
+      fin_unit: "Économie unitaire : revenus et charges divisés par la série de volume, période par période — ce qu'une unité rapporte et ce qu'elle coûte.",
+    },
     pr_cost_chart: "Coût par tonne — réel vs budget",
     pr_cost_target: (t, y) => `cible budget ${t} (${y})`,
     pr_budget_line: y => `Budget ${y}`,
     pr_vs_budget: (p, y) => p == null ? "" :
       `${p > 0 ? "▲" : "▼"} ${Math.abs(p)} % vs budget ${y}`,
     tab_data: "Données", tab_trends: "Tendances", tab_audit: "Audit", tab_actions: "À faire",
+    tab_journal: "Journal",
+    jx_t: "Où est allé l'argent suivi",
+    jx_kinds: { opex: "Exploitation", capex: "Investissement",
+                overhead: "Siège", unmapped: "Hors glossaire",
+                dgo: "Journal DGO (non consolidé)" },
+    jx_foot: (n, tot, rate) => `${n} mois · ${tot} USD de sorties totales · CDF convertis à ${rate}`,
+    jx_exc_k: "Écritures à clarifier",
+    jx_exc: (n, usd) => `${n} écriture${n === 1 ? "" : "s"} de journal ${n === 1 ? "demande" : "demandent"} une clarification — ${usd} USD en jeu. Votre analyste dispose du détail ligne à ligne.`,
+    jx_clean: "Tous les contrôles des journaux sont bons.",
+    xs_journal: n => `Clarifier ${n} écriture${n === 1 ? "" : "s"} de journal`,
+    xs_journal_s: usd => `${usd} USD de mouvements demandent une explication avant de clore les comptes proprement.`,
+    jn_intro: "Audit approfondi des journaux de caisse : chaque ligne des journaux consolidé et DGO revérifiée (rapprochement, soldes, codes, doublons), puis réagrégée par code et par mois directement depuis les dates — les plages SUMIF d'Excel ne sont pas de confiance.",
+    jn_rows: "Lignes de journal", jn_tieout: "Rapprochement", jn_rate: "Taux",
+    jn_dgo: "Sorties DGO", jn_findings: "Constats",
+    jn_ftitle: "Constats des journaux",
+    jn_fsub: "règles V1–V8 · classés par gravité, puis montant",
+    jn_rule: "Règle", jn_lib: "Libellé", jn_msg: "Le problème",
+    jn_clean: "Tous les contrôles des journaux sont bons.",
+    jn_atitle: "Dépenses par section × mois",
+    jn_asub: "sorties CDF, pilotées par les dates — la seule série de dépense complète",
+    jn_section: "Section",
     sheets_analyzed: n => `${n} feuille${n === 1 ? "" : "s"} analysée${n === 1 ? "" : "s"}`,
     shared_view: "vue partagée", mode_exec: "Direction", mode_analyst: "Analyste",
     btn_report: "Rapport", btn_share: "Publier", btn_corrections: "CSV corrections",
@@ -2203,6 +2296,7 @@ const TAB_ICONS = {
   production: `<svg width="14" height="14" viewBox="0 0 14 14"><path d="M2 12V8l3 2V8l3 2V8l4-2.5V12z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M10.5 5.5V2.8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>`,
   data: `<svg width="14" height="14" viewBox="0 0 14 14"><path d="M1.5 11l3.4-4 2.7 2.3 4.9-6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   audit: `<svg width="14" height="14" viewBox="0 0 14 14"><path d="M2.5 7.4l3 3L11.5 4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  journal: `<svg width="14" height="14" viewBox="0 0 14 14"><rect x="2" y="1.5" width="10" height="11" rx="1" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M4.5 4.5h5M4.5 7h5M4.5 9.5h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>`,
 };
 
 function availableTabs() {
@@ -2218,6 +2312,7 @@ function availableTabs() {
     t.push(["production", T.tab_production]);
   if (REPORT.model && REPORT.model.scenario_ready) t.push(["whatif", T.tab_whatif]);
   t.push(["data", T.tab_trends]);
+  if (REPORT.journal) t.push(["journal", T.tab_journal]);
   t.push(["audit", T.tab_audit]);
   return t;
 }
@@ -2341,7 +2436,8 @@ function renderPublishedPage(snap, auditDetail) {
   document.body.dataset.mode = "exec";
   document.body.classList.add("home");
   REPORT = { filename: snap.filename, n_sheets: snap.n_sheets,
-             model: snap.model || null, sheets: [], plan: null, brief: null };
+             model: snap.model || null, sheets: [], plan: null, brief: null,
+             journal: snap.journal ? { exec: snap.journal } : null };
   const ad = snap.audit || {};
   AUDIT = { n_mismatched_relations: ad.n_mismatched_relations || 0,
             n_unverified_relations: ad.n_unverified_relations || 0,
@@ -3029,6 +3125,8 @@ function renderAll() {
       `<section id="sec-charts"><span class="kicker">${T.ch_trends}</span>${renderChartGrid()}</section>` +
       `<section id="sec-profile"><span class="kicker">${T.pf_kicker}</span>${renderProfile()}</section>` +
       `<section id="sec-sheets"><span class="kicker">${T.sh_kicker(r.n_sheets)}</span>${renderSheets()}</section>`;
+  } else if (TAB === "journal") {
+    body = renderJournal();
   } else if (TAB === "audit") {
     body = renderFilters() +
       `<section id="sec-audit"><span class="kicker">${T.tab_audit}</span>${renderHighlights()}${renderLeaderboards()}${renderFindingsTable()}</section>`;
@@ -3043,6 +3141,78 @@ function renderAll() {
 /* ---------- the Executive page (7d/7e): read-only over the audited data —
    no edit/map/decision controls; What-if levers stay interactive (they only
    explore, they never mutate the stored figures) ---------------------------- */
+/* ---------- the Journal tab: deep audit of contract cash journals ------- */
+const SEV_COLOR = { BLOCKER: "critical", HIGH: "critical", MED: "warning",
+                    LOW: "good" };
+
+function renderJournal() {
+  const j = REPORT.journal;
+  if (!j) return "";
+  const m = j.meta || {};
+  const stats = `<div class="statbar">
+    <span>${T.jn_rows} <b>${m.n_rows || 0}</b>
+      <span class="muted">(${m.n_site_rows || 0} site · ${m.n_dgo_rows || 0} DGO)</span></span>
+    <span>${T.jn_tieout} <b>${compact(m.tie_out_cdf || 0)}</b> CDF</span>
+    <span>${T.jn_rate} <b>${num(m.rate)}</b></span>
+    <span>${T.jn_dgo} <b>${compact(m.dgo_out_usd || 0)}</b> USD</span>
+    <span class="${m.n_high ? "sbbad" : "sbgood"}">${T.jn_findings} <b>${m.n_findings || 0}</b>
+      ${m.n_high ? `· ${m.n_high} HIGH` : ""}</span>
+  </div>`;
+
+  const frows = (j.findings || []).map(f => `<tr>
+      <td><span class="st" style="color:var(--${SEV_COLOR[f.sev] || "ink-2"})">${esc(f.rule)} · ${esc(f.sev)}</span></td>
+      <td>${esc(f.d || "—")}</td>
+      <td>${esc(f.code || "—")}</td>
+      <td>${esc(String(f.lib || "").slice(0, 44))}</td>
+      <td class="num">${f.usd ? compact(f.usd) : "—"}</td>
+      <td>${esc((LANG === "fr" ? f.msg_fr : f.msg) || f.msg)}</td>
+    </tr>`).join("");
+  const findings = `<div class="card" style="margin-top:14px">
+    <div class="card-head"><span class="ct">${T.jn_ftitle}</span>
+      <span class="cs">${T.jn_fsub}</span></div>
+    ${frows ? `<div class="preview-wrap" style="margin-top:8px"><table>
+      <thead><tr><th>${T.jn_rule}</th><th>Date</th><th>Code</th>
+        <th>${T.jn_lib}</th><th class="num">USD</th><th>${T.jn_msg}</th></tr></thead>
+      <tbody>${frows}</tbody></table></div>`
+    : `<p class="chcap" style="margin-top:10px">✓ ${T.jn_clean}</p>`}
+  </div>`;
+
+  // spend by section × month, sections subtotaled, UNMAPPED flagged
+  const months = j.months || [];
+  const bySec = new Map();
+  for (const c of j.cats || []) {
+    if (!bySec.has(c.sec)) bySec.set(c.sec, []);
+    bySec.get(c.sec).push(c);
+  }
+  const head = months.map(mo => `<th class="num">${esc(fmtPeriod(mo + "-01"))}</th>`).join("");
+  const secRows = [...bySec.entries()].map(([sec, cats]) => {
+    const tot = months.map((_, i) =>
+      cats.reduce((t, c) => t + (c.cdf[i] || 0), 0));
+    if (!tot.some(v => v)) return "";
+    const un = sec === "UNMAPPED";
+    const rows = cats.filter(c => c.cdf.some(v => v)).map(c => `<tr>
+        <td class="rl" style="padding-left:18px">${esc(c.code)} <span class="muted">${esc(String(c.label).slice(0, 26))}</span></td>
+        ${c.cdf.map(v => `<td class="num">${v ? compact(v) : "—"}</td>`).join("")}
+      </tr>`).join("");
+    return `<tr style="font-weight:650${un ? ";color:var(--critical)" : ""}">
+        <td class="rl">${un ? "⚠ " : ""}${esc(sec || "—")}</td>
+        ${tot.map(v => `<td class="num">${compact(v)}</td>`).join("")}
+      </tr>${rows}`;
+  }).join("");
+  const agg = `<div class="card" style="margin-top:14px">
+    <div class="card-head"><span class="ct">${T.jn_atitle}</span>
+      <span class="cs">${T.jn_asub}</span></div>
+    <div class="preview-wrap" style="margin-top:8px"><table>
+      <thead><tr><th>${T.jn_section}</th>${head}</tr></thead>
+      <tbody>${secRows}</tbody></table></div>
+  </div>`;
+
+  return `<section id="sec-journal"><span class="kicker">${T.tab_journal}</span>
+    <p class="chcap" style="margin:6px 0 10px;max-width:82ch">${T.jn_intro}</p>
+    ${stats}${findings}${agg}
+  </section>`;
+}
+
 function renderExecutivePage() {
   MODE = "exec";
   document.body.dataset.mode = "exec";
@@ -3698,7 +3868,7 @@ function renderExecOverview() {
         label: `${ROLE_LABELS[role] || role} — ${s.label.slice(0, 26)}`,
         values: s.values, color: SERIES_COLORS[k % SERIES_COLORS.length],
         on: true }));
-    primary = { pseudo: true, sheet: T.pr_chart, loc: null,
+    primary = { pseudo: true, sheet: T.pr_chart, loc: null, explain: "prod_vol",
       chart: { kind: "timeseries", periods: mo.periods, series: [],
                other: null, truncated: false },
       lines, i: CHARTS.length, range: null };
@@ -3748,13 +3918,43 @@ function renderExecOverview() {
       <div>${primary ? storyChartExec(primary)
         : `<div class="muted" style="padding:40px 0">${T.no_ts}</div>`}</div>
       <div><span class="kicker">${T.nx_kicker}</span>${stepRows}</div>
-    </div>`;
+    </div>
+    ${execJournalSection()}`;
+}
+
+/* journal audit, exec voice: where the cash went + what needs clarifying —
+   aggregates only, never journal lines (lives in live exec AND published) */
+function execJournalSection() {
+  const jx = REPORT.journal && REPORT.journal.exec;
+  if (!jx || !(jx.destinations || []).length) return "";
+  const mx = Math.max(...jx.destinations.map(d => d.usd), 1);
+  const rows = jx.destinations.map((d, k) => `<div class="rrow ${k === 0 ? "top" : ""}">
+      <span class="rl">${T.jx_kinds[d.kind] || d.kind}</span>
+      <span class="rtrack"><span style="width:${Math.max(2, d.usd / mx * 100).toFixed(1)}%;background:${d.kind === "dgo" || d.kind === "unmapped" ? "var(--critical)" : "var(--gold)"}"></span></span>
+      <span class="rv">${compact(d.usd)} <span class="muted">· ${d.pct != null ? pctFmt(d.pct, 1) : "—"}</span></span>
+    </div>`).join("");
+  const exc = jx.exceptions || {};
+  return `<section style="margin-top:38px"><span class="kicker">${T.jx_t}</span>
+    <div class="execgrid" style="margin-top:10px">
+      <div>${rows}
+        <div class="rfoot">${T.jx_foot(jx.months.length, compact(jx.total_out_usd), num(jx.rate))}</div></div>
+      <div>${exc.n ? `<div class="verdict" style="--vcolor:var(--${exc.n_high ? "critical" : "warning"})">
+          <span class="vic">◆</span>
+          <div><span class="vlabel">${T.jx_exc_k}</span>
+          <p>${T.jx_exc(exc.n, compact(exc.at_stake_usd))}</p></div></div>`
+        : `<p class="vlede">✓ ${T.jx_clean}</p>`}</div>
+    </div>
+  </section>`;
 }
 
 /* exec voice: business actions, never cell coordinates — the analyst
    workbench keeps the per-sheet confirm steps */
 function execStepsBiz() {
   const out = [];
+  const jx = REPORT.journal && REPORT.journal.exec;
+  if (jx && jx.exceptions && jx.exceptions.n_high)
+    out.push({ t: T.xs_journal(jx.exceptions.n_high),
+               s: T.xs_journal_s(compact(jx.exceptions.at_stake_usd)) });
   if (AUDIT.n_mismatched_relations)
     out.push({ t: T.xs_resolve(AUDIT.n_mismatched_relations),
       s: T.xs_resolve_sub(compact(AUDIT.total_abs_delta)) });
@@ -5167,7 +5367,7 @@ function renderFinancials(execView) {
     values: s.values, color: SERIES_COLORS[k % SERIES_COLORS.length], on: true,
   }));
   // exec page shows no source-sheet name; the analyst keeps the provenance
-  const traj = { pseudo: true, loc: null,
+  const traj = { pseudo: true, loc: null, explain: "fin_traj",
     sheet: execView ? T.fin_traj_x : T.fin_traj(m.source_sheet.trim()),
     chart: { kind: "timeseries", periods: m.periods, series: [], other: null,
              truncated: false }, lines, i: CHARTS.length, range: null };
@@ -5175,7 +5375,7 @@ function renderFinancials(execView) {
 
   let marginCard = "";
   if (mp && mp.some(v => v != null)) {
-    const bars = { pseudo: true, sheet: T.fin_margin, loc: null,
+    const bars = { pseudo: true, sheet: T.fin_margin, loc: null, explain: "fin_margin",
       chart: { kind: "profile", x: m.periods,
                y: mp.map(v => v ?? 0) }, i: CHARTS.length, range: null };
     CHARTS.push(bars);
@@ -5193,7 +5393,7 @@ function renderFinancials(execView) {
     if (d.opex_per_volume) ulines.push({
       label: LANG === "fr" ? "Coût par unité" : "Cost per unit",
       values: d.opex_per_volume, color: SERIES_COLORS[2], on: true });
-    const uc = { pseudo: true, sheet: T.fin_unit,
+    const uc = { pseudo: true, sheet: T.fin_unit, explain: "fin_unit",
       loc: T.fin_per(met.volume.label.slice(0, 24)),
       chart: { kind: "timeseries", periods: m.periods, series: [], other: null,
                truncated: false }, lines: ulines, i: CHARTS.length, range: null };
@@ -5204,7 +5404,7 @@ function renderFinancials(execView) {
     // only computed periods — a None drawn as a 0% bar is a fabrication
     const cpts = m.periods.map((p, i) => [p, d.volume_ratio[i]])
       .filter(([, v]) => v != null);
-    const conv = { pseudo: true,
+    const conv = { pseudo: true, explain: "conv",
       sheet: T.fin_conv(met.volume_secondary.label.slice(0, 20), met.volume.label.slice(0, 20)),
       loc: null, chart: { kind: "profile", x: cpts.map(p => p[0]),
         y: cpts.map(([, v]) => +(v * 100).toFixed(2)) },
@@ -5283,7 +5483,7 @@ function renderProduction() {
     label: `${ROLE_LABELS[role] || role} — ${s.label.slice(0, 26)}`,
     values: s.values, color: SERIES_COLORS[k % SERIES_COLORS.length], on: true,
   }));
-  const volChart = { pseudo: true, sheet: T.pr_chart,
+  const volChart = { pseudo: true, sheet: T.pr_chart, explain: "prod_vol",
     loc: PAGE === "exec" ? null : T.pr_src(String(mo.source_sheet || "").trim()),
     chart: { kind: "timeseries", periods: mo.periods, series: [], other: null,
              truncated: false }, lines, i: CHARTS.length, range: null };
@@ -5301,7 +5501,7 @@ function renderProduction() {
     // as a 0% bar would be a fabricated number
     const pts = mo.periods.map((p, i) => [p, vr[i]])
       .filter(([, v]) => v != null);
-    const rc = { pseudo: true, sheet: T.pr_ratio_chart,
+    const rc = { pseudo: true, sheet: T.pr_ratio_chart, explain: "conv",
       loc: [avg != null ? T.pr_avg(`${(avg * 100).toFixed(1)}%`) : null, xs]
         .filter(Boolean).join(" · ") || null,
       chart: { kind: "profile", x: pts.map(p => p[0]),
@@ -5333,7 +5533,7 @@ function renderProduction() {
       stats.push(`<span>${derLabel(ub.basis)} <b>${compact(actual[lastIdx])}</b>
         <b style="color:var(--${over ? "critical" : "good"})">${T.pr_vs_budget(pct, ub.target_period)}</b></span>`);
     }
-    const cc = { pseudo: true, sheet: T.pr_cost_chart,
+    const cc = { pseudo: true, sheet: T.pr_cost_chart, explain: "cost_budget",
       loc: T.pr_cost_target(compact(ub.target), ub.target_period),
       chart: { kind: "timeseries", periods: mo.periods, series: [],
                other: null, truncated: false },
@@ -5353,7 +5553,7 @@ function renderProduction() {
   const pvaCards = Object.entries(pva).slice(0, 3).map(([role, v]) => {
     if (v.pct_of_plan_total != null)
       stats.push(`<span>${ROLE_LABELS[role] || role} <b>${T.pva_of_plan(v.pct_of_plan_total)}</b></span>`);
-    const cc = { pseudo: true, sheet: T.pva_chart(ROLE_LABELS[role] || role),
+    const cc = { pseudo: true, sheet: T.pva_chart(ROLE_LABELS[role] || role), explain: "pva",
       loc: PAGE === "exec" ? null : T.pr_src(esc(String(v.plan_sheet || "").trim())),
       chart: { kind: "timeseries", periods: mo.periods, series: [],
                other: null, truncated: false },
@@ -5371,6 +5571,7 @@ function renderProduction() {
     ? `<p class="chcap" style="margin-top:12px">${T.pva_gap}</p>` : "";
 
   return `<section id="sec-production"><span class="kicker">${T.pr_kicker}</span>
+    <p class="chcap" style="margin:6px 0 10px;max-width:80ch">${T.pr_intro}</p>
     ${stats.length ? `<div class="statbar">${stats.join("")}</div>` : ""}
     <div class="grid2">${chartCard(volChart, false)}${ratioCard}${costCard}${pvaCards}</div>
     ${pvaGap}
@@ -5960,6 +6161,7 @@ let SHOWALL = false;
 function renderChartGrid() {
   const vis = visCharts().filter(c => !c.pseudo);
   if (!vis.length) return `<div class="card muted">${CHARTS.length ? T.ch_none_f : T.ch_none}</div>`;
+  const intro = `<p class="chcap" style="margin:0 0 12px;max-width:80ch">${T.tr_intro}</p>`;
   // progressive disclosure: a uniform grid of the first six, the rest
   // behind an explicit overflow card
   const show = (SHOWALL || vis.length <= 6) ? vis : vis.slice(0, 5);
@@ -5970,7 +6172,53 @@ function renderChartGrid() {
         vis.slice(show.length, show.length + 4).map(c => esc(c.sheet.trim().slice(0, 22))).join(", ")}…</div>
       <span class="seeall">${T.tr_showall} →</span>
     </div>` : "";
-  return `<div class="grid2">${show.map(c => chartCard(c, false)).join("")}${over}</div>`;
+  return `${intro}<div class="grid2">${show.map(c => chartCard(c, false)).join("")}${over}</div>`;
+}
+
+/* every chart can explain itself: where the numbers come from, what the
+   chart is, and what the values did — all deterministic, computed or
+   quoted from the pipeline, never invented */
+function explainBlock(c) {
+  const T2 = T.xp_defs || {};
+  let src, what;
+  if (c.pseudo) {
+    if (!c.explain || !T2[c.explain]) return "";
+    src = T.xp_src_model;
+    what = T2[c.explain];
+  } else {
+    src = T.xp_src_raw(esc(String(c.sheet).trim()));
+    const labels = (c.lines || []).slice(0, 4).map(l => esc(l.label.slice(0, 30)));
+    what = c.chart.kind === "timeseries"
+      ? T.xp_what_raw(labels.join(" · ") || "—")
+      : T.xp_what_prof;
+  }
+  const reads = [];
+  const line = (c.lines || [])[0];
+  if (line && c.chart.kind === "timeseries") {
+    const v = line.values, per = c.chart.periods;
+    const fi = v.findIndex(x => x != null);
+    let li = -1; v.forEach((x, i) => { if (x != null) li = i; });
+    if (fi >= 0 && li > fi) {
+      const chg = v[fi] ? Math.round((v[li] / v[fi] - 1) * 100) : null;
+      reads.push(`${esc(String(line.label).slice(0, 28))} — ` +
+        T.xp_window(esc(fmtPeriod(per[fi])), compact(v[fi]),
+          esc(fmtPeriod(per[li])), compact(v[li]),
+          chg != null ? `${chg >= 0 ? "+" : "−"}${Math.abs(chg)}%` : null));
+    }
+  }
+  if (!c.pseudo) {
+    // the backend's own bilingual insight sentences for this sheet
+    (REPORT.insights || [])
+      .filter(i => i.sheet === c.sheet && (i.message || i.message_fr))
+      .slice(0, 2)
+      .forEach(i => reads.push(esc(
+        (LANG === "fr" ? i.message_fr : i.message) || i.message)));
+  }
+  const row = (k, v) => v ? `<div class="xrow"><span class="xk">${k}</span><span>${v}</span></div>` : "";
+  return `<details class="explain"><summary>ⓘ ${T.xp_t}</summary>
+    ${row(T.xp_src_k, src)}${row(T.xp_what_k, what)}
+    ${reads.map(r => row(T.xp_read_k, r)).join("")}
+  </details>`;
 }
 
 function chartCard(c, isPrimary) {
@@ -6005,7 +6253,7 @@ function chartCard(c, isPrimary) {
     <div class="card-head"><span class="ct">${esc(c.sheet)}</span><span class="cs">${esc(sub)}</span>
       <span class="grow"></span>${cumBtn}${csvBtn}</div>
     <div class="plot">${c.chart.kind === "timeseries" ? svgTimeseries(c) : svgProfile(c)}</div>
-    ${legend}${cap ? `<div class="chcap">${cap}</div>` : ""}${hint}<div class="tooltip"></div></div>`;
+    ${legend}${cap ? `<div class="chcap">${cap}</div>` : ""}${explainBlock(c)}${hint}<div class="tooltip"></div></div>`;
 }
 
 function yScale(vals) {

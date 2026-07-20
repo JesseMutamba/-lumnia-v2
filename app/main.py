@@ -47,6 +47,7 @@ from .models import (
 )
 from .pipeline.celltypes import grid_kinds
 from .pipeline.eda import generate_insights
+from .pipeline.journal import build_journal_block
 from .pipeline.model import build_model
 from .pipeline.mapping import (MAPPABLE_ROLES, build_mapped_model, reconcile,
                                resolve, year_series)
@@ -191,6 +192,9 @@ def run_pipeline(content: bytes, filename: str) -> AnalyzeResponse:
         model=build_model(reports),
         story=stories[0] if stories else None,
         stories=stories or None,
+        # contract-matching workbooks (dual cash journals) get the deep
+        # journal audit on top of the generic pipeline
+        journal=build_journal_block(sheets),
     )
 
 

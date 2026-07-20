@@ -52,6 +52,9 @@ class AnalyzeResponse(BaseModel):
     insights: Optional[List[Dict[str, Any]]] = None
     # Step 7 — the semantic business model (role-tagged series + breakdowns)
     model: Optional[Dict[str, Any]] = None
+    # journal engine — deep audit of contract-matching dual cash journals
+    # (V1–V8 findings, code × month aggregation, tie-out); None otherwise
+    journal: Optional[Dict[str, Any]] = None
     # Layer 3 — AI-written narrative (generated on demand, cached with the
     # report; every figure in it comes from the deterministic pipeline)
     narrative: Optional[Dict[str, Any]] = None
