@@ -17,13 +17,24 @@ MAX_SERIES = 6
 
 
 def _strip_sheets(block: Dict[str, Any]) -> Dict[str, Any]:
-    """Drop workbook sheet names from a model block — the exec page never
-    shows them, and the public payload should carry no file structure."""
+    """Drop workbook sheet names — and source-cell refs, same policy — from
+    a model block: the exec page never shows them, and the public payload
+    should carry no file structure."""
     out = {k: v for k, v in block.items() if k != "source_sheet"}
     metrics = out.get("metrics")
     if isinstance(metrics, dict):
-        out["metrics"] = {role: {mk: mv for mk, mv in s.items() if mk != "sheet"}
+        out["metrics"] = {role: {mk: mv for mk, mv in s.items()
+                                 if mk not in ("sheet", "cells")}
                           for role, s in metrics.items()}
+    pva = out.get("plan_vs_actual")
+    if isinstance(pva, dict):
+        out["plan_vs_actual"] = {role: {k: v for k, v in p.items()
+                                        if k != "plan_cells"}
+                                 for role, p in pva.items()}
+    ucb = out.get("unit_cost_budget")
+    if isinstance(ucb, dict):
+        out["unit_cost_budget"] = {k: v for k, v in ucb.items()
+                                   if k != "target_sources"}
     return out
 
 

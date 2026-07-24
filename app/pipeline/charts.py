@@ -38,11 +38,18 @@ MAX_FULL_SERIES = 24
 
 def timeseries_chart(periods: List[object],
                      series_values: Dict[str, Dict[int, float]],
-                     axis: str = "date") -> Optional[dict]:
+                     axis: str = "date",
+                     series_cells: Optional[Dict[str, Dict[int, list]]] = None
+                     ) -> Optional[dict]:
     """Build the timeseries payload.
 
     ``periods``: coerced period labels in axis order.
     ``series_values``: label -> {period_index: summed numeric value}.
+    ``series_cells``: label -> {period_index: [[row, col], ...]} — the source
+    cells each summed value came from, same keys as ``series_values``. They
+    ride on ``series_all`` only (the model layer's series), never the folded
+    plotting series; ``_finalize_cells`` later turns the pairs into absolute
+    A1 refs.
     """
     ranked = sorted(
         ((label, vals, sum(abs(v) for v in vals.values()))
@@ -84,8 +91,13 @@ def timeseries_chart(periods: List[object],
     # small charts keep EVERY series so the business-model layer can
     # role-tag them — year axes for projections, date axes for actuals
     if len(ranked) <= MAX_FULL_SERIES:
-        out["series_all"] = [{"label": str(label), "values": row(vals)}
-                             for label, vals, _ in ranked]
+        out["series_all"] = []
+        for label, vals, _ in ranked:
+            entry = {"label": str(label), "values": row(vals)}
+            cmap = (series_cells or {}).get(label)
+            if cmap:
+                entry["cells"] = [cmap.get(i) for i in range(n)]
+            out["series_all"].append(entry)
     return out
 
 
@@ -107,12 +119,19 @@ def _year_col(numeric_cols: Dict[str, List[Optional[float]]],
 
 
 def year_series_chart(numeric_cols: Dict[str, List[Optional[float]]],
-                      totals_idx: set) -> Optional[dict]:
+                      totals_idx: set,
+                      row_numbers: Optional[List[int]] = None,
+                      col_map: Optional[Dict[str, int]] = None
+                      ) -> Optional[dict]:
     """A tidy table with a bare year column (2025, 2026…) is a time series
     stored in rows: sum every other numeric column by year and emit the same
     ``axis="year"`` payload matrix sheets produce — so the business-model
     layer can role-tag the series. Data rows only; totals rows would
-    double-count. Nothing year-like -> ``None`` (profile chart fallback)."""
+    double-count. Nothing year-like -> ``None`` (profile chart fallback).
+
+    ``row_numbers`` (row ordinal -> 1-based sheet row) and ``col_map``
+    (column name -> 0-based sheet column) let each summed value cite its
+    source cells; without them the chart simply carries no ``cells``."""
     ycol = _year_col(numeric_cols, totals_idx)
     if ycol is None:
         return None
@@ -129,20 +148,28 @@ def year_series_chart(numeric_cols: Dict[str, List[Optional[float]]],
     periods = sorted(rows_by_year)
     pidx = {y: k for k, y in enumerate(periods)}
     series_values: Dict[str, Dict[int, float]] = {}
+    series_cells: Dict[str, Dict[int, list]] = {}
     for name, vals in numeric_cols.items():
         # a second year-like column is another label, never a series
         if name == ycol or _year_col({name: vals}, totals_idx) == name:
             continue
         bucket: Dict[int, float] = {}
+        cbucket: Dict[int, list] = {}
         for y, idxs in rows_by_year.items():
-            cell = [vals[i] for i in idxs if vals[i] is not None]
-            if cell:
-                bucket[pidx[y]] = sum(cell)
+            keep = [i for i in idxs if vals[i] is not None]
+            if keep:
+                bucket[pidx[y]] = sum(vals[i] for i in keep)
+                if row_numbers is not None and col_map and name in col_map:
+                    cbucket[pidx[y]] = [[row_numbers[i], col_map[name]]
+                                        for i in keep]
         if bucket:
             series_values[name] = bucket
+            if cbucket:
+                series_cells[name] = cbucket
     if not series_values:
         return None
-    return timeseries_chart(periods, series_values, axis="year")
+    return timeseries_chart(periods, series_values, axis="year",
+                            series_cells=series_cells or None)
 
 
 def profile_chart(names: List[str],

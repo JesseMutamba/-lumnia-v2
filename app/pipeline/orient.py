@@ -510,7 +510,8 @@ def _extract_tidy_table(df, kinds, meta, max_rows) -> dict:
     summary = table_summary(accs, total)
     totals_idx = {t["i"] for t in totals}
     # a year column in rows makes a real time series; else the column profile
-    chart = (year_series_chart(numeric_cols, totals_idx)
+    chart = (year_series_chart(numeric_cols, totals_idx,
+                               row_numbers=row_numbers, col_map=col_map)
              or profile_chart(names, numeric_cols, totals_idx)) \
         if numeric_cols else None
     if chart:
@@ -586,6 +587,9 @@ def _extract_matrix(df, kinds, meta, max_rows, name: str = "") -> dict:
 
     p_index = {p: k for k, p in enumerate(period_cols)}
     series_values: Dict[str, Dict[int, float]] = {}   # for the dashboard chart
+    # label -> {period_index: [[1-based row, 0-based col], ...]} — the source
+    # cells behind each summed value; _finalize_cells turns them into A1 refs
+    series_cells: Dict[str, Dict[int, list]] = {}
 
     records = []
     total = n_series = 0
@@ -603,6 +607,7 @@ def _extract_matrix(df, kinds, meta, max_rows, name: str = "") -> dict:
         series_key = " / ".join(str(cv) for _, cv in label_vals
                                 if cv is not None) or f"series {n_series}"
         bucket = series_values.setdefault(series_key, {})
+        cbucket = series_cells.setdefault(series_key, {})
         for p in period_cols:
             if kinds[i][p] == BLANK:
                 continue
@@ -615,6 +620,7 @@ def _extract_matrix(df, kinds, meta, max_rows, name: str = "") -> dict:
             if isinstance(cv, (int, float)) and not isinstance(cv, bool):
                 k = p_index[p]
                 bucket[k] = bucket.get(k, 0.0) + cv
+                cbucket.setdefault(k, []).append([i + 1, p])
             if len(records) < max_rows:
                 rec = dict(labels)
                 rec["period"] = periods[p]
@@ -635,7 +641,8 @@ def _extract_matrix(df, kinds, meta, max_rows, name: str = "") -> dict:
     }
     summary = table_summary(accs, total, extra)
     chart = timeseries_chart([periods[p] for p in period_cols], series_values,
-                             axis=meta.get("axis", "date"))
+                             axis=meta.get("axis", "date"),
+                             series_cells=series_cells)
     if chart:
         summary["chart"] = chart
 
@@ -704,7 +711,9 @@ def _xl_col(j: int) -> str:
 
 def _finalize_cells(res: dict, row_off: int = 0, col_off: int = 0) -> None:
     """Turn each mismatch's (row, col) into a real Excel cell address, shifting
-    by the panel/band offsets when the table was classified on a slice."""
+    by the panel/band offsets when the table was classified on a slice.
+    Chart series source cells get the same treatment: the [row, col] pairs
+    recorded at extraction become absolute A1 refs."""
     t = res.get("tidy")
     if not t:
         return
@@ -718,6 +727,13 @@ def _finalize_cells(res: dict, row_off: int = 0, col_off: int = 0) -> None:
             m["row"] += row_off
             col = m.pop("col", None)
             m["cell"] = f"{_xl_col(col + col_off)}{m['row']}" if col is not None else None
+    chart = (t.get("summary") or {}).get("chart") or {}
+    for s in chart.get("series_all") or []:
+        if s.get("cells"):
+            s["cells"] = [
+                [f"{_xl_col(c + col_off)}{r + row_off}" for r, c in refs]
+                if refs else None
+                for refs in s["cells"]]
 
 
 def _orient_single(df: pd.DataFrame, max_rows: int,
