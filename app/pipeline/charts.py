@@ -121,7 +121,8 @@ def _year_col(numeric_cols: Dict[str, List[Optional[float]]],
 def year_series_chart(numeric_cols: Dict[str, List[Optional[float]]],
                       totals_idx: set,
                       row_numbers: Optional[List[int]] = None,
-                      col_map: Optional[Dict[str, int]] = None
+                      col_map: Optional[Dict[str, int]] = None,
+                      ghost_rows: Optional[Dict[str, set]] = None
                       ) -> Optional[dict]:
     """A tidy table with a bare year column (2025, 2026…) is a time series
     stored in rows: sum every other numeric column by year and emit the same
@@ -131,7 +132,11 @@ def year_series_chart(numeric_cols: Dict[str, List[Optional[float]]],
 
     ``row_numbers`` (row ordinal -> 1-based sheet row) and ``col_map``
     (column name -> 0-based sheet column) let each summed value cite its
-    source cells; without them the chart simply carries no ``cells``."""
+    source cells; without them the chart simply carries no ``cells``.
+    ``ghost_rows`` (column name -> ordinals whose value was forward-filled
+    from a merged cell) blocks the citation for any period such a row
+    contributed to: the physical cell is blank, and citing a blank — or
+    only the real subset — would be a false proof. No refs, no claim."""
     ycol = _year_col(numeric_cols, totals_idx)
     if ycol is None:
         return None
@@ -155,11 +160,13 @@ def year_series_chart(numeric_cols: Dict[str, List[Optional[float]]],
             continue
         bucket: Dict[int, float] = {}
         cbucket: Dict[int, list] = {}
+        ghosts = (ghost_rows or {}).get(name, set())
         for y, idxs in rows_by_year.items():
             keep = [i for i in idxs if vals[i] is not None]
             if keep:
                 bucket[pidx[y]] = sum(vals[i] for i in keep)
-                if row_numbers is not None and col_map and name in col_map:
+                if row_numbers is not None and col_map and name in col_map \
+                        and not any(i in ghosts for i in keep):
                     cbucket[pidx[y]] = [[row_numbers[i], col_map[name]]
                                         for i in keep]
         if bucket:

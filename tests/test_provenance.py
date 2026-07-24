@@ -214,6 +214,80 @@ def test_plan_cells_reproduce_the_plan():
         _assert_series_reproduces(ws, p["plan"], p["plan_cells"])
 
 
+def test_band_offset_cells_are_sheet_absolute():
+    # A matrix classified inside a stacked BAND (rows offset) must cite
+    # absolute sheet rows, exactly like the panel (column) case.
+    from tests.fixtures import stacked_tables_sheet
+    from app.pipeline.orient import orient_sheet
+    out = orient_sheet(stacked_tables_sheet())
+    assert out["orientation"] == "multi"
+    matrix = next(p for p in out["panels"]
+                  if (p.get("tidy") or {}).get("columns", [None])[-1] == "value")
+    ser = {s["label"]: s
+           for s in matrix["tidy"]["summary"]["chart"]["series_all"]}
+    # FFB RECU lives at sheet row 19, CPO PRODUIT at row 20 (band offset 17)
+    assert ser["FFB RECU"]["cells"][0] == ["B19"]
+    assert ser["CPO PRODUIT"]["cells"][0] == ["B20"]
+
+
+def test_total_rows_never_enter_a_roles_cells():
+    # The TOTAL series is an aggregate, not data: role metrics cite only the
+    # real rows, and no citation anywhere names the TOTAL row.
+    df = _sheet("JOURNAL PRODUCTION", [
+        ["PRODUCTION CPO (T)", *CPO],           # row 3
+        ["CHARGES OPEX", *OPEX],                # row 4
+        ["TOTAL PRODUCTION", *[c + o for c, o in zip(CPO, OPEX)]],   # row 5
+    ])
+    rep = _analyze(_book(("JOURNAL", df)))
+    met = rep["model"]["monthly"]["metrics"]
+    assert met["volume"]["cells"] == _row_refs(3)
+    for role, m in met.items():
+        for refs in m["cells"]:
+            assert not any(r.endswith("5") for r in refs or []), (role, refs)
+
+
+def test_short_plan_cells_pad_with_none_like_the_values():
+    # A 3-month plan against 6 months of actuals: plan_cells align to the
+    # actuals axis exactly as plan values do — None where the plan is silent.
+    plan3 = _sheet("PLAN OPERATIONNEL", [
+        ["PRODUCTION CPO PREVUE (T)", *PLAN_CPO[:3]],
+    ], MONTHS[:3])
+    rep = _analyze(_book(("JOURNAL", _actuals()), ("BUDGET 2025", plan3)))
+    v = rep["model"]["monthly"]["plan_vs_actual"]["volume"]
+    assert v["plan"] == [*PLAN_CPO[:3], None, None, None]
+    assert v["plan_cells"] == [*_row_refs(3, 3), None, None, None]
+
+
+def test_no_positions_means_no_cells_key():
+    # Provenance is never guessed: a chart built without positional info
+    # simply carries no ``cells`` key at all.
+    from app.pipeline.charts import year_series_chart
+    ch = year_series_chart(
+        {"Année": [2023, 2024, 2025], "PRODUCTION CPO (T)": [500, 650, 700]},
+        set())
+    assert ch["axis"] == "year"
+    for s in ch["series_all"]:
+        assert "cells" not in s
+
+
+def test_ffilled_ghost_rows_block_the_citation():
+    # A value forward-filled from a merged cell sits on a physically BLANK
+    # cell. Citing it — or only the real subset of a summed period — would
+    # be a false proof, so such periods carry no refs at all.
+    from app.pipeline.charts import year_series_chart
+    ch = year_series_chart(
+        {"Année": [2023, 2023, 2024, 2025],
+         "PRODUCTION CPO (T)": [500, 500, 650, 700]},
+        set(),
+        row_numbers=[2, 3, 4, 5],
+        col_map={"PRODUCTION CPO (T)": 1},
+        ghost_rows={"PRODUCTION CPO (T)": {1}})    # ordinal 1 ffilled from B2
+    ser = {s["label"]: s for s in ch["series_all"]}
+    cells = ser["PRODUCTION CPO (T)"]["cells"]
+    assert cells[0] is None                        # 2023 summed a ghost
+    assert cells[1] == [[4, 1]] and cells[2] == [[5, 1]]   # real rows cite
+
+
 def test_public_snapshot_carries_no_cells():
     # The published exec payload carries no file structure — cell refs
     # included, same policy as sheet names.

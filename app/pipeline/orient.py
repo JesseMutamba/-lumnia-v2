@@ -470,6 +470,10 @@ def _extract_tidy_table(df, kinds, meta, max_rows) -> dict:
     records = []
     col_values = [[] for _ in cols]          # full coerced columns for Step 4
     row_numbers = []                          # 1-based sheet rows, as Excel shows
+    # column name -> row ordinals whose effective value was forward-filled
+    # from a merged cell above: the value is real, the CELL is blank — such
+    # positions must never be cited as a figure's source
+    ghost_rows: Dict[str, set] = {}
     total = 0
     for i in range(data_start, r1 + 1):
         if not any(kinds[i][j] != BLANK for j in cols):
@@ -478,7 +482,11 @@ def _extract_tidy_table(df, kinds, meta, max_rows) -> dict:
         row_numbers.append(i + 1)
         rec = {}
         for idx, (acc, name, j) in enumerate(zip(accs, names, cols)):
-            v = ff[(i, j)] if (i, j) in ff else df.iat[i, j]
+            if (i, j) in ff:
+                v = ff[(i, j)]
+                ghost_rows.setdefault(name, set()).add(total - 1)
+            else:
+                v = df.iat[i, j]
             k = cell_kind(v)                 # profile the effective (ffilled) value
             cv = coerce_value(v)
             acc.add(k, cv)                   # Step 3: streaming column stats
@@ -511,7 +519,8 @@ def _extract_tidy_table(df, kinds, meta, max_rows) -> dict:
     totals_idx = {t["i"] for t in totals}
     # a year column in rows makes a real time series; else the column profile
     chart = (year_series_chart(numeric_cols, totals_idx,
-                               row_numbers=row_numbers, col_map=col_map)
+                               row_numbers=row_numbers, col_map=col_map,
+                               ghost_rows=ghost_rows)
              or profile_chart(names, numeric_cols, totals_idx)) \
         if numeric_cols else None
     if chart:
