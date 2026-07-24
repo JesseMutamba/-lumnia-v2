@@ -85,22 +85,39 @@ def check_round(client, name: str, content: bytes, rnd: int) -> None:
     last = [v for v in ub["variance_pct"] if v is not None][-1]
     assert ub.get("target_sources"), "budget target names no source cells"
 
-    # every metric period value must re-derive from its cited cells via the
-    # trace endpoint — the click in the demo cannot land on a dead figure
+    # every figure the demo click can land on must re-derive from its cited
+    # cells via the trace endpoint: metric values, the budget target's
+    # sources, and the plan side of every attainment chip
     n_checked = 0
+
+    def _trace(sheet: str, refs: list, expect=None) -> None:
+        nonlocal n_checked
+        t = client.get(f"/analyses/{rep['id']}/cells",
+                       params={"sheet": sheet, "refs": ",".join(refs)})
+        assert t.status_code == 200, (sheet, refs, t.text[:300])
+        if expect is not None:
+            total = sum(c["value"] for c in t.json()["cells"])
+            assert round(total, 4) == expect, (sheet, refs, total, expect)
+        n_checked += 1
+
     for role, m in mo["metrics"].items():
         cells = m.get("cells")
         assert cells, f"metric '{role}' carries no source cells"
+        assert len(cells) == len(m["values"]), role
         for v, refs in zip(m["values"], cells):
-            if v is None or not refs:
-                continue
-            t = client.get(f"/analyses/{rep['id']}/cells",
-                           params={"sheet": m["sheet"],
-                                   "refs": ",".join(refs)})
-            assert t.status_code == 200, t.text[:300]
-            total = sum(c["value"] for c in t.json()["cells"])
-            assert round(total, 4) == v, (role, refs, total, v)
-            n_checked += 1
+            if v is not None and refs:
+                _trace(m["sheet"], refs, expect=v)
+    for role, src in ub["target_sources"].items():
+        _trace(src["sheet"], src["cells"])
+    for role, p in (mo.get("plan_vs_actual") or {}).items():
+        cells = p.get("plan_cells")
+        if not cells:
+            continue
+        assert len(cells) == len(p["plan"]), role
+        for v, refs in zip(p["plan"], cells):
+            if v is not None and refs:
+                _trace(p["plan_sheet"], refs, expect=v)
+    assert n_checked > 0, "nothing traced — every demo click would be dead"
     print(f"  round {rnd}: ingest ok · variance {last:+}% vs budget "
           f"{ub['target_period']} · {n_checked} figures trace to source")
 
