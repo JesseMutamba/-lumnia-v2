@@ -120,6 +120,21 @@ class FindingsResponse(BaseModel):
     unverified: List[Dict[str, Any]]
 
 
+class CellTraceResponse(BaseModel):
+    """Cited cells re-read from the ORIGINAL uploaded bytes — the audit
+    trail behind one dashboard figure. ``raw`` is the value exactly as the
+    file holds it; ``value`` is what the pipeline's coercion makes of it.
+    Nothing here is echoed from the stored report."""
+    id: str
+    filename: str
+    sheet: str
+    # [{ref, raw, value}] in request order
+    cells: List[Dict[str, Any]]
+    # a small surrounding slice for visual context:
+    # {row_start (1-based), col_letters, rows}
+    excerpt: Dict[str, Any]
+
+
 class DeleteResponse(BaseModel):
     id: str
     deleted: bool

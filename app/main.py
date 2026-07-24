@@ -34,6 +34,7 @@ from .snapshot import build_exec_snapshot
 from .models import (
     AnalysisMeta,
     AnalyzeResponse,
+    CellTraceResponse,
     ComposeReportRequest,
     DecisionsRequest,
     DeleteResponse,
@@ -52,8 +53,10 @@ from .pipeline.model import build_model
 from .pipeline.mapping import (MAPPABLE_ROLES, build_mapped_model, reconcile,
                                resolve, year_series)
 from .pipeline.semantics import plan_from_brief, suggest_brief
+from .pipeline.coerce import coerce_value
 from .pipeline.ingest import read_upload
-from .pipeline.orient import orient_sheet
+from .pipeline.jsonsafe import jsonify
+from .pipeline.orient import _xl_col, orient_sheet
 from .pipeline.profile import profile_sheet
 
 app = FastAPI(title="Lumnia v2", version="0.5.0")
@@ -1339,6 +1342,98 @@ def rerun_analysis(analysis_id: str) -> AnalyzeResponse:
                 result.mapping = {**old_map, "reconciliation": rec}
     storage.update_report(analysis_id, result.model_dump())
     return result
+
+
+# Trace requests are small: a figure cites a handful of cells per period.
+MAX_TRACE_REFS = 40
+_A1_RX = re.compile(r"^([A-Za-z]{1,3})([1-9][0-9]{0,6})$")
+_EXCERPT_PAD = 2          # rows of context above/below the cited cells
+_EXCERPT_MAX_ROWS = 10
+_EXCERPT_MAX_COLS = 12
+
+
+def _parse_a1(ref: str) -> tuple:
+    """'B3' -> (0-based row, 0-based col). ValueError on junk."""
+    m = _A1_RX.match(ref)
+    if not m:
+        raise ValueError(ref)
+    col = 0
+    for ch in m.group(1).upper():
+        col = col * 26 + (ord(ch) - 64)
+    return int(m.group(2)) - 1, col - 1
+
+
+@app.get("/analyses/{analysis_id}/cells", response_model=CellTraceResponse)
+def trace_cells(analysis_id: str, sheet: str, refs: str) -> CellTraceResponse:
+    """Resolve A1 refs against the ORIGINAL uploaded bytes — the proof
+    behind a dashboard figure. The workbook is re-read through the same
+    ingest path the pipeline used; nothing is echoed from the stored
+    report, so what this returns is what the file actually holds."""
+    ref_list = [r.strip().upper() for r in refs.split(",") if r.strip()]
+    if not ref_list:
+        raise HTTPException(status_code=400, detail=_bi(
+            "No cell refs given.", "Aucune référence de cellule fournie."))
+    if len(ref_list) > MAX_TRACE_REFS:
+        raise HTTPException(status_code=400, detail=_bi(
+            f"Too many cell refs ({len(ref_list)}); the limit is "
+            f"{MAX_TRACE_REFS}.",
+            f"Trop de références ({len(ref_list)}) ; la limite est "
+            f"{MAX_TRACE_REFS}."))
+    try:
+        coords = [_parse_a1(r) for r in ref_list]
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=_bi(
+            f"Malformed cell ref '{exc.args[0]}'.",
+            f"Référence de cellule invalide « {exc.args[0]} »."))
+
+    stored = storage.get_content(analysis_id)
+    if stored is None:
+        raise HTTPException(status_code=404,
+                            detail=f"No analysis '{analysis_id}'.")
+    filename, content = stored
+    try:
+        sheets = read_upload(content, filename)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=_bi(
+            f"Could not re-read '{filename}'",
+            f"Impossible de relire « {filename} »") + f" — {exc}")
+    if sheet not in sheets:
+        raise HTTPException(status_code=404, detail=_bi(
+            f"No sheet '{sheet}' in '{filename}'.",
+            f"Aucune feuille « {sheet} » dans « {filename} »."))
+    df = sheets[sheet]
+    n_rows, n_cols = int(df.shape[0]), int(df.shape[1])
+    for ref, (i, j) in zip(ref_list, coords):
+        if i >= n_rows or j >= n_cols:
+            raise HTTPException(status_code=400, detail=_bi(
+                f"Cell {ref} is outside sheet '{sheet}' "
+                f"({n_rows} rows x {n_cols} columns).",
+                f"La cellule {ref} est hors de la feuille « {sheet} » "
+                f"({n_rows} lignes x {n_cols} colonnes)."))
+
+    cells = []
+    for ref, (i, j) in zip(ref_list, coords):
+        raw = df.iat[i, j]
+        cells.append({"ref": ref, "raw": jsonify(raw),
+                      "value": jsonify(coerce_value(raw))})
+
+    # context slice: the cited rows padded, columns from A (the label
+    # column lives left) through just past the rightmost citation
+    r_lo = max(0, min(i for i, _ in coords) - _EXCERPT_PAD)
+    r_hi = min(n_rows - 1, max(i for i, _ in coords) + _EXCERPT_PAD)
+    if r_hi - r_lo + 1 > _EXCERPT_MAX_ROWS:
+        r_hi = r_lo + _EXCERPT_MAX_ROWS - 1
+    c_lo, c_hi = 0, min(n_cols - 1, max(j for _, j in coords) + 1)
+    if c_hi - c_lo + 1 > _EXCERPT_MAX_COLS:
+        c_lo = c_hi - _EXCERPT_MAX_COLS + 1
+    excerpt = {
+        "row_start": r_lo + 1,
+        "col_letters": [_xl_col(j) for j in range(c_lo, c_hi + 1)],
+        "rows": [[jsonify(df.iat[i, j]) for j in range(c_lo, c_hi + 1)]
+                 for i in range(r_lo, r_hi + 1)],
+    }
+    return CellTraceResponse(id=analysis_id, filename=filename, sheet=sheet,
+                             cells=cells, excerpt=excerpt)
 
 
 @app.delete("/analyses/{analysis_id}", response_model=DeleteResponse)
