@@ -1105,6 +1105,7 @@ const STR = {
     tc_close: "Close", tc_loading: "Reading the uploaded file…",
     tc_raw: r => `as written: “${r}”`,
     tc_hint: "Click to trace this figure to its source cells",
+    tc_aligned: n => `all ${n} aligned month${n === 1 ? "" : "s"} — the figure totals them`,
     tab_data: "Data", tab_trends: "Trends", tab_audit: "Audit", tab_actions: "Actions",
     tab_journal: "Journal",
     jx_t: "Where the tracked cash went",
@@ -1653,6 +1654,7 @@ const STR = {
     tc_close: "Fermer", tc_loading: "Lecture du fichier déposé…",
     tc_raw: r => `tel qu'écrit : « ${r} »`,
     tc_hint: "Cliquer pour tracer ce chiffre jusqu'à ses cellules sources",
+    tc_aligned: n => `les ${n} mois alignés — le chiffre les totalise`,
     tab_data: "Données", tab_trends: "Tendances", tab_audit: "Audit", tab_actions: "À faire",
     tab_journal: "Journal",
     jx_t: "Où est allé l'argent suivi",
@@ -5601,19 +5603,28 @@ function renderProduction() {
   const pva = mo.plan_vs_actual || {};
   const pvaCards = Object.entries(pva).slice(0, 3).map(([role, v]) => {
     if (v.pct_of_plan_total != null) {
-      // trace the attainment at the last month where actual and plan meet
+      // the chip's figure totals EVERY aligned month, so the trace cites
+      // them all; a month missing refs on either side kills the chip — a
+      // partial citation would be a false proof
       let ti = null;
       const am = met[role];
       if (am && am.cells && v.plan_cells) {
-        let li = -1;
-        am.values.forEach((a, i) => { if (a != null && v.plan[i] != null) li = i; });
-        if (li >= 0) ti = traceChip({
-          title: `${T.pva_chart(ROLE_LABELS[role] || role)} — ${fmtPeriod(mo.periods[li])}`,
-          sub: null,
+        const aRefs = [], pRefs = [];
+        let complete = true, n = 0;
+        am.values.forEach((a, i) => {
+          if (a == null || v.plan[i] == null) return;
+          n += 1;
+          const ar = am.cells[i], pr = v.plan_cells[i];
+          if (!ar || !ar.length || !pr || !pr.length) { complete = false; return; }
+          aRefs.push(...ar); pRefs.push(...pr);
+        });
+        if (complete && n) ti = traceChip({
+          title: T.pva_chart(ROLE_LABELS[role] || role),
+          sub: T.tc_aligned(n),
           items: [
-            { k: `${T.tc_actual} — ${am.label}`, sheet: am.sheet, refs: am.cells[li] },
+            { k: `${T.tc_actual} — ${am.label}`, sheet: am.sheet, refs: aRefs },
             { k: `${T.tc_plan} — ${v.plan_label}`, sheet: v.plan_sheet,
-              refs: v.plan_cells[li] },
+              refs: pRefs },
           ],
         });
       }
@@ -6793,19 +6804,34 @@ async function openTrace(idx) {
   document.body.appendChild(scrim);
   scrim.addEventListener("click", e => { if (e.target === scrim) closeTrace(); });
   $("#trace-close").addEventListener("click", closeTrace);
-  const parts = await Promise.all(spec.items.map(async it => {
-    try {
-      const r = await fetch(`/analyses/${current}/cells?sheet=` +
-        `${encodeURIComponent(it.sheet)}&refs=${encodeURIComponent(it.refs.join(","))}`);
-      return { it, data: r.ok ? await r.json() : null };
-    } catch { return { it, data: null }; }
-  }));
-  const body = $("#trace-body");
-  if (!body) return;                     // closed while loading
+  const parts = await Promise.all(spec.items.map(async it =>
+    ({ it, data: await fetchCells(it.sheet, it.refs) })));
+  // the modal may have been closed OR replaced by another figure's trace
+  // while the fetches ran — write only into the scrim THIS call created
+  const body = scrim.querySelector("#trace-body");
+  if (!scrim.isConnected || !body) return;
   body.innerHTML = parts.map(p => traceItem(p.it, p.data)).join("");
-  $$("#trace-scrim [data-tsheet]").forEach(a => a.addEventListener("click", () => {
+  $$("[data-tsheet]", scrim).forEach(a => a.addEventListener("click", () => {
     closeTrace(); jumpToSheet(a.dataset.tsheet);
   }));
+}
+
+/* the server caps refs per request (MAX_TRACE_REFS); longer citation lists
+   are chunked and merged — the excerpt comes from the first chunk */
+async function fetchCells(sheet, refs) {
+  const out = { cells: [], excerpt: null };
+  for (let i = 0; i < refs.length; i += 40) {
+    try {
+      const r = await fetch(`/analyses/${current}/cells?sheet=` +
+        `${encodeURIComponent(sheet)}&refs=` +
+        `${encodeURIComponent(refs.slice(i, i + 40).join(","))}`);
+      if (!r.ok) return null;
+      const d = await r.json();
+      out.cells.push(...d.cells);
+      if (!out.excerpt) out.excerpt = d.excerpt;
+    } catch { return null; }
+  }
+  return out;
 }
 
 function traceItem(it, data) {
