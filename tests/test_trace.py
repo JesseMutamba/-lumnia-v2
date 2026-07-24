@@ -65,6 +65,7 @@ def test_trace_agrees_with_every_model_cell():
     rep = _upload()
     met = rep["model"]["monthly"]["metrics"]
     for role, m in met.items():
+        assert len(m["cells"]) == len(m["values"]), role
         for v, refs in zip(m["values"], m["cells"]):
             if v is None:
                 continue
@@ -87,6 +88,46 @@ def test_trace_excerpt_shows_the_row_label():
     assert "PRODUCTION CPO (T)" in labels
     # the cited row sits at row_start + offset
     assert ex["row_start"] <= 3 <= ex["row_start"] + len(ex["rows"]) - 1
+
+
+def test_trace_excerpt_keeps_the_label_column_on_wide_sheets():
+    # 14 period columns (a full year and change — the normal case): citing a
+    # late month must still show column A, the row label the excerpt exists
+    # for. col_letters name every column, so the jump from A is honest.
+    import datetime as dt
+    months = [dt.date(2025, m, 28) for m in range(1, 13)] \
+        + [dt.date(2026, 1, 28), dt.date(2026, 2, 28)]
+    df = pd.DataFrame([["JOURNAL ANNUEL", *([None] * 14)],
+                       ["SERIE", *months],
+                       ["PRODUCTION CPO (T)", *range(1, 15)]])
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as xw:
+        df.to_excel(xw, sheet_name="LARGE", header=False, index=False)
+    r = client.post("/analyze", files={
+        "file": ("large.xlsx", buf.getvalue(), "application/octet-stream")})
+    assert r.status_code == 200, r.text
+    t = client.get(f"/analyses/{r.json()['id']}/cells",
+                   params={"sheet": "LARGE", "refs": "O3"})
+    ex = t.json()["excerpt"]
+    assert ex["col_letters"][0] == "A"
+    assert "O" in ex["col_letters"]
+    assert any(row[0] == "PRODUCTION CPO (T)" for row in ex["rows"])
+
+
+def test_trace_clips_huge_cell_content():
+    # A crafted workbook can hold multi-MB text cells; echoed content is
+    # bounded and the clip is marked with an ellipsis.
+    big = "x" * 5000
+    df = pd.DataFrame([["SERIE", "note"], ["PRODUCTION CPO (T)", big]])
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as xw:
+        df.to_excel(xw, sheet_name="NOTES", header=False, index=False)
+    r = client.post("/analyze", files={
+        "file": ("notes.xlsx", buf.getvalue(), "application/octet-stream")})
+    t = client.get(f"/analyses/{r.json()['id']}/cells",
+                   params={"sheet": "NOTES", "refs": "B2"})
+    c = t.json()["cells"][0]
+    assert len(c["raw"]) <= 301 and c["raw"].endswith("…")
 
 
 def test_trace_fails_honest():

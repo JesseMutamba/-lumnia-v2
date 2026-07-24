@@ -1345,11 +1345,15 @@ def rerun_analysis(analysis_id: str) -> AnalyzeResponse:
 
 
 # Trace requests are small: a figure cites a handful of cells per period.
+# The frontend chunks longer citation lists into several requests.
 MAX_TRACE_REFS = 40
 _A1_RX = re.compile(r"^([A-Za-z]{1,3})([1-9][0-9]{0,6})$")
 _EXCERPT_PAD = 2          # rows of context above/below the cited cells
 _EXCERPT_MAX_ROWS = 10
 _EXCERPT_MAX_COLS = 12
+# cell content is echoed verbatim up to this length — a crafted workbook can
+# hold multi-MB text cells, and the modal shows a short prefix anyway
+_MAX_CELL_CHARS = 300
 
 
 def _parse_a1(ref: str) -> tuple:
@@ -1361,6 +1365,13 @@ def _parse_a1(ref: str) -> tuple:
     for ch in m.group(1).upper():
         col = col * 26 + (ord(ch) - 64)
     return int(m.group(2)) - 1, col - 1
+
+
+def _clip(v):
+    """Bound echoed cell content; the '…' marks the clip honestly."""
+    if isinstance(v, str) and len(v) > _MAX_CELL_CHARS:
+        return v[:_MAX_CELL_CHARS] + "…"
+    return v
 
 
 @app.get("/analyses/{analysis_id}/cells", response_model=CellTraceResponse)
@@ -1391,6 +1402,9 @@ def trace_cells(analysis_id: str, sheet: str, refs: str) -> CellTraceResponse:
         raise HTTPException(status_code=404,
                             detail=f"No analysis '{analysis_id}'.")
     filename, content = stored
+    # DEBT: re-parses the whole workbook (all sheets) on every trace click.
+    # Fine at demo scale; needs a per-analysis parsed-grid cache if books
+    # grow or tracing ever becomes client-facing.
     try:
         sheets = read_upload(content, filename)
     except Exception as exc:
@@ -1414,22 +1428,25 @@ def trace_cells(analysis_id: str, sheet: str, refs: str) -> CellTraceResponse:
     cells = []
     for ref, (i, j) in zip(ref_list, coords):
         raw = df.iat[i, j]
-        cells.append({"ref": ref, "raw": jsonify(raw),
-                      "value": jsonify(coerce_value(raw))})
+        cells.append({"ref": ref, "raw": _clip(jsonify(raw)),
+                      "value": _clip(jsonify(coerce_value(raw)))})
 
-    # context slice: the cited rows padded, columns from A (the label
-    # column lives left) through just past the rightmost citation
+    # context slice: the cited rows padded, plus the columns around the
+    # citations AND column A — the row label lives left and must survive a
+    # wide monthly sheet (col_letters name each column, so a gap is honest)
     r_lo = max(0, min(i for i, _ in coords) - _EXCERPT_PAD)
     r_hi = min(n_rows - 1, max(i for i, _ in coords) + _EXCERPT_PAD)
     if r_hi - r_lo + 1 > _EXCERPT_MAX_ROWS:
         r_hi = r_lo + _EXCERPT_MAX_ROWS - 1
-    c_lo, c_hi = 0, min(n_cols - 1, max(j for _, j in coords) + 1)
-    if c_hi - c_lo + 1 > _EXCERPT_MAX_COLS:
-        c_lo = c_hi - _EXCERPT_MAX_COLS + 1
+    c_lo = max(0, min(j for _, j in coords) - 1)
+    c_hi = min(n_cols - 1, max(j for _, j in coords) + 1)
+    xcols = sorted({0, *range(c_lo, c_hi + 1)})
+    if len(xcols) > _EXCERPT_MAX_COLS:
+        xcols = [0] + [c for c in xcols if c][-(_EXCERPT_MAX_COLS - 1):]
     excerpt = {
         "row_start": r_lo + 1,
-        "col_letters": [_xl_col(j) for j in range(c_lo, c_hi + 1)],
-        "rows": [[jsonify(df.iat[i, j]) for j in range(c_lo, c_hi + 1)]
+        "col_letters": [_xl_col(j) for j in xcols],
+        "rows": [[_clip(jsonify(df.iat[i, j])) for j in xcols]
                  for i in range(r_lo, r_hi + 1)],
     }
     return CellTraceResponse(id=analysis_id, filename=filename, sheet=sheet,
