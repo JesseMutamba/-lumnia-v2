@@ -10,9 +10,12 @@ declares it as skipped instead.
 """
 from __future__ import annotations
 
+import base64 as _b64
 import datetime as _dt
+import functools as _ft
 import html as _html
 import re as _re
+from pathlib import Path as _Path
 from typing import Any, Dict, List, Optional
 
 # selectable blocks, in reading order
@@ -21,6 +24,37 @@ BLOCKS = ("kpi", "plan_vs_actual", "unit_cost", "conversion", "cash",
 
 GOLD, PALE, INK3 = "#a8821f", "#d5c391", "#99917e"
 CRIT, WARN, GOOD = "#a33b32", "#a07d1c", "#3e6f4e"
+
+# The deliverable must render brand-correct OFFLINE — no external fetches —
+# so the brand fonts travel inside the file as data URIs (~95KB total,
+# OFL-licensed latin subsets; licenses alongside the files).
+_FONT_DIR = _Path(__file__).parent / "static" / "fonts"
+_FACES = (
+    ("Source Serif 4", 400, "source-serif-4-latin-400-normal.woff2"),
+    ("Source Serif 4", 600, "source-serif-4-latin-600-normal.woff2"),
+    ("IBM Plex Mono", 400, "ibm-plex-mono-latin-400-normal.woff2"),
+    ("IBM Plex Mono", 500, "ibm-plex-mono-latin-500-normal.woff2"),
+)
+
+
+@_ft.lru_cache(maxsize=1)
+def _font_css() -> str:
+    rules = []
+    for fam, weight, fname in _FACES:
+        b64 = _b64.b64encode((_FONT_DIR / fname).read_bytes()).decode()
+        rules.append(
+            f"@font-face {{ font-family:'{fam}'; font-style:normal; "
+            f"font-weight:{weight}; font-display:swap; "
+            f"src:url(data:font/woff2;base64,{b64}) format('woff2'); }}")
+    return "\n".join(rules)
+
+
+def _blk(title: str, body: str, cls: str = "blk") -> str:
+    """One report section as a native <details> fold, OPEN by default:
+    nothing is hidden from the reader, folding is a reading aid — and an
+    open fold prints. No scripts involved."""
+    return (f'<details class="{cls}" open><summary><h2>'
+            f'{_html.escape(title)}</h2></summary>{body}</details>')
 
 _ROLES = {
     "en": {"volume": "Volume", "volume_secondary": "Output",
@@ -244,12 +278,19 @@ def available_blocks(report: Dict[str, Any]) -> List[str]:
 def _svg_bars(periods: List[str], series: List[tuple], lang: str,
               w: int = 640, h: int = 200,
               refs: List[tuple] = (), colors: Optional[List] = None,
-              neg_ok: bool = False) -> str:
+              neg_ok: bool = False,
+              names: Optional[List[str]] = None) -> str:
     """Grouped bars, one group per period; series = (values, color). None
     cells simply have no bar — absence is drawn as absence. ``refs`` draws
     dashed horizontal reference lines (label, value, color); ``colors``
     overrides the fill per cell for a single series; ``neg_ok`` keeps a
-    zero baseline mid-chart so negative bars hang below it."""
+    zero baseline mid-chart so negative bars hang below it.
+
+    Every bar carries its value baked in twice — a native SVG <title>
+    tooltip and a hidden top-right readout revealed by CSS :hover (.tt).
+    ``names`` labels each series in those readouts (e.g. Plan / Actual).
+    Values are formatted here, at compose time; nothing recomputes in the
+    browser and no script is involved."""
     ml, mr, mt, mb = 8, 8, 16, 22
     pw, ph = w - ml - mr, h - mt - mb
     allv = [v for vals, _ in series for v in vals if v is not None]
@@ -274,10 +315,17 @@ def _svg_bars(periods: List[str], series: List[tuple], lang: str,
             fill = (colors[i] if colors and i < len(colors) and colors[i]
                     else color)
             top = min(y_of(v), y0)
+            name = names[k] if names and k < len(names) else None
+            read = (f"{_period(p, lang)}"
+                    + (f" · {name}" if name else "")
+                    + f" · {_fmt(v, lang)}")
             bars.append(
+                f'<g class="b"><title>{_html.escape(read)}</title>'
                 f'<rect x="{x0 + k * bw:.1f}" y="{top:.1f}" '
                 f'width="{bw:.1f}" height="{abs(y_of(v) - y0):.1f}" '
-                f'fill="{fill}"/>')
+                f'fill="{fill}"/>'
+                f'<text class="tt" x="{w - mr}" y="12" text-anchor="end">'
+                f'{_html.escape(read)}</text></g>')
         step = 1 if n <= 8 else 2 if n <= 16 else 3
         if i % step == 0:
             labels.append(
@@ -385,12 +433,13 @@ def _pva_sections(mo: Dict[str, Any], lang: str) -> str:
         actual = (met.get(role) or {}).get("values") or []
         n_aligned = sum(1 for a, p in zip(actual, v["plan"])
                         if a is not None and p is not None)
-        svg = _svg_bars(periods, [(v["plan"], PALE), (actual, GOLD)], lang)
+        svg = _svg_bars(periods, [(v["plan"], PALE), (actual, GOLD)], lang,
+                        names=[s["plan"], s["actual"]])
         cap = s["pva_cap"](_pct(v["pct_of_plan_total"], lang), n_aligned,
                            str(met.get(role, {}).get("label", "")),
                            str(v["plan_label"]))
-        out.append(f'<section class="blk"><h2>{_html.escape(s["pva_t"](roles.get(role, role)))}</h2>'
-                   f'{svg}<p class="cap">{_html.escape(cap)}</p></section>')
+        out.append(_blk(s["pva_t"](roles.get(role, role)),
+                        f'{svg}<p class="cap">{_html.escape(cap)}</p>'))
     return "".join(out)
 
 
@@ -405,8 +454,7 @@ def _conversion_section(mo: Dict[str, Any], lang: str) -> str:
     avg = sum(known) / len(known) * 100
     svg = _svg_bars(periods, [(pcts, GOLD)], lang)
     cap = s["conv_cap"](_pct(round(avg, 1), lang), len(known))
-    return (f'<section class="blk"><h2>{_html.escape(s["conv_t"])}</h2>{svg}'
-            f'<p class="cap">{_html.escape(cap)}</p></section>')
+    return _blk(s["conv_t"], f'{svg}<p class="cap">{_html.escape(cap)}</p>')
 
 
 _JX_KINDS = {
@@ -442,8 +490,7 @@ def _cash_destinations_section(jx: Dict[str, Any], lang: str) -> str:
                       _fmt(jx.get("total_out_usd"), lang))
     if exc.get("n"):
         cap += " " + s["jx_exc"](exc["n"], _fmt(exc["at_stake_usd"], lang))
-    return (f'<section class="blk"><h2>{_html.escape(s["jx_t"])}</h2>'
-            f'{rows}<p class="cap">{_html.escape(cap)}</p></section>')
+    return _blk(s["jx_t"], f'{rows}<p class="cap">{_html.escape(cap)}</p>')
 
 
 def _cash_section(mo: Dict[str, Any], lang: str) -> str:
@@ -463,8 +510,7 @@ def _cash_section(mo: Dict[str, Any], lang: str) -> str:
            f'{_html.escape(s["opex_lbl"])} '
            f'{_html.escape(_fmt(cash["opex_total"], lang))}</text></svg>')
     cap = s["cash_cap"](_pct(cash["invested_pct"], lang))
-    return (f'<section class="blk"><h2>{_html.escape(s["cash_t"])}</h2>{bar}'
-            f'<p class="cap">{_html.escape(cap)}</p></section>')
+    return _blk(s["cash_t"], f'{bar}<p class="cap">{_html.escape(cap)}</p>')
 
 
 def _unit_cost_section(mo: Dict[str, Any], lang: str) -> str:
@@ -502,8 +548,7 @@ def _unit_cost_section(mo: Dict[str, Any], lang: str) -> str:
                     refs=refs, colors=colors)
     last = next((v for v in reversed(vals) if v is not None), None)
     cap = s["uc_cap"](_fmt(last, lang)) if last is not None else ""
-    return (f'<section class="blk"><h2>{_html.escape(s["uc_t"])}</h2>{svg}'
-            f'<p class="cap">{_html.escape(cap)}</p></section>')
+    return _blk(s["uc_t"], f'{svg}<p class="cap">{_html.escape(cap)}</p>')
 
 
 def _outlook_section(mo: Dict[str, Any], lang: str) -> str:
@@ -543,9 +588,9 @@ def _outlook_section(mo: Dict[str, Any], lang: str) -> str:
                                _fmt(round(sum(known_plan)
                                           / len(known_plan), 1), lang))
     svg = _svg_bars(p_periods, [(p_vals, PALE), (a_vals, GOLD)], lang,
-                    refs=refs)
-    return (f'<section class="blk"><h2>{_html.escape(s["outlook_t"])}</h2>'
-            f'{svg}<p class="cap">{_html.escape(cap)}</p></section>')
+                    refs=refs, names=[s["plan"], s["actual"]])
+    return _blk(s["outlook_t"],
+                f'{svg}<p class="cap">{_html.escape(cap)}</p>')
 
 
 def _net_cash_section(model: Dict[str, Any], lang: str) -> str:
@@ -565,8 +610,7 @@ def _net_cash_section(model: Dict[str, Any], lang: str) -> str:
     if ins.get("capital_bridge") is not None:
         parts.append(s["bridge"](_fmt(ins["capital_bridge"], lang)))
     cap = " · ".join(parts)
-    return (f'<section class="blk"><h2>{_html.escape(s["net_t"])}</h2>{svg}'
-            f'<p class="cap">{_html.escape(cap)}</p></section>')
+    return _blk(s["net_t"], f'{svg}<p class="cap">{_html.escape(cap)}</p>')
 
 
 def _breakdown_section(model: Dict[str, Any], lang: str) -> str:
@@ -586,11 +630,11 @@ def _breakdown_section(model: Dict[str, Any], lang: str) -> str:
         f'<span class="btrack"><span style="width:{max(2, abs(i["value"]) / mx * 100):.0f}%"></span></span>'
         f'<span class="bv">{_html.escape(_fmt(i["value"], lang))}</span></div>'
         for i in items)
-    return (f'<section class="blk"><h2>{_html.escape(s["bd_t"])}</h2>'
-            f'<p class="cap" style="margin:0 0 8px">'
-            f'{_html.escape(str(bd.get("sheet", "")))} · '
-            f'{_html.escape(str(bd.get("value_col", ""))[:30])}</p>'
-            f'{rows}</section>')
+    return _blk(s["bd_t"],
+                f'<p class="cap" style="margin:0 0 8px">'
+                f'{_html.escape(str(bd.get("sheet", "")))} · '
+                f'{_html.escape(str(bd.get("value_col", ""))[:30])}</p>'
+                f'{rows}')
 
 
 def _table_section(mo: Dict[str, Any], lang: str) -> str:
@@ -621,10 +665,10 @@ def _table_section(mo: Dict[str, Any], lang: str) -> str:
                              for p in v["pct_of_plan"])
             rows.append(f'<tr class="mut"><td class="rl">'
                         f'{_html.escape(s["pct"])}</td>{xcells}</tr>')
-    return (f'<section><h2>{_html.escape(s["tbl_t"])}</h2>'
-            f'<table><thead><tr><th class="rl">{_html.escape(s["period"])}'
-            f'</th>{head}</tr></thead><tbody>{"".join(rows)}</tbody>'
-            f'</table></section>')
+    return _blk(s["tbl_t"],
+                f'<table><thead><tr><th class="rl">{_html.escape(s["period"])}'
+                f'</th>{head}</tr></thead><tbody>{"".join(rows)}</tbody>'
+                f'</table>', cls="wide")
 
 
 def render_report_html(report: Dict[str, Any], audit: Optional[Dict[str, Any]],
@@ -685,16 +729,19 @@ def render_report_html(report: Dict[str, Any], audit: Optional[Dict[str, Any]],
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{esc(title)}</title>
 <style>
+{_font_css()}
   :root {{ --paper:#f4f0e8; --ink:#201d17; --ink2:#5c564a; --ink3:#99917e;
-    --gold:#a8821f; --border:#ddd4bf; }}
+    --gold:#a8821f; --border:#ddd4bf;
+    --serif:"Source Serif 4",Georgia,"Times New Roman",serif;
+    --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace; }}
   body {{ margin:0; background:var(--paper); color:var(--ink);
-    font:14px/1.6 Georgia,"Times New Roman",serif; }}
+    font:14px/1.6 var(--serif); }}
   .page {{ max-width:820px; margin:0 auto; padding:52px 34px 60px; }}
-  .kicker {{ font:10px/1 ui-monospace,Menlo,monospace; letter-spacing:.2em;
+  .kicker {{ font:10px/1 var(--mono); letter-spacing:.2em;
     text-transform:uppercase; color:var(--gold); }}
-  h1 {{ font-family:"Source Serif 4","Didot","Bodoni MT",Georgia,serif;
+  h1 {{ font-family:var(--serif);
     font-size:28px; font-weight:600; margin:10px 0 6px; line-height:1.25; }}
-  .meta {{ font:10.5px/1.6 ui-monospace,Menlo,monospace; letter-spacing:.08em;
+  .meta {{ font:10.5px/1.6 var(--mono); letter-spacing:.08em;
     text-transform:uppercase; color:var(--ink3); margin-bottom:26px; }}
   .tiles {{ display:flex; flex-wrap:wrap; border-top:1px solid var(--ink);
     border-bottom:1px solid var(--border); margin:0 0 28px; }}
@@ -702,9 +749,9 @@ def render_report_html(report: Dict[str, Any], audit: Optional[Dict[str, Any]],
     border-right:1px solid var(--border);
     border-bottom:1px solid var(--border); margin-bottom:-1px; }}
   .tile:last-child {{ border-right:none; }}
-  .tl {{ font:9px/1.4 ui-monospace,Menlo,monospace; letter-spacing:.12em;
+  .tl {{ font:9px/1.4 var(--mono); letter-spacing:.12em;
     text-transform:uppercase; color:var(--ink3); }}
-  .tv {{ font-family:"Source Serif 4","Didot",Georgia,serif; font-size:22px;
+  .tv {{ font-family:var(--serif); font-size:22px;
     font-weight:600; margin-top:4px; }}
   .ts {{ font-size:11px; color:var(--ink3); margin-top:3px; line-height:1.4; }}
   .tile {{ border-top:3px solid transparent; }}
@@ -717,29 +764,43 @@ def render_report_html(report: Dict[str, Any], audit: Optional[Dict[str, Any]],
     padding:14px 16px 16px; }}
   .blk h2 {{ margin-top:0; }}
   .blk svg {{ border:none; background:transparent; }}
+  /* sections fold natively — open by default, no scripts */
+  details > summary {{ cursor:pointer; list-style:none; }}
+  details > summary::-webkit-details-marker {{ display:none; }}
+  details > summary h2 {{ display:inline-block; margin:0 0 8px; }}
+  details > summary::before {{ content:"▾"; color:var(--gold);
+    font:10px var(--mono); margin-right:8px; vertical-align:1px; }}
+  details:not([open]) > summary::before {{ content:"▸"; }}
+  details.wide {{ margin:30px 0 10px; }}
+  /* baked hover readouts: reveal on hover, nothing computed client-side */
+  .b .tt {{ opacity:0; pointer-events:none; font:11px var(--mono);
+    fill:var(--ink); paint-order:stroke; stroke:#fbf9f3;
+    stroke-width:3px; stroke-linejoin:round; }}
+  .b:hover .tt {{ opacity:1; }}
+  .b:hover rect {{ opacity:.8; }}
   .brow {{ display:grid; grid-template-columns:minmax(110px,1fr) 2fr auto;
     gap:10px; align-items:center; padding:5px 0; font-size:12px; }}
   .brow .bl {{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
   .brow .btrack {{ height:8px; background:#eee6d2; display:block; }}
   .brow .btrack span {{ display:block; height:100%; background:{GOLD}; }}
   .brow .bv {{ font-variant-numeric:tabular-nums; white-space:nowrap; }}
-  h2 {{ font:11px/1.4 ui-monospace,Menlo,monospace; letter-spacing:.16em;
+  h2 {{ font:11px/1.4 var(--mono); letter-spacing:.16em;
     text-transform:uppercase; color:var(--gold); margin:30px 0 10px; }}
   svg {{ display:block; width:100%; height:auto; background:#fbf9f3;
     border:1px solid var(--border); }}
-  .ax {{ font:10px ui-monospace,Menlo,monospace; fill:{INK3}; }}
+  .ax {{ font:10px var(--mono); fill:{INK3}; }}
   .cap {{ margin:8px 0 0; font-size:12.5px; color:var(--ink2);
     max-width:76ch; }}
   table {{ border-collapse:collapse; width:100%; font-size:12.5px;
     font-variant-numeric:tabular-nums; }}
   th, td {{ text-align:right; padding:6px 8px;
     border-bottom:1px solid var(--border); }}
-  th {{ font:9.5px ui-monospace,Menlo,monospace; letter-spacing:.08em;
+  th {{ font:9.5px var(--mono); letter-spacing:.08em;
     text-transform:uppercase; color:var(--ink3); }}
   .rl {{ text-align:left; }}
   tr.mut td {{ color:var(--ink3); }}
   .foot {{ margin-top:40px; border-top:1px solid var(--border);
-    padding-top:12px; font:10px/1.7 ui-monospace,Menlo,monospace;
+    padding-top:12px; font:10px/1.7 var(--mono);
     letter-spacing:.06em; text-transform:uppercase; color:var(--ink3); }}
   @media print {{ body {{ background:#fff; }} .page {{ padding:24px 0; }}
     section {{ break-inside:avoid; }} }}
