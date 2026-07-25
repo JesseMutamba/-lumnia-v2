@@ -109,6 +109,28 @@ def test_composed_report_is_versioned_scriptfree_and_deterministic():
     assert r2.json()["version"] == 2
 
 
+def test_report_shell_brand_fonts_folding_and_hover():
+    # The deliverable must be brand-correct OFFLINE: fonts travel inside
+    # the file as data URIs (never a CDN link), sections fold with native
+    # <details> (open by default — nothing hidden, prints intact), and
+    # chart bars carry baked hover readouts + <title> fallbacks. All of it
+    # with ZERO scripts and zero external fetches, same as ever.
+    aid = _analysis()
+    r = client.post(f"/analyses/{aid}/compose-report",
+                    json={"blocks": [], "lang": "en"})
+    assert r.status_code == 200, r.text
+    html = _hub_html("PVAK", "fonts@pvak.cd", "Operations report")
+    assert "@font-face" in html
+    assert "Source Serif 4" in html and "IBM Plex Mono" in html
+    assert "data:font/woff2;base64," in html
+    assert '<details class="blk" open' in html
+    assert "<summary" in html
+    assert 'class="tt"' in html                    # CSS-only hover readouts
+    assert "<title>" in html                       # native tooltip fallback
+    assert "<script" not in html.lower()
+    assert "https://" not in html and "http://" not in html
+
+
 def test_composed_report_speaks_french():
     aid = _analysis(client_name="KIVU")
     r = client.post(f"/analyses/{aid}/compose-report",

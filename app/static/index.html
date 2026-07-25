@@ -744,7 +744,9 @@
     #printdoc { display: block; }
     body { background: #fff; }
   }
-  #printdoc { font: 13px/1.55 var(--sans); color: #1a1a19; }
+  /* the print report reads as the same brand document as the client
+     deliverable: serif body, not UI sans */
+  #printdoc { font: 13px/1.55 var(--serif); color: #1a1a19; }
   #printdoc .ph { display: flex; align-items: center; gap: 14px;
     border-bottom: 1.5px solid #1a1a19; padding-bottom: 14px; margin-bottom: 18px; }
   #printdoc h1 { font-family: var(--serif); font-size: 24px; font-weight: 500;
@@ -1106,6 +1108,7 @@ const STR = {
     tc_raw: r => `as written: “${r}”`,
     tc_hint: "Click to trace this figure to its source cells",
     tc_aligned: n => `all ${n} aligned month${n === 1 ? "" : "s"} — the figure totals them`,
+    xb_intro: "The questions this dashboard was built to answer, and what the data can support — matched deterministically against the workbook's own tables. What the data cannot answer is declared, never estimated.",
     tab_data: "Data", tab_trends: "Trends", tab_audit: "Audit", tab_actions: "Actions",
     tab_journal: "Journal",
     jx_t: "Where the tracked cash went",
@@ -1655,6 +1658,7 @@ const STR = {
     tc_raw: r => `tel qu'écrit : « ${r} »`,
     tc_hint: "Cliquer pour tracer ce chiffre jusqu'à ses cellules sources",
     tc_aligned: n => `les ${n} mois alignés — le chiffre les totalise`,
+    xb_intro: "Les questions auxquelles ce tableau de bord doit répondre, et ce que les données permettent — rapprochées de façon déterministe des tables du classeur. Ce que les données ne peuvent pas répondre est déclaré, jamais estimé.",
     tab_data: "Données", tab_trends: "Tendances", tab_audit: "Audit", tab_actions: "À faire",
     tab_journal: "Journal",
     jx_t: "Où est allé l'argent suivi",
@@ -3300,6 +3304,8 @@ function renderExecBody(footer) {
     inner = renderProduction();
   } else if (EXEC_TAB === "whatif") {
     inner = renderScenario() + renderMC();
+  } else if (EXEC_TAB === "briefing") {
+    inner = renderExecBriefing();
   } else if (REPORT.model && Object.keys(REPORT.model.metrics || {}).length) {
     inner = renderExecDashboard();
   } else if (plan && plan.approved) {
@@ -3323,10 +3329,44 @@ function renderExecBody(footer) {
 function execAvailableTabs() {
   const m = REPORT.model;
   const t = [["overview", T.tab_overview]];
+  // the briefing rides along whenever a plan exists: the exec sees what
+  // was asked of the data and what it can answer (published snapshots
+  // carry no plan, so the tab honestly never shows there)
+  if (REPORT.plan && (REPORT.plan.questions || []).length)
+    t.push(["briefing", T.tab_story]);
   if (m && Object.keys(m.metrics || {}).length) t.push(["financials", T.xt_costs]);
   if (m && m.monthly) t.push(["production", T.tab_production]);
   if (m && m.scenario_ready) t.push(["whatif", T.tab_whatif]);
   return t;
+}
+
+/* the exec Briefing tab: the questions this dashboard was built to answer
+   and what the data supports — read-only (approve/edit stay analyst-side),
+   and no sheet names: the exec page carries no file structure. */
+function renderExecBriefing() {
+  const plan = REPORT.plan, brief = REPORT.brief || {};
+  const BADGE = { answerable: "good", partial: "warn", unanswerable: "crit",
+    unmatched: "crit" };
+  // question + status + what's missing, nothing else: metric labels can
+  // embed sheet-derived names (matrix measures are named after their
+  // sheet), and the exec page carries no file structure
+  const qs = plan.questions.map(q => {
+    const dead = q.status === "unanswerable" || q.status === "unmatched";
+    const miss = q.missing.map(g =>
+      `<div class="qmiss">→ ${T.st_needs(esc(g.requires))}</div>`).join("");
+    return `<div class="qrow ${dead ? "dim" : ""}">
+      <div><b>${esc(q.question)}</b>
+        <span class="vbadge ${BADGE[q.status] || ""}">${T.st_badge[q.status]}</span></div>
+      ${miss}
+    </div>`;
+  }).join("");
+  const cad = T.st_cadences[brief.cadence]
+    ? T.st_cadences[brief.cadence].toLowerCase() : brief.cadence;
+  return `<section id="sec-xbrief" style="max-width:760px">
+    <span class="kicker">${esc(T.st_brief_line(brief.role, cad))}</span>
+    <p class="chcap" style="margin:6px 0 14px;max-width:72ch">${T.xb_intro}</p>
+    ${qs}
+  </section>`;
 }
 
 /* ---------- the Analyst workbench (7a): four jobs, one rail -------------- */
