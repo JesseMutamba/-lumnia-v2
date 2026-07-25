@@ -127,9 +127,11 @@ def _tag_roles(chart: dict, plan: bool = False) -> Dict[str, dict]:
                 continue                 # a rate row is no level series
             if rx.search(label):
                 total = sum(abs(v) for v in s["values"] if v is not None)
-                matches.setdefault(role, []).append(
-                    {"label": label, "values": s["values"], "_total": total,
-                     "_derived": bool(DERIVED_SERIES_RX.search(str(label)))})
+                cand = {"label": label, "values": s["values"], "_total": total,
+                        "_derived": bool(DERIVED_SERIES_RX.search(str(label)))}
+                if s.get("cells"):
+                    cand["cells"] = s["cells"]
+                matches.setdefault(role, []).append(cand)
                 break
     roles: Dict[str, dict] = {}
     for role, cands in matches.items():
@@ -221,6 +223,10 @@ def _supplement(spine_periods: List[str], roles: Dict[str, dict],
             vals = series["values"] if identical \
                 else _reindex(series["values"], ch_periods, spine_periods)
             entry = {**series, "values": vals, "_sheet": name}
+            # source cells re-index with their values — same join, same Nones
+            if not identical and series.get("cells"):
+                entry["cells"] = _reindex(series["cells"], ch_periods,
+                                          spine_periods)
             dropped = _dropped_outside(series["values"], ch_periods,
                                        spine_periods)
             if dropped:
@@ -366,11 +372,15 @@ def _cash_split(monthly: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 def _unit_cost_budget(periods: List[str], year_derived: Dict[str, Any],
                       monthly: Dict[str, Any],
-                      spine_sheet: Optional[str]) -> Optional[Dict[str, Any]]:
+                      spine_sheet: Optional[str],
+                      year_metrics: Optional[Dict[str, dict]] = None
+                      ) -> Optional[Dict[str, Any]]:
     """The "$/t actual vs budget" comparison, computed HERE so the frontend
     only formats: the budget-year unit cost for the actuals' year is the
     target, and each month carries its variance. None unless the year spine
-    is a budget-shaped sheet AND both sides derive the same unit-cost basis."""
+    is a budget-shaped sheet AND both sides derive the same unit-cost basis.
+    ``target_sources`` names the budget cells the target divides — the
+    actual side already traces through ``metrics[role].cells``."""
     if not spine_sheet or not BUDGET_SHEET_RX.search(str(spine_sheet)):
         return None
     mo_d = monthly.get("derived") or {}
@@ -381,17 +391,30 @@ def _unit_cost_budget(periods: List[str], year_derived: Dict[str, Any],
     years = [p[:4] for p in monthly.get("periods", []) if len(p) >= 4]
     if not years or len(set(years)) != 1 or years[0] not in periods:
         return None                    # actuals must sit inside ONE plan year
-    target = year_derived[basis][periods.index(years[0])]
+    idx = periods.index(years[0])
+    target = year_derived[basis][idx]
     if target is None or target == 0:
         return None
     actual = mo_d[basis]
-    return {
+    out = {
         "basis": basis,
         "target": target,
         "target_period": years[0],
         "variance_pct": [round((a - target) / target * 100, 1)
                          if a is not None else None for a in actual],
     }
+    numer, denom = ("opex", "volume_secondary") \
+        if basis == "opex_per_volume_out" else ("opex", "volume")
+    sources: Dict[str, Any] = {}
+    for role in (numer, denom):
+        m = (year_metrics or {}).get(role) or {}
+        refs = m.get("cells") or []
+        if idx < len(refs) and refs[idx]:
+            sources[role] = {"sheet": m.get("sheet"), "label": m.get("label"),
+                             "cells": refs[idx]}
+    if sources:
+        out["target_sources"] = sources
+    return out
 
 
 def _monthly_block(report_sheets,
@@ -550,6 +573,9 @@ def _plan_vs_actual(monthly: Dict[str, Any], plan_charts: List[tuple],
             "pct_of_plan_total": round(actual_total / plan_total * 100, 1)
             if plan_total else None,
         }
+        if pm.get("cells"):
+            out[role]["plan_cells"] = _reindex(pm["cells"], plan["periods"],
+                                               monthly["periods"])
     if not out and (misaligned or unmatched):
         gaps.append({
             "metric": "plan_vs_actual",
@@ -573,6 +599,8 @@ def _public_metrics(roles: Dict[str, dict],
     for role, s in roles.items():
         m = {"label": s["label"], "sheet": s.get("_sheet", spine_sheet),
              "values": s["values"]}
+        if s.get("cells"):
+            m["cells"] = s["cells"]
         if s.get("_dropped_outside"):
             m["dropped_outside_axis"] = s["_dropped_outside"]
         out[role] = m
@@ -617,7 +645,7 @@ def build_model(report_sheets) -> Optional[Dict[str, Any]]:
     derived = derive_metrics(metrics)
 
     if monthly:
-        ucb = _unit_cost_budget(periods, derived, monthly, best_sheet)
+        ucb = _unit_cost_budget(periods, derived, monthly, best_sheet, metrics)
         if ucb:
             monthly["unit_cost_budget"] = ucb
         cash = _cash_split(monthly)

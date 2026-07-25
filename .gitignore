@@ -13,3 +13,6 @@ venv/
 # local persistence
 data/
 *.db
+
+# demo rehearsal scratch state (scripts/demo_check.py)
+demo-state/

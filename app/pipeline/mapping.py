@@ -44,8 +44,11 @@ def year_series(report: Dict[str, Any]) -> List[Dict[str, Any]]:
                 continue
             periods = [str(p) for p in ch["periods"]]
             for se in ch["series_all"]:
-                out.append({"sheet": s.get("name"), "label": se["label"],
-                            "periods": periods, "values": se["values"]})
+                entry = {"sheet": s.get("name"), "label": se["label"],
+                         "periods": periods, "values": se["values"]}
+                if se.get("cells"):
+                    entry["cells"] = se["cells"]
+                out.append(entry)
     return out
 
 
@@ -152,10 +155,14 @@ def build_mapped_model(report: Dict[str, Any],
                        resolved: Dict[str, dict]) -> Dict[str, Any]:
     """The business model with roles pinned by the mapping — same derived
     arithmetic as the heuristic path, same shape for every consumer."""
-    metrics = {
-        role: {"label": r["label"], "sheet": r["sheet"], "values": r["values"]}
-        for role, r in resolved.items() if role != "margin"
-    }
+    metrics = {}
+    for role, r in resolved.items():
+        if role == "margin":
+            continue
+        m = {"label": r["label"], "sheet": r["sheet"], "values": r["values"]}
+        if r.get("cells"):
+            m["cells"] = r["cells"]
+        metrics[role] = m
     any_ref = next(iter(resolved.values()))
     # keep the heuristic model's breakdowns if it produced any
     old = report.get("model") or {}

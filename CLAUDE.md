@@ -65,12 +65,13 @@ Lumnia is a two-person, early-revenue B2B financial/operational intelligence pla
 
 The v1 fabrication bug (template-first rendering inventing revenue on non-financial uploads) does not exist here — v2's pipeline is capability-gated by design. What's actually open:
 
-Cross-sheet ratios and monthly plan-vs-actual are BUILT (model.py `_supplement` / `_plan_vs_actual`; oracles in tests/test_xsheet_ratio.py and tests/test_plan_vs_actual.py) — joins are exact period-string equality onto the spine axis; fewer than 3 aligned cells is an honest `model["gaps"]` entry, never a number. Still open:
+Cross-sheet ratios and monthly plan-vs-actual are BUILT (model.py `_supplement` / `_plan_vs_actual`; oracles in tests/test_xsheet_ratio.py and tests/test_plan_vs_actual.py) — joins are exact period-string equality onto the spine axis; fewer than 3 aligned cells is an honest `model["gaps"]` entry, never a number. Source-cell provenance is BUILT too: series carry A1 refs (`metrics[role].cells`, `plan_cells`, `target_sources`), `GET /analyses/{id}/cells` re-reads cited cells from the stored upload bytes, and the Production statbar figures click-to-trace (oracles: tests/test_provenance.py, tests/test_trace.py; rehearsal gate: scripts/demo_check.py). Analyses stored before it need ↺ rerun to grow cells. Still open:
 
 1. **Suggestion-chip phrasing inherits messy headers** (`suggest_brief`, semantics.py) — "Quelle est la répartition de Janvier par PRODUCTION 2025 ?" is answerable but reads awkward. Smoothing must not break the round-trip oracle.
 2. **Cross-WORKBOOK consolidation** (projections + journals uploaded as separate files, joined per client/period) — known limit, not built. Honest workaround: combine the sheets into one workbook per engagement before upload.
 3. **Analyses stored before an engine upgrade need a rerun** to grow new fields — the UI offers ↺; consider auto-rerun on open someday.
-4. Logged `# DEBT`: exec KPI tiles don't surface `dropped_outside_axis` (the Production statbar does); mapping.py restricts manual `volume_secondary` to identical axes; yearly-plan-phased-monthly comparison needs an explicit phasing rule to stay honest.
+4. Logged `# DEBT`: exec KPI tiles don't surface `dropped_outside_axis` (the Production statbar does); mapping.py restricts manual `volume_secondary` to identical axes; yearly-plan-phased-monthly comparison needs an explicit phasing rule to stay honest; the trace endpoint re-parses the workbook per click (cache when books grow).
+5. **Pre-existing, found in review:** a label-ish column that gets forward-filled can profile numeric and become a row-year series whose VALUES sum merged-cell ghosts (one real 500 can render as 1500). Citations for such periods are suppressed (`ghost_rows` in orient/charts) so no false proof ever shows, but the value-side fix — keeping ffilled label columns out of numeric series — is open and needs its own oracle.
 
 ---
 

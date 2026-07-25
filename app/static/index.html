@@ -854,6 +854,24 @@
     gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--hairline);
     align-items: baseline; font-size: 13px; }
 
+  /* click-a-figure -> its source cells in the uploaded file */
+  .traceable { cursor: pointer; border-bottom: 1px dashed var(--gold); }
+  .traceable:hover .trc-mark { color: var(--gold-strong); }
+  .trc-mark { color: var(--gold); font-size: 11px; }
+  .trc-item { border-top: 1px solid var(--hairline); padding: 12px 0 14px; }
+  .trc-chip { font: 11.5px/1.5 var(--mono); background: var(--gold-tint);
+    border: 1px solid var(--border); padding: 3px 9px; white-space: nowrap; }
+  .trc-chip .muted { font-size: 10px; }
+  .trc-wrap { overflow-x: auto; margin-top: 9px; }
+  .trcgrid { border-collapse: collapse; font: 10.5px/1.45 var(--mono); }
+  .trcgrid th, .trcgrid td { border: 1px solid var(--border); padding: 3px 8px;
+    text-align: right; white-space: nowrap; color: var(--ink-2); font-weight: 400; }
+  .trcgrid th { color: var(--ink-3); background: var(--chip-bg);
+    font-size: 9px; letter-spacing: .06em; }
+  .trcgrid td:first-of-type { text-align: left; }
+  .trcgrid td.hit { background: var(--gold-tint); color: var(--ink);
+    font-weight: 600; outline: 1.5px solid var(--gold); outline-offset: -1.5px; }
+
   /* ============ home: first-run + Command Center ============ */
   body.home aside.side { display: none; }
   body.home .app { grid-template-columns: 1fr; }
@@ -1079,6 +1097,15 @@ const STR = {
     pr_budget_line: y => `Budget ${y}`,
     pr_vs_budget: (p, y) => p == null ? "" :
       `${p > 0 ? "▲" : "▼"} ${Math.abs(p)}% vs budget ${y}`,
+    tc_kicker: "Source cells — read from the uploaded file",
+    tc_actual: "Actual", tc_plan: "Plan", tc_budget: "Budget target",
+    tc_open: "open sheet",
+    tc_live: f => `Values re-read from “${f}” just now — from the file itself, never from the stored dashboard.`,
+    tc_err: "Could not re-read the source cells.",
+    tc_close: "Close", tc_loading: "Reading the uploaded file…",
+    tc_raw: r => `as written: “${r}”`,
+    tc_hint: "Click to trace this figure to its source cells",
+    tc_aligned: n => `all ${n} aligned month${n === 1 ? "" : "s"} — the figure totals them`,
     tab_data: "Data", tab_trends: "Trends", tab_audit: "Audit", tab_actions: "Actions",
     tab_journal: "Journal",
     jx_t: "Where the tracked cash went",
@@ -1619,6 +1646,15 @@ const STR = {
     pr_budget_line: y => `Budget ${y}`,
     pr_vs_budget: (p, y) => p == null ? "" :
       `${p > 0 ? "▲" : "▼"} ${Math.abs(p)} % vs budget ${y}`,
+    tc_kicker: "Cellules sources — lues dans le fichier déposé",
+    tc_actual: "Réel", tc_plan: "Plan", tc_budget: "Cible budget",
+    tc_open: "ouvrir la feuille",
+    tc_live: f => `Valeurs relues à l'instant dans « ${f} » — depuis le fichier lui-même, jamais depuis le tableau de bord stocké.`,
+    tc_err: "Impossible de relire les cellules sources.",
+    tc_close: "Fermer", tc_loading: "Lecture du fichier déposé…",
+    tc_raw: r => `tel qu'écrit : « ${r} »`,
+    tc_hint: "Cliquer pour tracer ce chiffre jusqu'à ses cellules sources",
+    tc_aligned: n => `les ${n} mois alignés — le chiffre les totalise`,
     tab_data: "Données", tab_trends: "Tendances", tab_audit: "Audit", tab_actions: "À faire",
     tab_journal: "Journal",
     jx_t: "Où est allé l'argent suivi",
@@ -2126,7 +2162,7 @@ const T = STR[LANG];
 function setLang(l) { localStorage.setItem("lumnia_lang", l); location.reload(); }
 
 /* ---------- state ---------- */
-let current = null, REPORT = null, AUDIT = null, CHARTS = [];
+let current = null, REPORT = null, AUDIT = null, CHARTS = [], TRACES = [];
 let SHEET_IDX = {};
 const FILTER = { sheets: null, status: null, periods: "all" };  // sheets: Set|null
 // Executive mode: decisions in sentences. Analyst mode: the full machinery.
@@ -3080,6 +3116,7 @@ function renderAll() {
   const r = REPORT, a = AUDIT;
   SHEET_IDX = {}; r.sheets.forEach((s, i) => { SHEET_IDX[s.name] = i; });
   CHARTS = collectCharts(r);
+  TRACES = []; closeTrace();
   if (PAGE === "exec") { renderExecutivePage(); return; }
   MODE = "analyst";
   document.body.dataset.mode = "analyst";
@@ -3135,7 +3172,7 @@ function renderAll() {
 
   attachTabBar(); attachFilters(); attachCharts(); attachFindingRows();
   attachBarRows(); attachScenario(); attachMC(); attachNarrative();
-  attachStory(); attachWorkbench(); attachMapping();
+  attachStory(); attachWorkbench(); attachMapping(); attachTraces();
 }
 
 /* ---------- the Executive page (7d/7e): read-only over the audited data —
@@ -5530,8 +5567,22 @@ function renderProduction() {
     if (lastIdx >= 0) {
       const pct = ub.variance_pct[lastIdx];
       const over = pct != null && pct > 0;
-      stats.push(`<span>${derLabel(ub.basis)} <b>${compact(actual[lastIdx])}</b>
-        <b style="color:var(--${over ? "critical" : "good"})">${T.pr_vs_budget(pct, ub.target_period)}</b></span>`);
+      // the figure's own provenance: actual-side cells at this month plus
+      // the budget cells behind the target — all named by the pipeline
+      const den = ub.basis === "opex_per_volume_out" ? "volume_secondary" : "volume";
+      const ti = traceChip({
+        title: `${derLabel(ub.basis)} — ${fmtPeriod(mo.periods[lastIdx])}`,
+        sub: T.pr_cost_target(compact(ub.target), ub.target_period),
+        items: [
+          ...[["opex", met.opex], [den, met[den]]].map(([, s]) =>
+            s && s.cells ? { k: `${T.tc_actual} — ${s.label}`, sheet: s.sheet,
+                             refs: s.cells[lastIdx] } : null),
+          ...Object.values(ub.target_sources || {}).map(s =>
+            ({ k: `${T.tc_budget} — ${s.label}`, sheet: s.sheet, refs: s.cells })),
+        ],
+      });
+      stats.push(`<span${ti != null ? ` class="traceable" data-trace="${ti}" title="${esc(T.tc_hint)}"` : ""}>${derLabel(ub.basis)} <b>${compact(actual[lastIdx])}</b>
+        <b style="color:var(--${over ? "critical" : "good"})">${T.pr_vs_budget(pct, ub.target_period)}</b>${ti != null ? ` <span class="trc-mark">⌖</span>` : ""}</span>`);
     }
     const cc = { pseudo: true, sheet: T.pr_cost_chart, explain: "cost_budget",
       loc: T.pr_cost_target(compact(ub.target), ub.target_period),
@@ -5551,8 +5602,34 @@ function renderProduction() {
   // plan vs actual: pipeline-computed attainment — this block only formats
   const pva = mo.plan_vs_actual || {};
   const pvaCards = Object.entries(pva).slice(0, 3).map(([role, v]) => {
-    if (v.pct_of_plan_total != null)
-      stats.push(`<span>${ROLE_LABELS[role] || role} <b>${T.pva_of_plan(v.pct_of_plan_total)}</b></span>`);
+    if (v.pct_of_plan_total != null) {
+      // the chip's figure totals EVERY aligned month, so the trace cites
+      // them all; a month missing refs on either side kills the chip — a
+      // partial citation would be a false proof
+      let ti = null;
+      const am = met[role];
+      if (am && am.cells && v.plan_cells) {
+        const aRefs = [], pRefs = [];
+        let complete = true, n = 0;
+        am.values.forEach((a, i) => {
+          if (a == null || v.plan[i] == null) return;
+          n += 1;
+          const ar = am.cells[i], pr = v.plan_cells[i];
+          if (!ar || !ar.length || !pr || !pr.length) { complete = false; return; }
+          aRefs.push(...ar); pRefs.push(...pr);
+        });
+        if (complete && n) ti = traceChip({
+          title: T.pva_chart(ROLE_LABELS[role] || role),
+          sub: T.tc_aligned(n),
+          items: [
+            { k: `${T.tc_actual} — ${am.label}`, sheet: am.sheet, refs: aRefs },
+            { k: `${T.tc_plan} — ${v.plan_label}`, sheet: v.plan_sheet,
+              refs: pRefs },
+          ],
+        });
+      }
+      stats.push(`<span${ti != null ? ` class="traceable" data-trace="${ti}" title="${esc(T.tc_hint)}"` : ""}>${ROLE_LABELS[role] || role} <b>${T.pva_of_plan(v.pct_of_plan_total)}</b>${ti != null ? ` <span class="trc-mark">⌖</span>` : ""}</span>`);
+    }
     const cc = { pseudo: true, sheet: T.pva_chart(ROLE_LABELS[role] || role), explain: "pva",
       loc: PAGE === "exec" ? null : T.pr_src(esc(String(v.plan_sheet || "").trim())),
       chart: { kind: "timeseries", periods: mo.periods, series: [],
@@ -6687,6 +6764,118 @@ function jumpToSheet(name) {
   el.scrollIntoView({ behavior: "smooth", block: "start" });
   el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
   const d = el.querySelector("details"); if (d) d.open = true;
+}
+
+/* ---------- trace a figure to its source cells --------------------------
+   A renderer registers the refs a figure carries (traceChip); the modal
+   re-reads them LIVE from the uploaded file via /analyses/{id}/cells and
+   shows the sheet excerpt with the cited cells highlighted. Refs come from
+   the pipeline's own provenance — this code only fetches and formats.
+   Provenance stays off the exec/published page, like sheet names. */
+function traceChip(spec) {
+  const items = (spec.items || [])
+    .filter(it => it && it.sheet && it.refs && it.refs.length);
+  if (!items.length || PAGE === "exec") return null;
+  TRACES.push({ ...spec, items });
+  return TRACES.length - 1;
+}
+
+function closeTrace() {
+  const s = $("#trace-scrim");
+  if (s) s.remove();
+}
+
+async function openTrace(idx) {
+  const spec = TRACES[idx];
+  if (!spec) return;
+  closeTrace();
+  const scrim = document.createElement("div");
+  scrim.className = "scrim open"; scrim.id = "trace-scrim";
+  scrim.innerHTML = `<div class="rmodal" style="max-width:700px">
+    <div class="kicker">${T.tc_kicker}</div>
+    <h2 style="font-family:var(--serif);font-size:23px;font-weight:600;margin:8px 0 2px">${esc(spec.title)}</h2>
+    ${spec.sub ? `<div class="cs">${esc(spec.sub)}</div>` : ""}
+    <div id="trace-body" style="margin-top:12px"><p class="chcap">${T.tc_loading}</p></div>
+    <div style="display:flex;gap:14px;align-items:baseline;margin-top:16px">
+      <span class="cs" style="letter-spacing:.02em;text-transform:none">${T.tc_live(esc(REPORT.filename))}</span>
+      <span class="grow"></span>
+      <a class="seeall" id="trace-close">${T.tc_close}</a>
+    </div></div>`;
+  document.body.appendChild(scrim);
+  scrim.addEventListener("click", e => { if (e.target === scrim) closeTrace(); });
+  $("#trace-close").addEventListener("click", closeTrace);
+  const parts = await Promise.all(spec.items.map(async it =>
+    ({ it, data: await fetchCells(it.sheet, it.refs) })));
+  // the modal may have been closed OR replaced by another figure's trace
+  // while the fetches ran — write only into the scrim THIS call created
+  const body = scrim.querySelector("#trace-body");
+  if (!scrim.isConnected || !body) return;
+  body.innerHTML = parts.map(p => traceItem(p.it, p.data)).join("");
+  $$("[data-tsheet]", scrim).forEach(a => a.addEventListener("click", () => {
+    closeTrace(); jumpToSheet(a.dataset.tsheet);
+  }));
+}
+
+/* the server caps refs per request (MAX_TRACE_REFS); longer citation lists
+   are chunked and merged — the excerpt comes from the first chunk */
+async function fetchCells(sheet, refs) {
+  const out = { cells: [], excerpt: null };
+  for (let i = 0; i < refs.length; i += 40) {
+    try {
+      const r = await fetch(`/analyses/${current}/cells?sheet=` +
+        `${encodeURIComponent(sheet)}&refs=` +
+        `${encodeURIComponent(refs.slice(i, i + 40).join(","))}`);
+      if (!r.ok) return null;
+      const d = await r.json();
+      out.cells.push(...d.cells);
+      if (!out.excerpt) out.excerpt = d.excerpt;
+    } catch { return null; }
+  }
+  return out;
+}
+
+function traceItem(it, data) {
+  const head = `<div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+      <b style="font-size:13px">${esc(it.k)}</b>
+      <span class="cs" style="text-transform:none">${esc(it.sheet)}</span>
+      <span class="grow"></span>
+      ${SHEET_IDX[it.sheet] !== undefined
+        ? `<a class="seeall" data-tsheet="${esc(it.sheet)}">${T.tc_open} →</a>` : ""}
+    </div>`;
+  if (!data) return `<div class="trc-item">${head}
+    <p class="chcap" style="color:var(--critical)">${T.tc_err} (${it.refs.map(esc).join(", ")})</p></div>`;
+  const chips = data.cells.map(c => {
+    const shown = typeof c.value === "number" ? num(c.value)
+      : esc(String(c.value ?? c.raw ?? "—"));
+    const rawDiff = c.raw != null && String(c.raw) !== String(c.value);
+    return `<span class="trc-chip"><b>${c.ref}</b> = ${shown}${
+      rawDiff ? ` <span class="muted">${T.tc_raw(esc(String(c.raw)))}</span>` : ""}</span>`;
+  }).join("");
+  return `<div class="trc-item">${head}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:7px">${chips}</div>
+    ${traceGrid(data)}</div>`;
+}
+
+function traceGrid(data) {
+  const ex = data.excerpt || {}, rows = ex.rows || [];
+  const letters = ex.col_letters || [];
+  if (!rows.length || !letters.length) return "";
+  const hit = new Set(data.cells.map(c => c.ref));
+  const head = `<tr><th></th>${letters.map(l => `<th>${l}</th>`).join("")}</tr>`;
+  const body = rows.map((r, i) => {
+    const rn = ex.row_start + i;
+    return `<tr><th>${rn}</th>${r.map((v, j) => {
+      const s = v == null ? "" : String(v);
+      return `<td class="${hit.has(letters[j] + rn) ? "hit" : ""}">${
+        esc(s.length > 18 ? s.slice(0, 17) + "…" : s)}</td>`;
+    }).join("")}</tr>`;
+  }).join("");
+  return `<div class="trc-wrap"><table class="trcgrid">${head}${body}</table></div>`;
+}
+
+function attachTraces() {
+  $$("#content [data-trace]").forEach(el => el.addEventListener("click", () =>
+    openTrace(+el.dataset.trace)));
 }
 
 /* ---------- sheets ---------- */
