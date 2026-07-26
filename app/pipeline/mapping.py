@@ -59,6 +59,13 @@ def _series_of(report: Dict[str, Any], axis: str) -> List[Dict[str, Any]]:
     return out
 
 
+def plan_charts_from_report(report: Dict[str, Any]) -> List[tuple]:
+    """The plan pool as seen from a stored report dict: date-axis charts on
+    plan-shaped sheet names."""
+    return [(n, c) for n, c in _charts(report, "date")
+            if BUDGET_SHEET_RX.search(str(n))]
+
+
 def year_series(report: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Every series of every year-axis chart in a (stored) report dict:
     [{sheet, label, periods, values}] — the yearly mapping's address space."""
@@ -224,8 +231,7 @@ def build_mapped_monthly(report: Dict[str, Any], resolved: Dict[str, dict],
         "derived": derive_metrics(metrics),
     }
     gaps: List[Dict[str, str]] = []
-    plan_charts = [(n, c) for n, c in _charts(report, "date")
-                   if BUDGET_SHEET_RX.search(str(n))]
+    plan_charts = plan_charts_from_report(report)
     pva = _plan_vs_actual(mo, plan_charts, gaps)
     if pva:
         mo["plan_vs_actual"] = pva

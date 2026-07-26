@@ -49,9 +49,10 @@ from .models import (
 from .pipeline.celltypes import grid_kinds
 from .pipeline.eda import generate_insights
 from .pipeline.journal import build_journal_block
-from .pipeline.model import build_model
+from .pipeline.model import attach_plan_progress, build_model, plan_pool_charts
 from .pipeline.mapping import (MAPPABLE_ROLES, build_mapped_model,
-                               build_mapped_monthly, month_series, reconcile,
+                               build_mapped_monthly, month_series,
+                               plan_charts_from_report, reconcile,
                                resolve, year_series)
 from .pipeline.semantics import plan_from_brief, suggest_brief
 from .pipeline.coerce import coerce_value
@@ -188,17 +189,22 @@ def run_pipeline(content: bytes, filename: str) -> AnalyzeResponse:
                 eda_results.append({**t["eda"], "sheet": r.name})
 
     stories = _collect_stories(reports)
+    model = build_model(reports)
+    # contract-matching workbooks (dual cash journals) get the deep
+    # journal audit on top of the generic pipeline
+    journal = build_journal_block(sheets)
+    # progress vs the projection plan: part-year actuals against the plan
+    # year, journal-backed for spend — needs both blocks, so attached here
+    attach_plan_progress(model, journal, plan_pool_charts(reports))
     return AnalyzeResponse(
         filename=filename or "upload",
         n_sheets=len(reports),
         sheets=reports,
         insights=generate_insights(eda_results) or None,
-        model=build_model(reports),
+        model=model,
         story=stories[0] if stories else None,
         stories=stories or None,
-        # contract-matching workbooks (dual cash journals) get the deep
-        # journal audit on top of the generic pipeline
-        journal=build_journal_block(sheets),
+        journal=journal,
     )
 
 
@@ -594,6 +600,8 @@ async def set_mapping(analysis_id: str, request: Request) -> dict:
             model.setdefault("gaps", []).extend(
                 g for g in mgaps if (g["metric"], g.get("grain")) not in seen)
         report["model"] = model
+    attach_plan_progress(report.get("model"), report.get("journal"),
+                         plan_charts_from_report(report))
     report["mapping"] = {
         "roles": mapping,
         "monthly": monthly,
@@ -616,6 +624,8 @@ def clear_mapping(analysis_id: str) -> dict:
                             detail=f"No analysis '{analysis_id}'.")
     report.pop("mapping", None)
     report["model"] = build_model(AnalyzeResponse(**report).sheets)
+    attach_plan_progress(report.get("model"), report.get("journal"),
+                         plan_charts_from_report(report))
     storage.update_report(analysis_id, report)
     return {"cleared": True, "model": report["model"]}
 
@@ -1427,6 +1437,8 @@ def rerun_analysis(analysis_id: str) -> AnalyzeResponse:
                                       "breakdowns": [],
                                       "scenario_ready": False}
                     model["monthly"] = mo
+                attach_plan_progress(model, rep.get("journal"),
+                                     plan_charts_from_report(rep))
                 result.model = model
                 result.mapping = {**old_map, "reconciliation": rec}
     storage.update_report(analysis_id, result.model_dump())

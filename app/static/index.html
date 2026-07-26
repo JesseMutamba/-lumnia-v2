@@ -1117,6 +1117,15 @@ const STR = {
     up_analyzing_pair: (a, p) => `Analyzing ${a} + plan ${p}…`,
     up_too_many: "Drop at most two files — the actuals workbook, plus optionally a projections workbook.",
     mp_yearly_k: "Yearly series", mp_monthly_k: "Monthly series",
+    pp_t: y => `Progress vs plan ${y}`,
+    pp_sub: "part-year actuals against the plan year — pace declared, never assumed",
+    pp_line: (a, p, exp, ph) => `${a} of ${p} planned · expected ${exp} (${ph})`,
+    pp_phasing: { linear: "linear pace", monthly_plan: "phased by the monthly plan" },
+    pp_journal: "verified journal",
+    pp_over: "over pace", pp_behind: "behind plan", pp_on: "on pace",
+    xi_pace_over: (role, pct, y, exp) => `${role} has consumed ${pct} of the ${y} plan — pace says ${exp}. Where is the overrun?`,
+    xi_pace_behind: (role, pct, y, exp) => `${role} stands at ${pct} of the ${y} plan against a ${exp} pace — is the program delayed, or the plan stale?`,
+    xi_pace_b: ph => `part-year actuals vs the plan year, ${ph}`,
     xt_insights: "Insights",
     xi_kicker: "Discussion agenda",
     xi_intro: "Questions worth raising with your team — computed from this workbook's own figures, each naming the number behind it. Nothing here is estimated.",
@@ -1694,6 +1703,15 @@ const STR = {
     up_analyzing_pair: (a, p) => `Analyse de ${a} + plan ${p}…`,
     up_too_many: "Déposez au plus deux fichiers — le classeur du réel, plus éventuellement un classeur de projections.",
     mp_yearly_k: "Séries annuelles", mp_monthly_k: "Séries mensuelles",
+    pp_t: y => `Avancement vs plan ${y}`,
+    pp_sub: "réel partiel contre l'année du plan — rythme déclaré, jamais supposé",
+    pp_line: (a, p, exp, ph) => `${a} sur ${p} planifiés · attendu ${exp} (${ph})`,
+    pp_phasing: { linear: "rythme linéaire", monthly_plan: "phasé par le plan mensuel" },
+    pp_journal: "journal vérifié",
+    pp_over: "au-dessus du rythme", pp_behind: "en retard sur le plan", pp_on: "dans le rythme",
+    xi_pace_over: (role, pct, y, exp) => `${role} a consommé ${pct} du plan ${y} — le rythme voudrait ${exp}. D'où vient le dépassement ?`,
+    xi_pace_behind: (role, pct, y, exp) => `${role} est à ${pct} du plan ${y} contre un rythme de ${exp} — programme retardé, ou plan obsolète ?`,
+    xi_pace_b: ph => `réel partiel contre l'année du plan, ${ph}`,
     xt_insights: "Points clés",
     xi_kicker: "Ordre du jour",
     xi_intro: "Des questions à poser à votre équipe — calculées à partir des chiffres du classeur lui-même, chacune citant le chiffre qui la fonde. Rien ici n'est estimé.",
@@ -3488,6 +3506,20 @@ function execInsightItems() {
     else if (role !== "opex" && pct < 90)
       items.push({ q: T.xi_short(label, pctFmt(pct, 1)),
                    b: T.xi_pva_b, crit: true });
+  });
+  // progress vs the plan year: spending ahead of pace or a program behind
+  const pp = m.plan_progress;
+  if (pp) Object.entries(pp.roles || {}).forEach(([role, e]) => {
+    const label = ROLE_LABELS[role] || role;
+    const ph = T.pp_phasing[e.phasing] || e.phasing;
+    if (role === "opex" && e.pct_of_year > e.expected_pct * 1.25)
+      items.push({ q: T.xi_pace_over(label, pctFmt(e.pct_of_year, 1),
+                                     pp.year, pctFmt(e.expected_pct, 1)),
+                   b: T.xi_pace_b(ph), crit: true });
+    else if (e.pct_of_year < e.expected_pct * 0.5)
+      items.push({ q: T.xi_pace_behind(label, pctFmt(e.pct_of_year, 1),
+                                       pp.year, pctFmt(e.expected_pct, 1)),
+                   b: T.xi_pace_b(ph), crit: role === "capex" });
   });
   const vr = (mo.derived || {}).volume_ratio;
   if (vr) {
@@ -5717,6 +5749,7 @@ function renderFinancials(execView) {
 
   return `<section id="sec-financials"><span class="kicker">${execView ? T.xt_costs_kicker : T.fin_kicker}</span>
     ${stats.length ? `<div class="statbar">${stats.join("")}</div>` : ""}
+    ${planProgressCard()}
     <div class="grid2">${chartCard(traj, false)}${marginCard}</div>
     ${unitCard || convCard ? `<div class="grid2" style="margin-top:14px">${unitCard}${convCard}</div>` : ""}
     ${finTable(m)}
@@ -5891,6 +5924,43 @@ function renderProduction() {
     <div class="grid2">${chartCard(volChart, false)}${ratioCard}${costCard}${pvaCards}</div>
     ${pvaGap}
   </section>`;
+}
+
+/* ---------- progress vs the projection plan: pipeline-computed, this
+   block only formats — bar = % of the plan year consumed, tick = where
+   the declared phasing rule says it should stand ---------------------- */
+function planProgressCard() {
+  const pp = REPORT.model && REPORT.model.plan_progress;
+  if (!pp) return "";
+  const roles = Object.entries(pp.roles || {});
+  if (!roles.length && !(pp.gaps || []).length) return "";
+  const rows = roles.map(([role, e]) => {
+    const over = e.pct_of_year > e.expected_pct * 1.25;
+    const behind = e.pct_of_year < e.expected_pct * 0.5;
+    const fill = Math.min(e.pct_of_year, 100);
+    const tick = Math.min(e.expected_pct, 100);
+    const chip = over ? `<b style="color:var(--critical)">${T.pp_over}</b>`
+      : behind ? `<b style="color:var(--warning)">${T.pp_behind}</b>`
+      : `<b style="color:var(--good)">${T.pp_on}</b>`;
+    return `<div style="margin-bottom:13px">
+      <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:4px">
+        <span class="bl" style="min-width:150px">${ROLE_LABELS[role] || role}</span>
+        <b>${pctFmt(e.pct_of_year, 1)}</b>
+        <span class="cs" style="text-transform:none">${T.pp_line(compact(e.actual_to_date),
+          compact(e.plan_year), pctFmt(e.expected_pct, 1),
+          T.pp_phasing[e.phasing] || e.phasing)}</span>
+        ${e.source === "journal" ? `<span class="schip good">${T.pp_journal}</span>` : ""}
+        <span class="grow"></span>${chip}</div>
+      <div style="height:8px;background:#eee6d2;position:relative">
+        <span style="display:block;height:100%;width:${fill.toFixed(1)}%;background:var(--${over ? "critical" : "gold"})"></span>
+        <span style="position:absolute;left:${tick.toFixed(1)}%;top:-2px;bottom:-2px;width:2px;background:var(--ink-3)"></span>
+      </div></div>`;
+  }).join("");
+  const gaps = (pp.gaps || []).map(g =>
+    `<div class="qmiss">→ ${ROLE_LABELS[g.role] || g.role} — ${esc(g.reason)} · ${T.st_needs(esc(g.requires))}</div>`).join("");
+  return `<div class="card" style="margin-bottom:14px"><div class="card-head">
+      <span class="ct">${T.pp_t(esc(String(pp.year)))}</span><span class="cs">${T.pp_sub}</span></div>
+    <div style="margin-top:12px">${rows}</div>${gaps}</div>`;
 }
 
 /* ---------- config-first mapping: pin role -> series, gated by checks --- */
