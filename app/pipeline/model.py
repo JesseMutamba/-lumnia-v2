@@ -626,6 +626,151 @@ def _public_metrics(roles: Dict[str, dict],
     return out
 
 
+def plan_pool_charts(report_sheets) -> List[tuple]:
+    """(sheet_name, chart) for every date-axis chart on a plan-shaped sheet
+    — the plan pool, as seen from the assembled report objects."""
+    out = []
+    for name, _, tidy in _tidies(report_sheets):
+        ch = (tidy.get("summary") or {}).get("chart")
+        if (ch and ch.get("kind") == "timeseries" and ch.get("axis") != "year"
+                and ch.get("series_all") and BUDGET_SHEET_RX.search(str(name))):
+            out.append((name, ch))
+    return out
+
+
+def _progress_expectation(role: str, plan_charts: List[tuple], year: str,
+                          window_end: str, n_months: int) -> tuple:
+    """Where SHOULD the year stand by the window's end — and by which rule.
+
+    When the plan pool carries a monthly series for the role in that year,
+    the expectation is phased by the plan's own months (the BU'26 shape);
+    otherwise it is linear n/12. The rule used is DECLARED in the payload —
+    an undeclared phasing assumption is a quiet fabrication."""
+    wanted = {role} | ({"volume", "volume_secondary"}
+                      if role in ("volume", "volume_secondary") else set())
+    for _name, ch in plan_charts:
+        periods = [str(p) for p in ch.get("periods") or []]
+        if not periods or not all(p[:4] == year for p in periods):
+            continue
+        for prole, series in _tag_roles(ch, plan=True).items():
+            if prole not in wanted:
+                continue
+            vals = [(p, v) for p, v in zip(periods, series["values"])
+                    if v is not None]
+            total = sum(v for _, v in vals)
+            if total:
+                to_date = sum(v for p, v in vals if p[:7] <= window_end[:7])
+                return round(to_date / total * 100, 1), "monthly_plan"
+    return round(n_months / 12 * 100, 1), "linear"
+
+
+def attach_plan_progress(model: Optional[Dict[str, Any]],
+                         journal: Optional[Dict[str, Any]],
+                         plan_charts: Optional[List[tuple]] = None) -> None:
+    """Progress against the projection plan, in place on
+    ``model["plan_progress"]``: part-year actuals vs the plan-year figure,
+    role by role. Actuals come from the monthly role series (upper scale
+    gate: a CDF series against a USD plan computes tens of thousands of
+    percent — a unit mismatch, never progress) with the journal's VERIFIED
+    USD as the fallback for spend roles. Roles the data cannot measure are
+    NAMED gaps. No plan-shaped year spine, or no single actuals year on
+    the plan axis -> no block at all."""
+    if not model:
+        return
+    model.pop("plan_progress", None)      # recompute or honestly absent
+    if not model.get("periods") or not model.get("metrics"):
+        return
+    spine = model.get("source_sheet")
+    if not spine or not BUDGET_SHEET_RX.search(str(spine)):
+        return
+    periods = [str(p) for p in model["periods"]]
+    mo = model.get("monthly") or {}
+    mo_periods = [str(p) for p in mo.get("periods") or []]
+    jx = (journal or {}).get("exec") or {}
+    j_months = [str(m) for m in jx.get("months") or []]
+    j_spend = {d.get("kind"): d.get("usd")
+               for d in jx.get("destinations") or []}
+
+    years = {p[:4] for p in mo_periods}
+    if not years and j_months:
+        years = {m[:4] for m in j_months}
+    if len(years) != 1:
+        return
+    year = years.pop()
+    if year not in periods:
+        return
+    yi = periods.index(year)
+
+    roles_out: Dict[str, Any] = {}
+    gaps: List[Dict[str, str]] = []
+    for role, ys in (model.get("metrics") or {}).items():
+        yvals = ys.get("values") or []
+        plan_year = yvals[yi] if yi < len(yvals) else None
+        if plan_year is None or plan_year == 0:
+            continue
+        entry = None
+        gated = False
+        ms = (mo.get("metrics") or {}).get(role)
+        if ms:
+            vals = [(p, v) for p, v in zip(mo_periods, ms.get("values") or [])
+                    if v is not None]
+            if vals:
+                total = sum(v for _, v in vals)
+                pct = total / plan_year * 100
+                if abs(pct) <= PVA_PCT_MAX:
+                    entry = {"source": "series",
+                             "window": [vals[0][0], vals[-1][0]],
+                             "n_months": len(vals),
+                             "actual_to_date": round(total, 4)}
+                else:
+                    gated = True
+        if entry is None and role in ("opex", "capex") \
+                and j_spend.get(role) is not None and j_months \
+                and {m[:4] for m in j_months} == {year}:
+            pct = j_spend[role] / plan_year * 100
+            if abs(pct) <= PVA_PCT_MAX:
+                entry = {"source": "journal",
+                         "window": [j_months[0], j_months[-1]],
+                         "n_months": len(j_months),
+                         "actual_to_date": round(j_spend[role], 4)}
+        if entry is None:
+            if gated:
+                gaps.append({"role": role,
+                             "reason": ("actual and plan magnitudes differ "
+                                        "by orders of magnitude — a unit "
+                                        "mismatch, not progress"),
+                             "requires": "actuals in the plan's unit"})
+            elif ms or role in ("opex", "capex"):
+                gaps.append({"role": role,
+                             "reason": "no usable monthly actuals in the "
+                                       "plan year",
+                             "requires": f"monthly {role} actuals for {year}"})
+            else:
+                gaps.append({"role": role,
+                             "reason": "nothing in the actuals measures "
+                                       "this role monthly",
+                             "requires": f"monthly {role} actuals for {year}"})
+            continue
+        expected, phasing = _progress_expectation(
+            role, plan_charts or [], year, entry["window"][1],
+            entry["n_months"])
+        entry["plan_year"] = plan_year
+        entry["pct_of_year"] = round(
+            entry["actual_to_date"] / plan_year * 100, 1)
+        entry["expected_pct"] = expected
+        entry["phasing"] = phasing
+        src = {"sheet": ys.get("sheet"), "label": ys.get("label")}
+        cells = ys.get("cells") or []
+        if yi < len(cells) and cells[yi]:
+            src["cells"] = cells[yi]
+        entry["plan_sources"] = src
+        roles_out[role] = entry
+
+    if roles_out or gaps:
+        model["plan_progress"] = {"year": year, "roles": roles_out,
+                                  "gaps": gaps}
+
+
 def build_model(report_sheets) -> Optional[Dict[str, Any]]:
     """Assemble the business model, or ``None`` when nothing role-tags."""
     gaps: List[Dict[str, str]] = []

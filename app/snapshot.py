@@ -49,6 +49,15 @@ def _public_model(report: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     pub = _strip_sheets({k: v for k, v in model.items() if k != "breakdowns"})
     if isinstance(pub.get("monthly"), dict):
         pub["monthly"] = _strip_sheets(pub["monthly"])
+    pp = pub.get("plan_progress")
+    if isinstance(pp, dict):
+        pub["plan_progress"] = {
+            **pp,
+            "roles": {role: {**e, "plan_sources": {
+                          k: v for k, v in (e.get("plan_sources") or {})
+                          .items() if k not in ("sheet", "cells")}}
+                      for role, e in (pp.get("roles") or {}).items()},
+        }
     return pub
 
 
