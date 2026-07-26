@@ -4734,6 +4734,26 @@ function printReport() {
     if (vr != null) bits.push(`<div class="pkpi"><div class="l">${T.p_conv}</div><div class="v">${(vr * 100).toFixed(1)}%</div></div>`);
     if (bits.length) finKpis = `<h2>${T.p_fin}</h2><div class="pkpis">${bits.join("")}</div>`;
   }
+  // progress vs the projection plan — same computed block the exec card
+  // shows (pipeline figures only; the pace chips reuse its thresholds)
+  let progress = "";
+  const pp = m && m.plan_progress;
+  if (pp && (Object.keys(pp.roles || {}).length || (pp.gaps || []).length)) {
+    const rows = Object.entries(pp.roles || {}).map(([role, e]) => {
+      const over = e.pct_of_year > e.expected_pct * 1.25;
+      const behind = e.pct_of_year < e.expected_pct * 0.5;
+      const chip = over ? T.pp_over : behind ? T.pp_behind : T.pp_on;
+      const color = over ? "var(--critical)" : behind ? "var(--warning)" : "var(--good)";
+      return `<div class="pact"><b>${ROLE_LABELS[role] || role}</b> — ${pctFmt(e.pct_of_year, 1)}
+        <span style="color:${color};font-weight:650">· ${chip}</span>
+        ${e.source === "journal" ? ` <i>(${T.pp_journal})</i>` : ""}<br>
+        ${T.pp_line(compact(e.actual_to_date), compact(e.plan_year),
+          pctFmt(e.expected_pct, 1), T.pp_phasing[e.phasing] || e.phasing)}</div>`;
+    });
+    const pgaps = (pp.gaps || []).map(g => `<div class="pact">→
+      ${ROLE_LABELS[g.role] || g.role} — ${esc(g.reason)} · ${T.st_needs(esc(g.requires))}</div>`);
+    progress = `<h2>${T.pp_t(esc(String(pp.year)))}</h2>${rows.join("")}${pgaps.join("")}`;
+  }
   const date = new Date().toISOString().slice(0, 10);
 
   $("#printdoc").innerHTML = `
@@ -4754,6 +4774,7 @@ function printReport() {
       <div class="pkpi"><div class="l">${T.p_records}</div><div class="v">${compact(recs)}</div></div>
     </div>
     ${finKpis}
+    ${progress}
     ${charts.length ? `<h2>${T.p_trends}</h2><div class="pcharts">${charts.map(c =>
       `<div><div style="font-weight:650;font-size:12px;margin-bottom:4px">${esc(c.title)}</div>${c.svg}</div>`).join("")}</div>` : ""}
     <h2>${T.p_todo}</h2>
