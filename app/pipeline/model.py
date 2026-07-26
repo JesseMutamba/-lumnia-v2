@@ -59,6 +59,12 @@ MAX_BREAKDOWNS = 6
 # aligned periods carry values — fewer is an honest gap, never a metric
 MIN_XSHEET_OVERLAP = 3
 
+# plan-vs-actual scale sanity: total attainment outside this band is not
+# attainment, it is a wrong pairing (a CDF cost line matched to a tonnage
+# plan computes "1,104,323% of plan" — arithmetically exact, semantically
+# garbage). Deliberately generous: real attainment lives well inside it.
+PVA_PCT_MIN, PVA_PCT_MAX = 1.0, 10_000.0
+
 # TOTAL/CUMUL series are aggregates of the others — never a role series
 # (same rule as build_matrix_semantics, which imports its copy from here)
 DERIVED_SERIES_RX = re.compile(r"total|cumul|sous.?tot|grand.?tot",
@@ -544,6 +550,7 @@ def _plan_vs_actual(monthly: Dict[str, Any], plan_charts: List[tuple],
     out: Dict[str, Any] = {}
     misaligned = False
     unmatched = False
+    scale_off = False
     for role, pm in plan["metrics"].items():
         if role in ("volume", "volume_secondary"):
             target = _match_plan_volume(pm, monthly["metrics"])
@@ -564,6 +571,11 @@ def _plan_vs_actual(monthly: Dict[str, Any], plan_charts: List[tuple],
             continue
         plan_total = sum(p for _, p in both)
         actual_total = sum(a for a, _ in both)
+        if plan_total and not (
+                PVA_PCT_MIN <= abs(actual_total / plan_total * 100)
+                <= PVA_PCT_MAX):
+            scale_off = True           # unit/role mismatch, never a number
+            continue
         out[role] = {
             "plan": vals,
             "plan_label": pm["label"],
@@ -580,19 +592,22 @@ def _plan_vs_actual(monthly: Dict[str, Any], plan_charts: List[tuple],
         if pm.get("cells"):
             out[role]["plan_cells"] = _reindex(pm["cells"], plan["periods"],
                                                monthly["periods"])
-    if not out and (misaligned or unmatched):
-        gaps.append({
-            "metric": "plan_vs_actual",
-            "grain": "monthly",
-            "reason": ("a plan sheet was found but fewer than "
-                       f"{MIN_XSHEET_OVERLAP} periods align with the actuals")
-            if misaligned else
-            ("a plan volume series could not be matched to a single "
-             "actuals series"),
-            "requires": (f"{MIN_XSHEET_OVERLAP}+ overlapping periods "
-                         "between plan and actuals")
-            if misaligned else
-            "plan labels that name the quantity they plan"})
+    if not out and (misaligned or unmatched or scale_off):
+        if scale_off:
+            reason = ("plan and actual totals differ by orders of "
+                      "magnitude — a unit or role mismatch, not attainment")
+            requires = "plan and actual series in the same unit"
+        elif misaligned:
+            reason = ("a plan sheet was found but fewer than "
+                      f"{MIN_XSHEET_OVERLAP} periods align with the actuals")
+            requires = (f"{MIN_XSHEET_OVERLAP}+ overlapping periods "
+                        "between plan and actuals")
+        else:
+            reason = ("a plan volume series could not be matched to a "
+                      "single actuals series")
+            requires = "plan labels that name the quantity they plan"
+        gaps.append({"metric": "plan_vs_actual", "grain": "monthly",
+                     "reason": reason, "requires": requires})
     return out or None
 
 

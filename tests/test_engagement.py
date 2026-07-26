@@ -87,10 +87,20 @@ def test_engagement_upload_merges_and_compares():
 
 
 def test_engagement_upload_is_deterministic():
+    # belt: the merge itself is byte-stable (the dedupe key hashes these)
+    import hashlib
+    from app.pipeline.ingest import merge_engagement
+    a, p = _actuals_book(), _plan_book()
+    h1 = hashlib.sha256(merge_engagement(a, "a.xlsx", p, "p.xlsx")).hexdigest()
+    h2 = hashlib.sha256(merge_engagement(a, "a.xlsx", p, "p.xlsx")).hexdigest()
+    assert h1 == h2, "merge bytes differ between calls"
+    # suspenders: the endpoint dedupes the same pair to one analysis
     first = _post_pair().json()
     second = _post_pair().json()
-    assert second["id"] == first["id"]      # same pair -> same analysis
-    assert len(client.get("/analyses").json()) == 1
+    listing = client.get("/analyses").json()
+    detail = [(x["id"], x["filename"], x.get("size_bytes")) for x in listing]
+    assert second["id"] == first["id"], detail
+    assert len(listing) == 1, detail
 
 
 def test_single_file_upload_is_unchanged():
