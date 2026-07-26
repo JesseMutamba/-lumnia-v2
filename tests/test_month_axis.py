@@ -121,3 +121,82 @@ def test_monthly_unit_cost_compares_against_the_budget_year():
     assert ub["variance_pct"][0] == round((14200 / 16 - 540) / 540 * 100, 1)
     assert ub["variance_pct"][2] == round(
         (15400 / 18.5 - 540) / 540 * 100, 1)
+
+
+# ---------------------------------------------------------------------------
+# The banner-year rule: bare month headers ("Janvier"…) adopt a year ONLY
+# when exactly one unambiguous 4-digit year appears in the table's own text
+# (banner or labels). Zero years or two refuse — a fabricated period is
+# worse than none. Stacked month-bands with different years split first.
+# ---------------------------------------------------------------------------
+MOIS = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin"]
+
+
+def _one_band(banner: str) -> list:
+    return [
+        [banner, None, *MOIS],
+        ["MWEBE", "BU", 87, 235, 336, 470, 336, 201],
+        [None, "CPO Produits (T)", 20.01, 54.05, 77.28, 108.1, 77.28, 46.23],
+        [None, "FFB (T)", 87, 235, 336, 470, 336, 201],
+    ]
+
+
+def _post(rows, name="plan.xlsx", sheet="PLAN PRODUCTION"):
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as w:
+        pd.DataFrame(rows).to_excel(w, sheet_name=sheet, header=False,
+                                    index=False)
+    return client.post("/analyze", files={
+        "file": (name, buf.getvalue(), "application/octet-stream")})
+
+
+def test_bare_month_header_adopts_the_single_banner_year():
+    r = _post(_one_band("ESTIMATION PRODUCTION 2026"))
+    assert r.status_code == 200, r.text
+    sheet = r.json()["sheets"][0]
+    assert sheet["orientation"] == "matrix", sheet["orientation_reason"]
+    ch = sheet["tidy"]["summary"]["chart"]
+    assert ch["axis"] == "date"
+    assert ch["periods"][0] == "2026-01-01"
+    assert ch["periods"][5] == "2026-06-01"
+    # provenance rides: the CPO row cites its real cells (row 3, C..H)
+    ser = {s["label"]: s for s in ch["series_all"]}
+    key = next(k for k in ser if "CPO Produits" in k)
+    assert ser[key]["cells"][0] == ["C3"]
+
+
+def test_ambiguous_or_missing_banner_year_refuses():
+    # two year tokens in the table region -> unknowable, no date axis
+    r2 = _post(_one_band("PRODUCTION 2025&2026"))
+    s2 = r2.json()["sheets"][0]
+    ch2 = ((s2.get("tidy") or {}).get("summary") or {}).get("chart") or {}
+    assert not (ch2.get("kind") == "timeseries" and ch2.get("axis") == "date")
+    # no year token anywhere -> same honest refusal
+    r3 = _post(_one_band("ESTIMATION PRODUCTION"))
+    s3 = r3.json()["sheets"][0]
+    ch3 = ((s3.get("tidy") or {}).get("summary") or {}).get("chart") or {}
+    assert not (ch3.get("kind") == "timeseries" and ch3.get("axis") == "date")
+
+
+def test_stacked_month_bands_split_and_keep_their_own_years():
+    # the anchor montage shape: a 2025 block, a blank row, a 2026 block —
+    # one tidy read would be wrong; the bands split and each keeps its year
+    rows = [[None, "PRODUCTION 2025", *MOIS],
+            [None, "CPO 2025", 1, 2, 3, 4, 5, 6],
+            [None, "FFB 2025", 5, 10, 15, 20, 25, 30],
+            [None] * 8,
+            ["ESTIMATION PRODUCTION 2026", None, *MOIS],
+            ["MWEBE", "BU", 87, 235, 336, 470, 336, 201],
+            [None, "CPO Produits (T)", 20.01, 54.05, 77.28, 108.1, 77.28,
+             46.23],
+            [None, "FFB (T)", 87, 235, 336, 470, 336, 201]]
+    r = _post(rows, sheet="PRODUCTION 2025&2026")
+    assert r.status_code == 200, r.text
+    sheet = r.json()["sheets"][0]
+    assert sheet["orientation"] == "multi", sheet["orientation_reason"]
+    axes = []
+    for p in sheet["panels"]:
+        ch = ((p.get("tidy") or {}).get("summary") or {}).get("chart") or {}
+        if ch.get("axis") == "date":
+            axes.append(ch["periods"][0][:4])
+    assert sorted(axes) == ["2025", "2026"]
