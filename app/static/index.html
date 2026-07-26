@@ -1109,6 +1109,28 @@ const STR = {
     tc_hint: "Click to trace this figure to its source cells",
     tc_aligned: n => `all ${n} aligned month${n === 1 ? "" : "s"} — the figure totals them`,
     xb_intro: "The questions this dashboard was built to answer, and what the data can support — matched deterministically against the workbook's own tables. What the data cannot answer is declared, never estimated.",
+    xt_insights: "Insights",
+    xi_kicker: "Discussion agenda",
+    xi_intro: "Questions worth raising with your team — computed from this workbook's own figures, each naming the number behind it. Nothing here is estimated.",
+    xi_none: "Nothing stands out for discussion — the tracked figures sit within plan and budget.",
+    xi_audit: (n, d) => `${n} relation${n === 1 ? "" : "s"} in the workbook ${n === 1 ? "does" : "do"} not reconcile (${d} at stake) — resolve before deciding on those figures.`,
+    xi_audit_b: "from the automated re-computation of the file's own totals",
+    xi_cost: (v, pct, y) => `Cost per output unit is ${v}, ${pct} over the ${y} budget — what drove the overrun?`,
+    xi_cost_b: m => `latest tracked month (${m}), measured against the budget target`,
+    xi_short: (role, pct) => `${role} stands at ${pct} of plan — where is the shortfall concentrated?`,
+    xi_over: (role, pct) => `${role} runs at ${pct} of plan — approved overspend, or drift to explain?`,
+    xi_pva_b: "attainment over the aligned months, actuals against the plan series",
+    xi_conv: (last, avg) => `Conversion ran ${last} in the latest month against a ${avg} average — what changed in production?`,
+    xi_conv_b: "output ÷ input volume, month by month",
+    xi_bridge: (x, p) => `Reaching cash-positive (${p}) crosses a ${x} funding gap — is the bridge secured?`,
+    xi_bridge_b: "cumulative net cash across the plan years",
+    xi_journal: (n, usd) => `${n} journal entr${n === 1 ? "y needs" : "ies need"} clarification (${usd} USD) — who owns the follow-up?`,
+    xi_journal_b: "flagged by the journal audit; your analyst holds the line detail",
+    xi_cash: pct => `${pct} of tracked spend is investment — does that split match the plan?`,
+    xi_cash_b: "operating vs investment outflows over the tracked months",
+    xi_gap: (q, r) => r ? `Still unanswerable: “${q}” — collecting “${r}” would close it.`
+                       : `Still unanswerable: “${q}” — worth deciding what to track.`,
+    xi_gap_b: "from the briefing; the data cannot answer it yet",
     tab_data: "Data", tab_trends: "Trends", tab_audit: "Audit", tab_actions: "Actions",
     tab_journal: "Journal",
     jx_t: "Where the tracked cash went",
@@ -1659,6 +1681,28 @@ const STR = {
     tc_hint: "Cliquer pour tracer ce chiffre jusqu'à ses cellules sources",
     tc_aligned: n => `les ${n} mois alignés — le chiffre les totalise`,
     xb_intro: "Les questions auxquelles ce tableau de bord doit répondre, et ce que les données permettent — rapprochées de façon déterministe des tables du classeur. Ce que les données ne peuvent pas répondre est déclaré, jamais estimé.",
+    xt_insights: "Points clés",
+    xi_kicker: "Ordre du jour",
+    xi_intro: "Des questions à poser à votre équipe — calculées à partir des chiffres du classeur lui-même, chacune citant le chiffre qui la fonde. Rien ici n'est estimé.",
+    xi_none: "Rien à signaler pour la discussion — les chiffres suivis restent dans le plan et le budget.",
+    xi_audit: (n, d) => `${n} relation${n === 1 ? "" : "s"} du classeur ne se recoupe${n === 1 ? "" : "nt"} pas (${d} en jeu) — à résoudre avant de décider sur ces chiffres.`,
+    xi_audit_b: "issu du recalcul automatique des totaux du fichier lui-même",
+    xi_cost: (v, pct, y) => `Le coût par unité produite est de ${v}, ${pct} au-dessus du budget ${y} — qu'est-ce qui explique le dépassement ?`,
+    xi_cost_b: m => `dernier mois suivi (${m}), mesuré contre la cible budget`,
+    xi_short: (role, pct) => `${role} est à ${pct} du plan — où se concentre le retard ?`,
+    xi_over: (role, pct) => `${role} tourne à ${pct} du plan — dépassement approuvé, ou dérive à expliquer ?`,
+    xi_pva_b: "atteinte sur les mois alignés, réel contre la série du plan",
+    xi_conv: (last, avg) => `La conversion a été de ${last} le dernier mois contre une moyenne de ${avg} — qu'est-ce qui a changé en production ?`,
+    xi_conv_b: "production ÷ matière première, mois par mois",
+    xi_bridge: (x, p) => `Atteindre le positif (${p}) traverse un besoin de financement de ${x} — le pont est-il sécurisé ?`,
+    xi_bridge_b: "trésorerie nette cumulée sur les années du plan",
+    xi_journal: (n, usd) => `${n} écriture${n === 1 ? "" : "s"} de journal demande${n === 1 ? "" : "nt"} une clarification (${usd} USD) — qui assure le suivi ?`,
+    xi_journal_b: "signalé par l'audit des journaux ; votre analyste détient le détail ligne à ligne",
+    xi_cash: pct => `${pct} des sorties suivies sont de l'investissement — cette répartition suit-elle le plan ?`,
+    xi_cash_b: "sorties d'exploitation contre investissement sur les mois suivis",
+    xi_gap: (q, r) => r ? `Toujours sans réponse : « ${q} » — collecter « ${r} » la fermerait.`
+                        : `Toujours sans réponse : « ${q} » — à trancher : que faut-il suivre ?`,
+    xi_gap_b: "issu du briefing ; les données ne peuvent pas encore y répondre",
     tab_data: "Données", tab_trends: "Tendances", tab_audit: "Audit", tab_actions: "À faire",
     tab_journal: "Journal",
     jx_t: "Où est allé l'argent suivi",
@@ -3306,6 +3350,8 @@ function renderExecBody(footer) {
     inner = renderScenario() + renderMC();
   } else if (EXEC_TAB === "briefing") {
     inner = renderExecBriefing();
+  } else if (EXEC_TAB === "insights") {
+    inner = renderExecInsights();
   } else if (REPORT.model && Object.keys(REPORT.model.metrics || {}).length) {
     inner = renderExecDashboard();
   } else if (plan && plan.approved) {
@@ -3334,10 +3380,99 @@ function execAvailableTabs() {
   // carry no plan, so the tab honestly never shows there)
   if (REPORT.plan && (REPORT.plan.questions || []).length)
     t.push(["briefing", T.tab_story]);
+  if (execInsightItems().length) t.push(["insights", T.xt_insights]);
   if (m && Object.keys(m.metrics || {}).length) t.push(["financials", T.xt_costs]);
   if (m && m.monthly) t.push(["production", T.tab_production]);
   if (m && m.scenario_ready) t.push(["whatif", T.tab_whatif]);
   return t;
+}
+
+/* the exec Insights tab: a discussion agenda computed by RULES over
+   figures the pipeline already produced — each item is a question that
+   names the number behind it. Thresholds are deliberate product
+   judgments (10% over budget, 90/110% of plan, conversion 10% under its
+   own average, investment share 40%), not statistics. Series labels may
+   show; sheet names never do. Works on the published page too — the
+   frozen snapshot carries the model, and anything it lacks simply
+   doesn't fire. */
+function execInsightItems() {
+  const items = [];
+  const m = REPORT.model || {};
+  const mo = m.monthly || {};
+  // trust first: figures that don't reconcile poison every other question
+  if (AUDIT && AUDIT.n_mismatched_relations > 0)
+    items.push({ q: T.xi_audit(AUDIT.n_mismatched_relations,
+                               compact(AUDIT.total_abs_delta)),
+                 b: T.xi_audit_b, crit: true });
+  const ub = mo.unit_cost_budget;
+  if (ub) {
+    const der = (mo.derived || {})[ub.basis] || [];
+    let li = -1;
+    der.forEach((v, i) => { if (v != null) li = i; });
+    const pct = li >= 0 ? ub.variance_pct[li] : null;
+    if (pct != null && pct >= 10)
+      items.push({ q: T.xi_cost(compact(der[li]), "+" + pctFmt(pct, 1),
+                                ub.target_period),
+                   b: T.xi_cost_b(fmtPeriod(mo.periods[li])), crit: true });
+  }
+  Object.entries(mo.plan_vs_actual || {}).forEach(([role, v]) => {
+    const pct = v.pct_of_plan_total;
+    if (pct == null) return;
+    const label = ROLE_LABELS[role] || role;
+    if (role === "opex" && pct > 110)
+      items.push({ q: T.xi_over(label, pctFmt(pct, 1)),
+                   b: T.xi_pva_b, crit: true });
+    else if (role !== "opex" && pct < 90)
+      items.push({ q: T.xi_short(label, pctFmt(pct, 1)),
+                   b: T.xi_pva_b, crit: true });
+  });
+  const vr = (mo.derived || {}).volume_ratio;
+  if (vr) {
+    const known = vr.filter(v => v != null);
+    let last = null;
+    vr.forEach(v => { if (v != null) last = v; });
+    if (known.length >= 3 && last != null) {
+      const avg = known.reduce((a, b) => a + b, 0) / known.length;
+      if (avg > 0 && last < avg * 0.9)
+        items.push({ q: T.xi_conv(pctFmt(last * 100, 1),
+                                  pctFmt(avg * 100, 1)),
+                     b: T.xi_conv_b, crit: false });
+    }
+  }
+  const ins = m.insights || {};
+  if (ins.capital_bridge && ins.cash_positive_period)
+    items.push({ q: T.xi_bridge(compact(ins.capital_bridge),
+                                String(ins.cash_positive_period)),
+                 b: T.xi_bridge_b, crit: false });
+  const exc = ((REPORT.journal || {}).exec || {}).exceptions;
+  if (exc && exc.n)
+    items.push({ q: T.xi_journal(exc.n, compact(exc.at_stake_usd)),
+                 b: T.xi_journal_b, crit: true });
+  const cash = mo.cash;
+  if (cash && cash.invested_pct >= 40)
+    items.push({ q: T.xi_cash(pctFmt(cash.invested_pct)),
+                 b: T.xi_cash_b, crit: false });
+  ((REPORT.plan || {}).questions || [])
+    .filter(q => q.status === "unanswerable" || q.status === "unmatched")
+    .slice(0, 2)
+    .forEach(q => items.push({
+      q: T.xi_gap(q.question, q.missing[0] && q.missing[0].requires),
+      b: T.xi_gap_b, crit: false }));
+  return items.slice(0, 7);
+}
+
+function renderExecInsights() {
+  const items = execInsightItems();
+  const rows = items.length ? items.map((it, i) => `<div class="step">
+      <span class="n"${it.crit ? ' style="color:var(--critical)"' : ""}>${i + 1}</span>
+      <div><b>${esc(it.q)}</b><p>${esc(it.b)}</p></div></div>`).join("")
+    : `<div class="step"><span class="n" style="color:var(--good)">✓</span>
+       <div><p>${T.xi_none}</p></div></div>`;
+  return `<section id="sec-xinsights" style="max-width:760px">
+    <span class="kicker">${T.xi_kicker}</span>
+    <p class="chcap" style="margin:6px 0 14px;max-width:72ch">${T.xi_intro}</p>
+    ${rows}
+  </section>`;
 }
 
 /* the exec Briefing tab: the questions this dashboard was built to answer
