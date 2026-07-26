@@ -26,21 +26,37 @@ def read_upload(content: bytes, filename: str) -> Dict[str, pd.DataFrame]:
 
     Excel files yield one entry per sheet; CSV/TSV yield a single entry keyed
     by the sheet-less filename stem. Every frame is read ``header=None`` and
-    ``dtype=object`` so nothing is coerced or dropped.
+    ``dtype=object`` so nothing is coerced or dropped — except TRAILING
+    all-blank rows/columns (Excel used-range bloat: styling can inflate a
+    96-row sheet to 65k rows). Trimming the tail keeps every remaining cell
+    at its exact (row, col), so positional identity and A1 refs stay true.
     """
     name = (filename or "").lower().strip()
 
     if name.endswith(_EXCEL_EXT):
-        return _read_excel(content)
-    if name.endswith(_CSV_EXT):
-        return _read_csv(content, name)
+        sheets = _read_excel(content)
+    elif name.endswith(_CSV_EXT):
+        sheets = _read_csv(content, name)
+    else:
+        # Unknown extension: try Excel first (it self-validates via magic
+        # bytes), then fall back to CSV. Fail honest if neither works.
+        try:
+            sheets = _read_excel(content)
+        except Exception:
+            sheets = _read_csv(content, name or "data")
+    return {k: _trim_trailing_blank(df) for k, df in sheets.items()}
 
-    # Unknown extension: try Excel first (it self-validates via magic bytes),
-    # then fall back to CSV. Fail honest if neither works.
-    try:
-        return _read_excel(content)
-    except Exception:
-        return _read_csv(content, name or "data")
+
+def _trim_trailing_blank(df: pd.DataFrame) -> pd.DataFrame:
+    """Drop trailing rows/columns that hold no content at all."""
+    filled = df.notna() & df.astype(str).apply(lambda c: c.str.strip() != "")
+    rows = filled.any(axis=1)
+    cols = filled.any(axis=0)
+    last_r = int(rows[rows].index[-1]) if rows.any() else -1
+    last_c = int(cols[cols].index[-1]) if cols.any() else -1
+    if last_r == len(df) - 1 and last_c == df.shape[1] - 1:
+        return df
+    return df.iloc[:last_r + 1, :last_c + 1]
 
 
 def _read_excel(content: bytes) -> Dict[str, pd.DataFrame]:

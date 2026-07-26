@@ -30,6 +30,34 @@ def test_duplicate_upload_returns_existing_analysis():
     assert len(client.get("/analyses").json()) == 1   # library not duplicated
 
 
+def test_trailing_blank_bloat_is_trimmed_not_refused(monkeypatch):
+    # Real workbooks carry huge formatted-but-empty used ranges (a 65k-row
+    # tail after 96 real rows). Trailing all-blank rows/columns are trimmed
+    # at ingest — every kept cell keeps its exact (row, col), so A1 refs
+    # stay true — and the file passes the cell cap instead of a 422.
+    monkeypatch.setattr(main_mod, "MAX_TOTAL_CELLS", 50_000)
+    months = ["janv. 2025", "févr. 2025", "mars 2025",
+              "avr. 2025", "mai 2025", "juin 2025"]
+    rows = [["JOURNAL PRODUCTION", *([None] * 6)],
+            ["SERIE", *months],
+            ["PRODUCTION CPO (T)", 10, 12, 11, 14, 13, 12],
+            ["CHARGES OPEX", 5, 5, 6, 5, 6, 5]]
+    df = pd.DataFrame(rows + [[None] * 7] * 60_000)
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as xw:
+        df.to_excel(xw, sheet_name="JOURNAL", header=False, index=False)
+    r = client.post("/analyze", files={
+        "file": ("bloat.xlsx", buf.getvalue(), "application/octet-stream")})
+    assert r.status_code == 200, r.text[:300]
+    sheet = r.json()["sheets"][0]
+    assert sheet["n_rows"] == 4                    # tail gone, content intact
+    ser = {s["label"]: s for s in
+           sheet["tidy"]["summary"]["chart"]["series_all"]}
+    # positional identity survives the trim: values still cite row 3
+    assert ser["PRODUCTION CPO (T)"]["cells"][0] == ["B3"]
+    assert ser["PRODUCTION CPO (T)"]["cells"][5] == ["G3"]
+
+
 def test_upload_size_cap_413(monkeypatch):
     monkeypatch.setattr(main_mod, "MAX_UPLOAD_BYTES", 1024)
     resp = client.post("/analyze",
