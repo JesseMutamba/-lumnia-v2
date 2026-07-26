@@ -1029,11 +1029,14 @@ const $ = (s, el) => (el || document).querySelector(s);
 const $$ = (s, el) => [...(el || document).querySelectorAll(s)];
 const esc = s => String(s ?? "").replace(/[&<>"']/g,
   c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-/* ---------- language: auto-detected from the browser, switchable ---------- */
+/* ---------- language: English first, switchable ----------
+   EN is the product's primary language on every surface; FR stays one
+   click away and the choice is remembered. (Browser-locale auto-detect
+   deliberately removed — a French OS must not flip the default.) */
 const LANG = (() => {
   const saved = localStorage.getItem("lumnia_lang");
   if (saved === "fr" || saved === "en") return saved;
-  return (navigator.language || "en").toLowerCase().startsWith("fr") ? "fr" : "en";
+  return "en";
 })();
 const LOCALE = LANG === "fr" ? "fr-FR" : "en-US";
 const nf = new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 2 });
