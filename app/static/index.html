@@ -1229,6 +1229,7 @@ const STR = {
     wb02_of: (x, y) => `${x} in ${y} sheet${y === 1 ? "" : "s"}`,
     wb03_t: "What the executive sees",
     wb03_noship: "not shipped",
+    wb03_notgen: "not generated yet",
     mod_verdict: "Headline verdict", mod_kpi: "KPI strip",
     mod_chart: "Story chart", mod_steps: "Next steps",
     mod_narr: "AI narrative", mod_recon: "Reconciliation detail",
@@ -1815,6 +1816,7 @@ const STR = {
     wb02_of: (x, y) => `${x} sur ${y} feuille${y === 1 ? "" : "s"}`,
     wb03_t: "Ce que voit la direction",
     wb03_noship: "non publié",
+    wb03_notgen: "pas encore rédigée",
     mod_verdict: "Verdict en une phrase", mod_kpi: "Bandeau d'indicateurs",
     mod_chart: "Graphique clé", mod_steps: "Prochaines étapes",
     mod_narr: "Synthèse rédigée", mod_recon: "Détail des rapprochements",
@@ -2602,6 +2604,7 @@ function renderPublishedPage(snap, auditDetail) {
   document.body.classList.add("home");
   REPORT = { filename: snap.filename, n_sheets: snap.n_sheets,
              model: snap.model || null, sheets: [], plan: null, brief: null,
+             narrative: snap.narrative || null,
              journal: snap.journal ? { exec: snap.journal } : null };
   const ad = snap.audit || {};
   AUDIT = { n_mismatched_relations: ad.n_mismatched_relations || 0,
@@ -3450,6 +3453,7 @@ function renderExecBody(footer) {
     }
   }));
   attachFigChip(); attachCharts(); attachScenario(); attachMC();
+  attachNarrative();
 }
 
 /* capability-gated exec modules — same gates as the analyst tabs */
@@ -3696,7 +3700,8 @@ function renderWorkbench() {
     [T.mod_kpi, true, "4 " + T.mod_tiles],
     [T.mod_chart, !!primary, primary ? esc(primary.sheet.trim().slice(0, 18)) : ""],
     [T.mod_steps, nSteps > 0, String(nSteps)],
-    [T.mod_narr, false, T.wb03_noship],
+    [T.mod_narr, !!REPORT.narrative,
+      REPORT.narrative ? "" : (NARR_READY ? T.wb03_notgen : T.wb03_noship)],
     [T.mod_recon, false, T.wj_analyst_only],
   ];
   const modChips = mods.map(([label, ships, note]) => `
@@ -4221,6 +4226,7 @@ function renderExecOverview() {
   return `<h1 class="vhead">${head}</h1>
     <p class="vlede">${execLede()}</p>
     ${strip}
+    ${renderNarrative()}
     <div class="execgrid">
       <div>${primary ? storyChartExec(primary)
         : `<div class="muted" style="padding:40px 0">${T.no_ts}</div>`}</div>
@@ -4411,6 +4417,7 @@ function renderAnalystOverview() {
   const left = (primary ? chartCard(primary, true)
       : `<div class="card"><div class="muted" style="padding:40px 0;text-align:center">${T.no_ts}</div></div>`) +
     (sparks ? `<div class="sparkrow">${sparks}</div>` : "") +
+    renderNarrative() +
     renderInsights();
   return `<div class="an-grid"><div>${left}</div><div>${auditMini()}${profileMini()}</div></div>`;
 }
@@ -5287,6 +5294,7 @@ function renderExecDashboard() {
     <h1 class="vhead">${esc(head)}</h1>
     <p class="vlede">${execLede()}</p>
     ${cells.length ? `<div class="kstrip">${cells.join("")}</div>` : ""}
+    ${renderNarrative()}
     ${rows.join("")}
     <div class="execgrid" style="margin-top:30px">
       <div>${gaps}</div>
@@ -5403,6 +5411,7 @@ function renderStoryDashExec(metricById, approved) {
     </div>
     <h1 class="vhead">${esc(head)}</h1>
     ${strip}
+    ${renderNarrative()}
     <div class="execgrid">
       <div>${chartHtml}
         ${mv ? `<div style="margin-top:26px">${moversDiverging(mv)}</div>` : ""}</div>
