@@ -76,6 +76,27 @@ def test_monthly_attainment_against_the_plan_sheet():
     assert not rep["model"].get("gaps")
 
 
+def test_orders_of_magnitude_mismatch_is_a_gap_not_a_number():
+    # A cost line in CDF paired against a tonnage plan computes a
+    # "1,104,323% attainment" — arithmetically exact, semantically garbage
+    # (seen on the real anchor pair). A pairing whose total attainment
+    # falls outside a generous sane band is a role/unit mismatch: it
+    # becomes a declared gap, never a rendered figure.
+    actuals = _sheet("JOURNAL PRODUCTION", [
+        ["PRODUCTION CPO (T)", 1427800, 1747300, 1331350, 1500000,
+         1400000, 1600000],
+    ])
+    plan = _sheet("PLAN OPERATIONNEL", [
+        ["PRODUCTION CPO PREVUE (T)", 136, 136, 136, 136, 136, 136],
+    ])
+    rep = _analyze(_book(("JOURNAL", actuals), ("BUDGET 2025", plan)))
+    mo = rep["model"]["monthly"]
+    assert "plan_vs_actual" not in mo
+    gaps = rep["model"].get("gaps") or []
+    assert any(g["metric"] == "plan_vs_actual"
+               and "magnitude" in g["reason"] for g in gaps), gaps
+
+
 def test_plan_sheet_never_pollutes_the_actuals_spine():
     """Before the partition, the plan's CPO series could pair with the
     actual CPO as volume_secondary — a fabricated 'extraction rate' of
