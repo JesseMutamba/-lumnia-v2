@@ -139,6 +139,28 @@ def test_snapshot_carries_model_but_not_raw_line_items():
     assert not set(_walk_keys(snap)) & ANALYST_ONLY_KEYS
 
 
+def test_snapshot_freezes_narrative_when_one_was_written():
+    """The AI narrative ships with the publish snapshot: written -> frozen
+    verbatim for the public page; never written -> honestly None (the public
+    page shows nothing, no stand-in prose)."""
+    from app import storage
+
+    a = _an(b"n")
+    _decide_all(a["id"])
+    token = client.post(f"/analyses/{a['id']}/publish").json()["token"]
+    assert client.get(f"/published/{token}").json()["narrative"] is None
+
+    report = storage.get_report(a["id"])
+    report["narrative"] = {"headline": "Q1 spend reached 37.6% of plan.",
+                           "narrative": "One paragraph.", "watchouts": [],
+                           "model": "test", "lang": "en"}
+    storage.update_report(a["id"], report)
+    client.post(f"/analyses/{a['id']}/publish")
+    snap = client.get(f"/published/{token}").json()
+    assert snap["narrative"]["headline"] == "Q1 spend reached 37.6% of plan."
+    assert not set(_walk_keys(snap)) & ANALYST_ONLY_KEYS
+
+
 def test_old_share_endpoints_are_gone():
     a = _an(b"c")
     assert client.post(f"/analyses/{a['id']}/share").status_code == 404

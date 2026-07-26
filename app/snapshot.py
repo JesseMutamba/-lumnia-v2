@@ -113,6 +113,9 @@ def build_exec_snapshot(report: Dict[str, Any]) -> Dict[str, Any]:
             "at_stake": agg["total_abs_delta"],
         },
         "model": model,
+        # the AI narrative phrases verified numbers only (narrative.py) and
+        # carries no file structure, so it publishes as-is
+        "narrative": report.get("narrative"),
         # journal engine, exec voice ONLY: cash destinations + exception
         # counts. Findings, line labels, and code x month detail never
         # enter the snapshot.
