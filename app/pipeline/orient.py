@@ -94,6 +94,76 @@ def _find_date_row(kinds, r0, r1, c0, c1) -> Optional[Tuple[int, List[int], floa
     return best
 
 
+# bare month names, full form only — the strict list the banner-year rule
+# accepts; abbreviations stay refused (a fabricated period is worse than none)
+_BARE_MONTHS = {
+    "janvier": 1, "février": 2, "fevrier": 2, "mars": 3, "avril": 4,
+    "mai": 5, "juin": 6, "juillet": 7, "août": 8, "aout": 8,
+    "septembre": 9, "octobre": 10, "novembre": 11, "décembre": 12,
+    "decembre": 12,
+    "january": 1, "february": 2, "march": 3, "april": 4, "may": 5,
+    "june": 6, "july": 7, "august": 8, "september": 9, "october": 10,
+    "november": 11, "december": 12,
+}
+_BANNER_YEAR_RE = re.compile(r"(?<!\d)(19\d\d|20\d\d)(?!\d)")
+
+
+def _bare_month(v) -> Optional[int]:
+    if not isinstance(v, str):
+        return None
+    return _BARE_MONTHS.get(v.strip().lower())
+
+
+def _month_header_rows(df, kinds, r0, r1, c0, c1) -> List[int]:
+    """Rows whose period columns are bare month names (≥ MIN_DATE_RUN)."""
+    out = []
+    for i in range(r0, r1 + 1):
+        n = sum(1 for j in range(c0, c1 + 1)
+                if _bare_month(df.iat[i, j]) is not None)
+        if n >= MIN_DATE_RUN:
+            out.append(i)
+    return out
+
+
+def _find_month_row(df, kinds, r0, r1, c0, c1):
+    """The banner-year rule: real plan sheets head their columns with bare
+    'Janvier'…'Décembre' and put the year in the block banner ('ESTIMATION
+    PRODUCTION 2026'). A bare month is never a date by itself, so the row
+    qualifies ONLY when exactly ONE distinct 4-digit year appears among the
+    text cells of the whole candidate region (month cells excluded). Zero
+    years, or two ('PRODUCTION 2025&2026'), refuse — which column belongs
+    to which year is unknowable. Returns (row, period_cols, strength,
+    {col: 'YYYY-MM-01'}) or None."""
+    headers = _month_header_rows(df, kinds, r0, min(r1, r0 + SCAN_ROWS - 1),
+                                 c0, c1)
+    if not headers:
+        return None
+    i = headers[0]
+    month_cols = [j for j in range(c0, c1 + 1)
+                  if _bare_month(df.iat[i, j]) is not None]
+    cnt = _counts(kinds[i], c0, c1)
+    filled = cnt[NUMBER] + cnt[DATE] + cnt[TEXT]
+    if not filled or len(month_cols) / filled < DATE_AXIS_FRAC:
+        return None
+    years: set = set()
+    month_cells = {(r, j) for r in _month_header_rows(df, kinds, r0, r1, c0, c1)
+                   for j in range(c0, c1 + 1)
+                   if _bare_month(df.iat[r, j]) is not None}
+    for r in range(r0, r1 + 1):
+        for j in range(c0, c1 + 1):
+            v = df.iat[r, j]
+            if not isinstance(v, str) or (r, j) in month_cells:
+                continue
+            years.update(int(y) for y in _BANNER_YEAR_RE.findall(v))
+    if len(years) != 1:
+        return None
+    year = years.pop()
+    period_map = {j: f"{year:04d}-{_bare_month(df.iat[i, j]):02d}-01"
+                  for j in month_cols}
+    strength = (len(month_cols) / filled) * min(1.0, len(month_cols) / 5.0)
+    return i, month_cols, strength, period_map
+
+
 def _year_value(v) -> Optional[int]:
     """The year a cell represents, or ``None``.
 
@@ -225,11 +295,15 @@ def classify(df: pd.DataFrame, kinds: Optional[List[List[str]]] = None) -> dict:
                 "reason": "sheet is empty"}
     r0, r1, c0, c1 = box
 
-    # 1) Matrix: a strong horizontal period axis — real dates, or strictly
-    #    increasing year numbers — with a numeric interior and at least one
-    #    text label column to the left.
-    for axis, found in (("date", _find_date_row(kinds, r0, r1, c0, c1)),
-                        ("year", _find_year_row(df, kinds, r0, r1, c0, c1))):
+    # 1) Matrix: a strong horizontal period axis — real dates, strictly
+    #    increasing year numbers, or bare month names under one banner year
+    #    — with a numeric interior and at least one text label column left.
+    month_found = _find_month_row(df, kinds, r0, r1, c0, c1)
+    for axis, found, period_map in (
+            ("date", _find_date_row(kinds, r0, r1, c0, c1), None),
+            ("year", _find_year_row(df, kinds, r0, r1, c0, c1), None),
+            ("date", month_found[:3] if month_found else None,
+             month_found[3] if month_found else None)):
         if found is None:
             continue
         date_row, period_cols, strength = found
@@ -247,14 +321,19 @@ def classify(df: pd.DataFrame, kinds: Optional[List[List[str]]] = None) -> dict:
         labels = _label_cols(kinds, date_row, r1, c0, period_cols[0])
         if interior >= INTERIOR_NUMERIC and labels:
             conf = round(min(1.0, 0.5 * strength + 0.5 * interior), 3)
+            meta = {"date_row": date_row, "period_cols": period_cols,
+                    "label_cols": labels, "box": box, "axis": axis}
+            if period_map:
+                meta["period_map"] = period_map
             return {
                 "orientation": "matrix",
                 "confidence": conf,
-                "meta": {"date_row": date_row, "period_cols": period_cols,
-                         "label_cols": labels, "box": box, "axis": axis},
+                "meta": meta,
                 "reason": (f"{axis} axis across columns at row {date_row} "
                            f"({len(period_cols)} periods), interior "
-                           f"{interior:.0%} numeric"),
+                           f"{interior:.0%} numeric"
+                           + (" — bare months under one banner year"
+                              if period_map else "")),
             }
 
     # 2) Form: a sparse key/value report. Checked before tidy because a wide
@@ -498,12 +577,16 @@ def _extract_tidy_table(df, kinds, meta, max_rows) -> dict:
 
     # Step 4: reconciliation checks over the numeric columns. Rows are labelled
     # by the first text column so findings point at "Semences, row 10", not
-    # just an index.
+    # just an index. LABEL columns never qualify: they were chosen for
+    # forward-fill because their raw cells are majority text, so a numeric
+    # profile there is an artifact of the ffill — summing it would count
+    # merged-cell ghosts (one real 500 rendering as 1500).
+    label_set = set(label_cols)
     numeric_cols = {
         name: [v if isinstance(v, (int, float)) and not isinstance(v, bool)
                else None for v in vals]
-        for acc, name, vals in zip(accs, names, col_values)
-        if acc.dtype() == "number"
+        for acc, name, vals, j in zip(accs, names, col_values, cols)
+        if acc.dtype() == "number" and j not in label_set
     }
     label_idx = next((k for k, a in enumerate(accs) if a.dtype() == "text"), None)
     row_labels = ([str(v) if v is not None else None
@@ -592,7 +675,11 @@ def _extract_matrix(df, kinds, meta, max_rows, name: str = "") -> dict:
     label_accs, period_acc, value_acc = accs[:-2], accs[-2], accs[-1]
 
     # Coerce each period header once; every long row under it reuses this.
-    periods = {p: coerce_value(df.iat[dr, p]) for p in period_cols}
+    # A banner-year matrix carries its synthesized periods in period_map
+    # ("Janvier" + "… 2026" -> "2026-01-01"); the cells stay bare months.
+    pm = meta.get("period_map")
+    periods = ({p: pm[p] for p in period_cols} if pm
+               else {p: coerce_value(df.iat[dr, p]) for p in period_cols})
 
     p_index = {p: k for k, p in enumerate(period_cols)}
     series_values: Dict[str, Dict[int, float]] = {}   # for the dashboard chart
@@ -624,7 +711,7 @@ def _extract_matrix(df, kinds, meta, max_rows, name: str = "") -> dict:
             cv = coerce_value(df.iat[i, p])
             for acc, (k, lv) in zip(label_accs, label_vals):
                 acc.add(k, lv)
-            period_acc.add(kinds[dr][p], periods[p])
+            period_acc.add(DATE if pm else kinds[dr][p], periods[p])
             value_acc.add(kinds[i][p], cv)
             if isinstance(cv, (int, float)) and not isinstance(cv, bool):
                 k = p_index[p]
@@ -639,6 +726,8 @@ def _extract_matrix(df, kinds, meta, max_rows, name: str = "") -> dict:
     if meta.get("axis") == "year":
         span = sorted(y for p in period_cols
                       if (y := _year_value(df.iat[dr, p])) is not None)
+    elif pm:
+        span = sorted(pm.values())
     else:
         span = sorted(str(v) for p, v in periods.items()
                       if kinds[dr][p] == DATE and v is not None)
@@ -801,7 +890,14 @@ def orient_sheet(df: pd.DataFrame, max_rows: int = 8,
     # Fallback for vertically stacked sheets (title / table / table / notes):
     # only when the sheet as a whole declined — sheets that already classify
     # (e.g. with internal spacer rows) are never shredded into bands.
-    if out["orientation"] == "unknown" and box is not None:
+    # EXCEPTION: several bare-month header rows in one sheet mean stacked
+    # period blocks (often different banner years — 'PRODUCTION 2025' over
+    # one, 'ESTIMATION 2026' over the next); a single-table read of that is
+    # wrong however confident it looks, so the bands get a try first.
+    force_bands = (out["orientation"] != "matrix" and box is not None
+                   and len(_month_header_rows(df, kinds, box[0], box[1],
+                                              box[2], box[3])) >= 2)
+    if (out["orientation"] == "unknown" or force_bands) and box is not None:
         bands = _split_bands(kinds, box)
         if len(bands) >= 2:
             sub = []

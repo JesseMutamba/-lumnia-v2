@@ -393,12 +393,12 @@ Load-bearing oracles to re-create:
    mapping restricts manual `volume_secondary` to identical axes;
    yearly-plan-vs-phased-monthly needs an explicit phasing rule; the trace
    endpoint re-parses the workbook per click (cache when books grow).
-5. **Pre-existing value bug (open):** a label-ish column that gets
-   forward-filled can profile numeric and become a row-year series whose
-   VALUES sum merged-cell ghosts (one real 500 can render as 1500).
-   Citations for such periods are suppressed (ghost_rows) so no false
-   proof shows; the value-side fix — keeping ffilled label columns out of
-   numeric series — still needs doing, with its own oracle.
+5. **FIXED — ghost-VALUES bug:** label-ish forward-filled columns are now
+   excluded from numeric series entirely (`label_set` gate in
+   `_extract_tidy_table`; oracle:
+   `test_ffilled_label_columns_never_become_numeric_series` — one real 500
+   can no longer render as 1500). The `ghost_rows` citation suppression
+   stays as defense-in-depth for any future path a ghost value could take.
 
 ---
 

@@ -30,10 +30,12 @@ def _round(v: float) -> float:
     return round(float(v), 4)
 
 
-# Year-axis cross-tabs are small (a handful of columns); keep EVERY series so
-# the business-model layer can role-tag them — the top-5 fold is only for
-# plotting sanity on big daily matrices.
-MAX_FULL_SERIES = 24
+# Keep EVERY series so the business-model layer can role-tag them — the
+# top-5 fold is only for plotting sanity. Real operational matrices carry
+# 40-70 label rows (the anchor extraction sheet: 65), so the ceiling sits
+# well above that; a pathological thousands-of-rows matrix still gets no
+# series_all rather than a megabyte payload.
+MAX_FULL_SERIES = 128
 
 
 def timeseries_chart(periods: List[object],

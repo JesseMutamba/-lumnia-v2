@@ -50,11 +50,12 @@ from .pipeline.celltypes import grid_kinds
 from .pipeline.eda import generate_insights
 from .pipeline.journal import build_journal_block
 from .pipeline.model import build_model
-from .pipeline.mapping import (MAPPABLE_ROLES, build_mapped_model, reconcile,
+from .pipeline.mapping import (MAPPABLE_ROLES, build_mapped_model,
+                               build_mapped_monthly, month_series, reconcile,
                                resolve, year_series)
 from .pipeline.semantics import plan_from_brief, suggest_brief
 from .pipeline.coerce import coerce_value
-from .pipeline.ingest import read_upload
+from .pipeline.ingest import merge_engagement, read_upload
 from .pipeline.jsonsafe import jsonify
 from .pipeline.orient import _xl_col, orient_sheet
 from .pipeline.profile import profile_sheet
@@ -269,9 +270,7 @@ def health() -> HealthResponse:
                           narrative_ready=narrative.available())
 
 
-@app.post("/analyze", response_model=AnalyzeResponse)
-async def analyze(file: UploadFile = File(...)) -> AnalyzeResponse:
-    content = await file.read()
+def _check_upload(content: bytes, label: str) -> None:
     if not content:
         raise HTTPException(status_code=400,
                             detail=_bi("Empty upload.", "Fichier vide."))
@@ -279,10 +278,37 @@ async def analyze(file: UploadFile = File(...)) -> AnalyzeResponse:
         raise HTTPException(
             status_code=413,
             detail=_bi(
-                f"File is {len(content) / 1e6:.1f} MB; the limit is "
+                f"{label} is {len(content) / 1e6:.1f} MB; the limit is "
                 f"{MAX_UPLOAD_BYTES / 1e6:.0f} MB.",
-                f"Le fichier fait {len(content) / 1e6:.1f} Mo ; la limite "
+                f"« {label} » fait {len(content) / 1e6:.1f} Mo ; la limite "
                 f"est {MAX_UPLOAD_BYTES / 1e6:.0f} Mo."))
+
+
+@app.post("/analyze", response_model=AnalyzeResponse)
+async def analyze(file: UploadFile = File(...),
+                  plan: Optional[UploadFile] = File(None)) -> AnalyzeResponse:
+    content = await file.read()
+    _check_upload(content, file.filename or "upload")
+    filename = file.filename or ""
+
+    # An optional projections/budget workbook rides along: both files merge
+    # into ONE engagement workbook (plan sheets prefixed "PLAN · " so the
+    # model's plan pool claims them by name). The merged bytes become the
+    # analysis's original — trace re-reads THEM, verbatim.
+    if plan is not None:
+        plan_content = await plan.read()
+        _check_upload(plan_content, plan.filename or "plan")
+        try:
+            content = await run_in_threadpool(
+                merge_engagement, content, filename,
+                plan_content, plan.filename or "plan.xlsx")
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=_bi(
+                f"Could not combine '{filename}' with "
+                f"'{plan.filename}'", "Impossible de combiner "
+                f"« {filename} » et « {plan.filename} »") + f" — {exc}")
+        stem = filename.rsplit(".", 1)[0] or "engagement"
+        filename = f"{stem} + plan.xlsx"
 
     # Identical bytes already analyzed -> return the stored analysis instead
     # of silently growing the library with duplicates.
@@ -295,7 +321,7 @@ async def analyze(file: UploadFile = File(...)) -> AnalyzeResponse:
     # CPU-bound pandas work must not run on the event loop: inline it and
     # one big upload freezes every other request AND the /health check,
     # which lets Fly/Render restart the box mid-analysis.
-    result = await run_in_threadpool(run_pipeline, content, file.filename or "")
+    result = await run_in_threadpool(run_pipeline, content, filename)
     report = result.model_dump()
     _inherit_mapping(report)          # a verified client mapping carries over
     result = AnalyzeResponse(**report)
@@ -506,6 +532,8 @@ def get_mapping(analysis_id: str) -> dict:
         "mapping": report.get("mapping"),
         "available": [{"sheet": a["sheet"], "label": a["label"]}
                       for a in year_series(report)],
+        "available_monthly": [{"sheet": a["sheet"], "label": a["label"]}
+                              for a in month_series(report)],
         "roles": list(MAPPABLE_ROLES),
     }
 
@@ -521,20 +549,54 @@ async def set_mapping(analysis_id: str, request: Request) -> dict:
                             detail=f"No analysis '{analysis_id}'.")
     body = await request.json()
     mapping = body.get("mapping") or {}
-    if not isinstance(mapping, dict) or not mapping:
+    monthly = body.get("monthly") or {}
+    if not (isinstance(mapping, dict) and isinstance(monthly, dict)) \
+            or not (mapping or monthly):
         raise HTTPException(status_code=422, detail="Empty mapping.")
 
-    resolved, errors = resolve(mapping, report)
-    if resolved is None:
-        raise HTTPException(status_code=422, detail="; ".join(errors))
-    rec = reconcile(resolved)
+    resolved_y = resolved_m = None
+    if mapping:
+        resolved_y, errors = resolve(mapping, report)
+        if resolved_y is None:
+            raise HTTPException(status_code=422, detail="; ".join(errors))
+    if monthly:
+        resolved_m, errors = resolve(monthly, report, grain="monthly")
+        if resolved_m is None:
+            raise HTTPException(status_code=422, detail="; ".join(errors))
+
+    # one gate over BOTH grains: any contradicted identity refuses the lot
+    checks = []
+    if resolved_y:
+        checks += reconcile(resolved_y)["checks"]
+    if resolved_m:
+        checks += [{**c, "detail": f"monthly: {c['detail']}"}
+                   for c in reconcile(resolved_m)["checks"]]
+    ran = [c for c in checks if c["ok"] is not None]
+    rec = {"checks": checks,
+           "ok": all(c["ok"] for c in ran) if ran else None}
     if rec["ok"] is False:
         raise HTTPException(status_code=422, detail={
             "message": "mapping contradicts the data", "reconciliation": rec})
 
-    report["model"] = build_mapped_model(report, resolved)
+    if resolved_y:
+        report["model"] = build_mapped_model(report, resolved_y)
+    if resolved_m:
+        mo, mgaps = build_mapped_monthly(report, resolved_m)
+        model = report.get("model")
+        if not model:            # nothing role-tagged and no year pins:
+            model = {"periods": [], "source_sheet": None, "metrics": {},
+                     "derived": {}, "breakdowns": [],
+                     "scenario_ready": False}
+        model["monthly"] = mo
+        if mgaps:
+            seen = {(g["metric"], g.get("grain"))
+                    for g in model.get("gaps") or []}
+            model.setdefault("gaps", []).extend(
+                g for g in mgaps if (g["metric"], g.get("grain")) not in seen)
+        report["model"] = model
     report["mapping"] = {
         "roles": mapping,
+        "monthly": monthly,
         "provenance": {"kind": "manual",
                        "at": _dt.datetime.now(_dt.timezone.utc)
                              .isoformat(timespec="seconds")},
@@ -1330,15 +1392,42 @@ def rerun_analysis(analysis_id: str) -> AnalyzeResponse:
         kept = {fid: d for fid, d in old["decisions"].items() if fid in alive}
         result.decisions = kept or None
     # a pinned mapping is the analyst's call — it survives the rerun as long
-    # as its series still resolve and the data does not contradict it
+    # as its series still resolve and the data does not contradict it,
+    # both grains together (all-or-nothing, same gate as setting it)
     old_map = old.get("mapping") or {}
-    if old_map.get("roles"):
+    if old_map.get("roles") or old_map.get("monthly"):
         rep = result.model_dump()
-        resolved, _errors = resolve(old_map["roles"], rep)
-        if resolved:
-            rec = reconcile(resolved)
+        resolved_y = resolved_m = None
+        ok = True
+        if old_map.get("roles"):
+            resolved_y, _errors = resolve(old_map["roles"], rep)
+            ok = ok and resolved_y is not None
+        if old_map.get("monthly"):
+            resolved_m, _errors = resolve(old_map["monthly"], rep,
+                                          grain="monthly")
+            ok = ok and resolved_m is not None
+        if ok:
+            checks = []
+            if resolved_y:
+                checks += reconcile(resolved_y)["checks"]
+            if resolved_m:
+                checks += [{**c, "detail": f"monthly: {c['detail']}"}
+                           for c in reconcile(resolved_m)["checks"]]
+            ran = [c for c in checks if c["ok"] is not None]
+            rec = {"checks": checks,
+                   "ok": all(c["ok"] for c in ran) if ran else None}
             if rec["ok"] is not False:
-                result.model = build_mapped_model(rep, resolved)
+                model = build_mapped_model(rep, resolved_y) \
+                    if resolved_y else result.model
+                if resolved_m:
+                    rep_now = dict(rep, model=model)
+                    mo, _mgaps = build_mapped_monthly(rep_now, resolved_m)
+                    model = model or {"periods": [], "source_sheet": None,
+                                      "metrics": {}, "derived": {},
+                                      "breakdowns": [],
+                                      "scenario_ready": False}
+                    model["monthly"] = mo
+                result.model = model
                 result.mapping = {**old_map, "reconciliation": rec}
     storage.update_report(analysis_id, result.model_dump())
     return result

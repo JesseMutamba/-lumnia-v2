@@ -1000,7 +1000,7 @@
 </style>
 </head>
 <body>
-<input type="file" id="file" accept=".xlsx,.xlsm,.xls,.xlsb,.ods,.csv,.tsv,.txt" style="display:none">
+<input type="file" id="file" accept=".xlsx,.xlsm,.xls,.xlsb,.ods,.csv,.tsv,.txt" multiple style="display:none">
 <div class="app">
   <aside class="side">
     <div class="brand">
@@ -1109,6 +1109,11 @@ const STR = {
     tc_hint: "Click to trace this figure to its source cells",
     tc_aligned: n => `all ${n} aligned month${n === 1 ? "" : "s"} — the figure totals them`,
     xb_intro: "The questions this dashboard was built to answer, and what the data can support — matched deterministically against the workbook's own tables. What the data cannot answer is declared, never estimated.",
+    up_pair_t: "Two files — which one is the plan?",
+    up_pair_sub: "Projections are compared to actuals, never merged into them. Click the projections/budget workbook; the other file becomes the actuals. They combine into one engagement workbook.",
+    up_analyzing_pair: (a, p) => `Analyzing ${a} + plan ${p}…`,
+    up_too_many: "Drop at most two files — the actuals workbook, plus optionally a projections workbook.",
+    mp_yearly_k: "Yearly series", mp_monthly_k: "Monthly series",
     xt_insights: "Insights",
     xi_kicker: "Discussion agenda",
     xi_intro: "Questions worth raising with your team — computed from this workbook's own figures, each naming the number behind it. Nothing here is estimated.",
@@ -1681,6 +1686,11 @@ const STR = {
     tc_hint: "Cliquer pour tracer ce chiffre jusqu'à ses cellules sources",
     tc_aligned: n => `les ${n} mois alignés — le chiffre les totalise`,
     xb_intro: "Les questions auxquelles ce tableau de bord doit répondre, et ce que les données permettent — rapprochées de façon déterministe des tables du classeur. Ce que les données ne peuvent pas répondre est déclaré, jamais estimé.",
+    up_pair_t: "Deux fichiers — lequel est le plan ?",
+    up_pair_sub: "Les projections sont comparées au réel, jamais fusionnées avec lui. Cliquez le classeur de projections/budget ; l'autre fichier devient le réel. Ils se combinent en un classeur d'engagement.",
+    up_analyzing_pair: (a, p) => `Analyse de ${a} + plan ${p}…`,
+    up_too_many: "Déposez au plus deux fichiers — le classeur du réel, plus éventuellement un classeur de projections.",
+    mp_yearly_k: "Séries annuelles", mp_monthly_k: "Séries mensuelles",
     xt_insights: "Points clés",
     xi_kicker: "Ordre du jour",
     xi_intro: "Des questions à poser à votre équipe — calculées à partir des chiffres du classeur lui-même, chacune citant le chiffre qui la fonde. Rien ici n'est estimé.",
@@ -2257,15 +2267,62 @@ $("#sun").innerHTML = sunPaths();
 const fileInput = $("#file"), statusEl = $("#status");
 if (!SHARE) {
   $("#newupload").addEventListener("click", () => fileInput.click());
-  fileInput.addEventListener("change", () => { if (fileInput.files[0]) upload(fileInput.files[0]); });
+  fileInput.addEventListener("change", () => handleUploadSet([...fileInput.files]));
   window.addEventListener("dragover", e => { e.preventDefault(); document.body.classList.add("dropring"); });
   window.addEventListener("dragleave", e => { if (!e.relatedTarget) document.body.classList.remove("dropring"); });
   window.addEventListener("drop", e => {
     e.preventDefault(); document.body.classList.remove("dropring");
-    if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]);
+    handleUploadSet([...e.dataTransfer.files]);
   });
 } else {
   document.body.classList.add("share");
+}
+
+/* one file analyzes as-is; a PAIR merges into an engagement workbook —
+   the operator says which file is the projections/plan side, never a guess */
+function handleUploadSet(files) {
+  if (!files.length) return;
+  if (files.length === 1) return upload(files[0]);
+  if (files.length > 2) { setStatus(T.up_too_many, true); return; }
+  const scrim = document.createElement("div");
+  scrim.className = "scrim open"; scrim.id = "pair-scrim";
+  scrim.innerHTML = `<div class="rmodal" style="max-width:560px">
+    <div class="kicker">${T.up_pair_t}</div>
+    <p class="chcap" style="margin:10px 0 14px;max-width:60ch">${T.up_pair_sub}</p>
+    ${files.map((f, i) => `<button class="pillbtn" data-plan-idx="${i}"
+        style="display:block;width:100%;text-align:left;margin-bottom:8px">
+        ${esc(f.name)}</button>`).join("")}
+    <a class="seeall" id="pair-cancel" style="margin-top:8px;display:inline-block">${T.tc_close}</a>
+  </div>`;
+  document.body.appendChild(scrim);
+  const close = () => scrim.remove();
+  scrim.addEventListener("click", e => { if (e.target === scrim) close(); });
+  $("#pair-cancel").addEventListener("click", close);
+  $$("[data-plan-idx]", scrim).forEach(b => b.addEventListener("click", () => {
+    const pi = +b.dataset.planIdx;
+    close();
+    uploadPair(files[1 - pi], files[pi]);
+  }));
+}
+
+async function uploadPair(actuals, plan) {
+  setStatus(T.up_analyzing_pair(actuals.name, plan.name));
+  showSkeleton();
+  const fd = new FormData();
+  fd.append("file", actuals);
+  fd.append("plan", plan);
+  try {
+    const r = await fetch("/analyze", { method: "POST", body: fd });
+    if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+    const body = await r.json();
+    setStatus("");
+    await loadWorkbooks();
+    select(body.id);
+  } catch (err) {
+    setStatus(T.analysis_failed(err.message), true);
+    if (REPORT) renderAll(); else renderHomePage();
+  }
+  fileInput.value = "";
 }
 
 function showSkeleton() {
@@ -2402,12 +2459,15 @@ function availableTabs() {
 }
 
 /* the mapping's address space: every year-axis series in the workbook */
-function mappableSeries() {
+function mappableSeries(axis) {
+  // axis "year" (default) or "date" — the monthly address space
+  const wantYear = axis !== "date";
   const out = [];
   for (const s of REPORT.sheets || []) {
     const grab = t => {
       const c = t && t.summary && t.summary.chart;
-      if (c && c.kind === "timeseries" && c.axis === "year" && c.series_all)
+      if (c && c.kind === "timeseries" && (c.axis === "year") === wantYear
+          && c.series_all)
         for (const se of c.series_all) out.push({ sheet: s.name, label: se.label });
     };
     grab(s.tidy);
@@ -5835,7 +5895,8 @@ let MAP_EDIT = false;
 
 function mappingCard() {
   const avail = mappableSeries();
-  if (!avail.length) return "";
+  const availMo = mappableSeries("date");
+  if (!avail.length && !availMo.length) return "";
   const mp = REPORT.mapping;
   const prov = mp ? (mp.provenance || {}) : null;
   const rec = mp ? (mp.reconciliation || {}) : null;
@@ -5847,32 +5908,49 @@ function mappingCard() {
     ? `<span class="schip good">✓ ${T.mp_verified}</span>`
     : `<span class="schip warn">${T.mp_unverified}</span>`;
 
-  const current = {};
-  if (mp && mp.roles)
-    for (const [role, ref] of Object.entries(mp.roles)) current[role] = ref.label;
-  else if (REPORT.model)
+  const current = {}, currentMo = {};
+  if (mp && (mp.roles || mp.monthly)) {
+    for (const [role, ref] of Object.entries(mp.roles || {})) current[role] = ref.label;
+    for (const [role, ref] of Object.entries(mp.monthly || {})) currentMo[role] = ref.label;
+  } else if (REPORT.model) {
     for (const [role, s] of Object.entries(REPORT.model.metrics)) current[role] = s.label;
+    for (const [role, s] of Object.entries((REPORT.model.monthly || {}).metrics || {}))
+      currentMo[role] = s.label;
+  }
 
-  let body;
-  if (!MAP_EDIT) {
-    const rows = Object.entries(current).map(([role, label]) => `
+  const viewRows = (cur, kicker) => !Object.keys(cur).length ? "" :
+    (kicker ? `<div class="kicker" style="margin:12px 0 4px">${kicker}</div>` : "") +
+    Object.entries(cur).map(([role, label]) => `
       <div class="bar-row" style="display:flex;gap:10px;align-items:baseline">
         <span class="bl" style="min-width:150px">${ROLE_LABELS[role] || role}</span>
         <span class="bv">${esc(String(label).slice(0, 36))}</span></div>`).join("");
-    body = rows +
+  const editRows = (roleList, list, cur, attr, kicker) => {
+    if (!list.length) return "";
+    const opts = sel => `<option value="">${T.mp_auto}</option>` + list.map(a =>
+      `<option value="${esc(a.sheet)}|||${esc(a.label)}"${sel === a.label ? " selected" : ""}>${
+        esc(String(a.label).slice(0, 36))} — ${esc(String(a.sheet).slice(0, 18))}</option>`).join("");
+    return (kicker ? `<div class="kicker" style="margin:12px 0 6px">${kicker}</div>` : "") +
+      roleList.map(role => `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <span class="sln" style="min-width:150px">${ROLE_LABELS[role] || role}</span>
+        <select ${attr}="${role}" style="flex:1;font:inherit;font-size:12.5px;padding:5px 8px;
+          background:var(--card);border:1px solid var(--border);border-radius:6px;color:var(--ink)">${
+          opts(cur[role])}</select></div>`).join("");
+  };
+
+  let body;
+  if (!MAP_EDIT) {
+    body = viewRows(current, Object.keys(currentMo).length ? T.mp_yearly_k : "") +
+      viewRows(currentMo, T.mp_monthly_k) +
       `<div style="margin-top:10px"><button class="iconbtn" id="mp-edit">${T.mp_edit}</button>
        ${mp ? `<button class="iconbtn" id="mp-clear">${T.mp_clear}</button>` : ""}</div>`;
   } else {
-    const opts = sel => `<option value="">${T.mp_auto}</option>` + avail.map(a =>
-      `<option value="${esc(a.sheet)}|||${esc(a.label)}"${sel === a.label ? " selected" : ""}>${
-        esc(String(a.label).slice(0, 36))} — ${esc(String(a.sheet).slice(0, 18))}</option>`).join("");
-    const roles = ["revenue", "opex", "budget", "volume", "volume_secondary",
-                   "price", "capex", "area", "margin"];
-    body = roles.map(role => `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-        <span class="sln" style="min-width:150px">${ROLE_LABELS[role] || role}</span>
-        <select data-mprole="${role}" style="flex:1;font:inherit;font-size:12.5px;padding:5px 8px;
-          background:var(--card);border:1px solid var(--border);border-radius:6px;color:var(--ink)">${
-          opts(current[role])}</select></div>`).join("") +
+    const yearRoles = ["revenue", "opex", "budget", "volume", "volume_secondary",
+                       "price", "capex", "area", "margin"];
+    const moRoles = ["volume", "volume_secondary", "opex", "capex",
+                     "revenue", "price", "margin"];
+    body = editRows(yearRoles, avail, current, "data-mprole",
+                    availMo.length ? T.mp_yearly_k : "") +
+      editRows(moRoles, availMo, currentMo, "data-mprole-mo", T.mp_monthly_k) +
       `<div id="mp-error" class="chcap" style="color:var(--critical)"></div>
        <div style="margin-top:10px;display:flex;gap:8px">
          <button class="runbtn" id="mp-save" style="max-width:220px">${T.mp_save}</button>
@@ -5899,16 +5977,21 @@ function attachMapping() {
     renderAll();
   });
   on("#mp-save", async () => {
-    const mapping = {};
+    const mapping = {}, monthly = {};
     $$("select[data-mprole]").forEach(sel => {
       if (!sel.value) return;
       const [sheet, label] = sel.value.split("|||");
       mapping[sel.dataset.mprole] = { sheet, label };
     });
-    if (!Object.keys(mapping).length) return;
+    $$("select[data-mprole-mo]").forEach(sel => {
+      if (!sel.value) return;
+      const [sheet, label] = sel.value.split("|||");
+      monthly[sel.dataset.mproleMo] = { sheet, label };
+    });
+    if (!Object.keys(mapping).length && !Object.keys(monthly).length) return;
     const res = await fetch(`/analyses/${current}/mapping`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mapping }) });
+      body: JSON.stringify({ mapping, monthly }) });
     if (res.ok) {
       const out = await res.json();
       REPORT.model = out.model; REPORT.mapping = out.mapping;
@@ -6592,16 +6675,33 @@ function svgTimeseries(c) {
     if (!pts.length) continue;
     const isP = s === primary;
     if (exec && isP && pts.length > 2) {
-      // executive headline line: one smooth gesture + gradient underlay
-      const d = smoothPath(pts);
+      // executive headline line: a smooth gesture per CONTIGUOUS run — a
+      // missing month BREAKS the line (chart doctrine: drawing across it
+      // would fabricate a trend through a period that has no data)
+      const runs = [];
+      let run = [];
+      for (let i = 0; i < n; i++) {
+        const v = s.values[idx(i)];
+        if (v == null) { if (run.length) { runs.push(run); run = []; } }
+        else run.push([sx(i), sy(v), i]);
+      }
+      if (run.length) runs.push(run);
       out = `<defs><linearGradient id="gfill${c.i}" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stop-color="#a8821f" stop-opacity=".16"/>
           <stop offset="1" stop-color="#a8821f" stop-opacity="0"/>
-        </linearGradient></defs>` + out +
-        `<path d="${d} L${pts[pts.length - 1][0].toFixed(1)},${y0} L${pts[0][0].toFixed(1)},${y0} Z"
-          fill="url(#gfill${c.i})" stroke="none"/>
-        <path class="ln" pathLength="1" d="${d}" fill="none" stroke="${s.color}"
-          stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+        </linearGradient></defs>` + out;
+      for (const r of runs) {
+        if (r.length === 1) {   // an isolated month is a point, not a line
+          out += `<circle class="ln" cx="${r[0][0].toFixed(1)}" cy="${r[0][1].toFixed(1)}"
+            r="2.5" fill="${s.color}"/>`;
+          continue;
+        }
+        const d = smoothPath(r);
+        out += `<path d="${d} L${r[r.length - 1][0].toFixed(1)},${y0} L${r[0][0].toFixed(1)},${y0} Z"
+            fill="url(#gfill${c.i})" stroke="none"/>
+          <path class="ln" pathLength="1" d="${d}" fill="none" stroke="${s.color}"
+            stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+      }
     } else {
       let d = "", pen = false;
       for (let i = 0; i < n; i++) {
