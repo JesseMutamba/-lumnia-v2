@@ -1000,7 +1000,7 @@
 </style>
 </head>
 <body>
-<input type="file" id="file" accept=".xlsx,.xlsm,.xls,.xlsb,.ods,.csv,.tsv,.txt" style="display:none">
+<input type="file" id="file" accept=".xlsx,.xlsm,.xls,.xlsb,.ods,.csv,.tsv,.txt" multiple style="display:none">
 <div class="app">
   <aside class="side">
     <div class="brand">
@@ -1109,6 +1109,10 @@ const STR = {
     tc_hint: "Click to trace this figure to its source cells",
     tc_aligned: n => `all ${n} aligned month${n === 1 ? "" : "s"} — the figure totals them`,
     xb_intro: "The questions this dashboard was built to answer, and what the data can support — matched deterministically against the workbook's own tables. What the data cannot answer is declared, never estimated.",
+    up_pair_t: "Two files — which one is the plan?",
+    up_pair_sub: "Projections are compared to actuals, never merged into them. Click the projections/budget workbook; the other file becomes the actuals. They combine into one engagement workbook.",
+    up_analyzing_pair: (a, p) => `Analyzing ${a} + plan ${p}…`,
+    up_too_many: "Drop at most two files — the actuals workbook, plus optionally a projections workbook.",
     xt_insights: "Insights",
     xi_kicker: "Discussion agenda",
     xi_intro: "Questions worth raising with your team — computed from this workbook's own figures, each naming the number behind it. Nothing here is estimated.",
@@ -1681,6 +1685,10 @@ const STR = {
     tc_hint: "Cliquer pour tracer ce chiffre jusqu'à ses cellules sources",
     tc_aligned: n => `les ${n} mois alignés — le chiffre les totalise`,
     xb_intro: "Les questions auxquelles ce tableau de bord doit répondre, et ce que les données permettent — rapprochées de façon déterministe des tables du classeur. Ce que les données ne peuvent pas répondre est déclaré, jamais estimé.",
+    up_pair_t: "Deux fichiers — lequel est le plan ?",
+    up_pair_sub: "Les projections sont comparées au réel, jamais fusionnées avec lui. Cliquez le classeur de projections/budget ; l'autre fichier devient le réel. Ils se combinent en un classeur d'engagement.",
+    up_analyzing_pair: (a, p) => `Analyse de ${a} + plan ${p}…`,
+    up_too_many: "Déposez au plus deux fichiers — le classeur du réel, plus éventuellement un classeur de projections.",
     xt_insights: "Points clés",
     xi_kicker: "Ordre du jour",
     xi_intro: "Des questions à poser à votre équipe — calculées à partir des chiffres du classeur lui-même, chacune citant le chiffre qui la fonde. Rien ici n'est estimé.",
@@ -2257,15 +2265,62 @@ $("#sun").innerHTML = sunPaths();
 const fileInput = $("#file"), statusEl = $("#status");
 if (!SHARE) {
   $("#newupload").addEventListener("click", () => fileInput.click());
-  fileInput.addEventListener("change", () => { if (fileInput.files[0]) upload(fileInput.files[0]); });
+  fileInput.addEventListener("change", () => handleUploadSet([...fileInput.files]));
   window.addEventListener("dragover", e => { e.preventDefault(); document.body.classList.add("dropring"); });
   window.addEventListener("dragleave", e => { if (!e.relatedTarget) document.body.classList.remove("dropring"); });
   window.addEventListener("drop", e => {
     e.preventDefault(); document.body.classList.remove("dropring");
-    if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]);
+    handleUploadSet([...e.dataTransfer.files]);
   });
 } else {
   document.body.classList.add("share");
+}
+
+/* one file analyzes as-is; a PAIR merges into an engagement workbook —
+   the operator says which file is the projections/plan side, never a guess */
+function handleUploadSet(files) {
+  if (!files.length) return;
+  if (files.length === 1) return upload(files[0]);
+  if (files.length > 2) { setStatus(T.up_too_many, true); return; }
+  const scrim = document.createElement("div");
+  scrim.className = "scrim open"; scrim.id = "pair-scrim";
+  scrim.innerHTML = `<div class="rmodal" style="max-width:560px">
+    <div class="kicker">${T.up_pair_t}</div>
+    <p class="chcap" style="margin:10px 0 14px;max-width:60ch">${T.up_pair_sub}</p>
+    ${files.map((f, i) => `<button class="pillbtn" data-plan-idx="${i}"
+        style="display:block;width:100%;text-align:left;margin-bottom:8px">
+        ${esc(f.name)}</button>`).join("")}
+    <a class="seeall" id="pair-cancel" style="margin-top:8px;display:inline-block">${T.tc_close}</a>
+  </div>`;
+  document.body.appendChild(scrim);
+  const close = () => scrim.remove();
+  scrim.addEventListener("click", e => { if (e.target === scrim) close(); });
+  $("#pair-cancel").addEventListener("click", close);
+  $$("[data-plan-idx]", scrim).forEach(b => b.addEventListener("click", () => {
+    const pi = +b.dataset.planIdx;
+    close();
+    uploadPair(files[1 - pi], files[pi]);
+  }));
+}
+
+async function uploadPair(actuals, plan) {
+  setStatus(T.up_analyzing_pair(actuals.name, plan.name));
+  showSkeleton();
+  const fd = new FormData();
+  fd.append("file", actuals);
+  fd.append("plan", plan);
+  try {
+    const r = await fetch("/analyze", { method: "POST", body: fd });
+    if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+    const body = await r.json();
+    setStatus("");
+    await loadWorkbooks();
+    select(body.id);
+  } catch (err) {
+    setStatus(T.analysis_failed(err.message), true);
+    if (REPORT) renderAll(); else renderHomePage();
+  }
+  fileInput.value = "";
 }
 
 function showSkeleton() {

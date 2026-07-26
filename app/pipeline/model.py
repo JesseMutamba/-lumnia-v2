@@ -36,6 +36,13 @@ ROLE_PATTERNS: List[tuple] = [
         r"|co[uû]ts?\s+(d.)?(op[ée]rat\w*|exploitation|production|fonctionnement)"
         r"|operating\s+(costs?|expenses?)"
         r"|frais\s+(g[ée]n[ée]raux|de\s+fonctionnement)", re.IGNORECASE)),
+    # headcount sits BEFORE volume: cost-center rows like "Personnel
+    # Production" would otherwise claim volume on "production" — a person
+    # is never a tonne, and a payroll line tagged as tonnage corrupts
+    # every downstream division
+    ("headcount", re.compile(
+        r"effectifs?\b|employ[ée]s?\b|salari[ée]s?\b|personnel\b|headcount"
+        r"|\bstaff\b", re.IGNORECASE)),
     ("volume", re.compile(
         # (?<![a-z0-9])cpo… : \b fails across "_" (CPO_Produced), so use
         # lookarounds that treat underscores as boundaries too
@@ -44,9 +51,6 @@ ROLE_PATTERNS: List[tuple] = [
         r"|unit[ée]s?\s+(vendues|produites)|units\s+sold", re.IGNORECASE)),
     ("area", re.compile(r"hectare|\bha\b|surface|superficie|acres?\b|m²",
                         re.IGNORECASE)),
-    ("headcount", re.compile(
-        r"effectifs?\b|employ[ée]s?\b|salari[ée]s?\b|personnel\b|headcount"
-        r"|\bstaff\b", re.IGNORECASE)),
 ]
 
 MAX_BREAKDOWNS = 6

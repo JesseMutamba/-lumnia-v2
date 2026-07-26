@@ -54,7 +54,7 @@ from .pipeline.mapping import (MAPPABLE_ROLES, build_mapped_model, reconcile,
                                resolve, year_series)
 from .pipeline.semantics import plan_from_brief, suggest_brief
 from .pipeline.coerce import coerce_value
-from .pipeline.ingest import read_upload
+from .pipeline.ingest import merge_engagement, read_upload
 from .pipeline.jsonsafe import jsonify
 from .pipeline.orient import _xl_col, orient_sheet
 from .pipeline.profile import profile_sheet
@@ -269,9 +269,7 @@ def health() -> HealthResponse:
                           narrative_ready=narrative.available())
 
 
-@app.post("/analyze", response_model=AnalyzeResponse)
-async def analyze(file: UploadFile = File(...)) -> AnalyzeResponse:
-    content = await file.read()
+def _check_upload(content: bytes, label: str) -> None:
     if not content:
         raise HTTPException(status_code=400,
                             detail=_bi("Empty upload.", "Fichier vide."))
@@ -279,10 +277,37 @@ async def analyze(file: UploadFile = File(...)) -> AnalyzeResponse:
         raise HTTPException(
             status_code=413,
             detail=_bi(
-                f"File is {len(content) / 1e6:.1f} MB; the limit is "
+                f"{label} is {len(content) / 1e6:.1f} MB; the limit is "
                 f"{MAX_UPLOAD_BYTES / 1e6:.0f} MB.",
-                f"Le fichier fait {len(content) / 1e6:.1f} Mo ; la limite "
+                f"« {label} » fait {len(content) / 1e6:.1f} Mo ; la limite "
                 f"est {MAX_UPLOAD_BYTES / 1e6:.0f} Mo."))
+
+
+@app.post("/analyze", response_model=AnalyzeResponse)
+async def analyze(file: UploadFile = File(...),
+                  plan: Optional[UploadFile] = File(None)) -> AnalyzeResponse:
+    content = await file.read()
+    _check_upload(content, file.filename or "upload")
+    filename = file.filename or ""
+
+    # An optional projections/budget workbook rides along: both files merge
+    # into ONE engagement workbook (plan sheets prefixed "PLAN · " so the
+    # model's plan pool claims them by name). The merged bytes become the
+    # analysis's original — trace re-reads THEM, verbatim.
+    if plan is not None:
+        plan_content = await plan.read()
+        _check_upload(plan_content, plan.filename or "plan")
+        try:
+            content = await run_in_threadpool(
+                merge_engagement, content, filename,
+                plan_content, plan.filename or "plan.xlsx")
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=_bi(
+                f"Could not combine '{filename}' with "
+                f"'{plan.filename}'", "Impossible de combiner "
+                f"« {filename} » et « {plan.filename} »") + f" — {exc}")
+        stem = filename.rsplit(".", 1)[0] or "engagement"
+        filename = f"{stem} + plan.xlsx"
 
     # Identical bytes already analyzed -> return the stored analysis instead
     # of silently growing the library with duplicates.
@@ -295,7 +320,7 @@ async def analyze(file: UploadFile = File(...)) -> AnalyzeResponse:
     # CPU-bound pandas work must not run on the event loop: inline it and
     # one big upload freezes every other request AND the /health check,
     # which lets Fly/Render restart the box mid-analysis.
-    result = await run_in_threadpool(run_pipeline, content, file.filename or "")
+    result = await run_in_threadpool(run_pipeline, content, filename)
     report = result.model_dump()
     _inherit_mapping(report)          # a verified client mapping carries over
     result = AnalyzeResponse(**report)

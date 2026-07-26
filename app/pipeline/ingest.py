@@ -6,7 +6,9 @@ of later stages. The only decision here is CSV vs Excel.
 """
 from __future__ import annotations
 
+import datetime as _dt
 import io
+import zipfile
 from typing import Dict
 
 import pandas as pd
@@ -45,6 +47,52 @@ def read_upload(content: bytes, filename: str) -> Dict[str, pd.DataFrame]:
         except Exception:
             sheets = _read_csv(content, name or "data")
     return {k: _trim_trailing_blank(df) for k, df in sheets.items()}
+
+
+def merge_engagement(actuals: bytes, actuals_name: str,
+                     plan: bytes, plan_name: str) -> bytes:
+    """One engagement workbook from an actuals file and a projections file.
+
+    Plan sheets are prefixed ``PLAN · `` so the model's plan-pool partition
+    claims them by NAME — projections are compared to actuals, never merged
+    into them. Values only (formulas arrive as their cached results), and
+    fixed workbook timestamps keep the merged bytes deterministic so the
+    same pair uploaded twice dedupes to one analysis."""
+    sheets: Dict[str, pd.DataFrame] = {}
+    for name, df in read_upload(actuals, actuals_name).items():
+        sheets[_unique_sheet_name(sheets, name)] = df
+    for name, df in read_upload(plan, plan_name).items():
+        sheets[_unique_sheet_name(sheets, f"PLAN · {name}")] = df
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as xw:
+        for name, df in sheets.items():
+            df.to_excel(xw, sheet_name=name, header=False, index=False)
+        props = xw.book.properties
+        props.created = props.modified = _dt.datetime(2000, 1, 1)
+    # openpyxl stamps every zip MEMBER with the wall clock; rewrite the
+    # archive with fixed entry timestamps so identical pairs really do
+    # produce identical bytes (the dedupe key is a hash of these bytes)
+    out = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(buf.getvalue())) as src, \
+            zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as dst:
+        for item in src.infolist():
+            zi = zipfile.ZipInfo(item.filename,
+                                 date_time=(2000, 1, 1, 0, 0, 0))
+            zi.compress_type = zipfile.ZIP_DEFLATED
+            dst.writestr(zi, src.read(item.filename))
+    return out.getvalue()
+
+
+def _unique_sheet_name(existing: Dict[str, pd.DataFrame], name: str) -> str:
+    """Excel's 31-char sheet-name cap, collision-safe after truncation."""
+    base = name[:31]
+    if base not in existing:
+        return base
+    for k in range(2, 100):
+        cand = f"{base[:28]} {k}"
+        if cand not in existing:
+            return cand
+    raise ValueError(f"cannot uniquify sheet name {name!r}")
 
 
 def _trim_trailing_blank(df: pd.DataFrame) -> pd.DataFrame:
