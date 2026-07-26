@@ -182,7 +182,8 @@ def _call_claude(facts: str, lang: str = "en", system: str | None = None) -> str
         json={
             "model": os.environ.get("LUMNIA_NARRATIVE_MODEL", DEFAULT_MODEL),
             "max_tokens": 1200,
-            "temperature": 0.2,
+            # no temperature: current models deprecate the param (the API
+            # 400s on it) — determinism lives in the fact sheet, not here
             "system": system or SYSTEM_PROMPT,
             "messages": [{"role": "user",
                           "content": f"FACTS:\n{facts}\n\n{lang_line}"}],
