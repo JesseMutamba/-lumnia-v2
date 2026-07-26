@@ -270,6 +270,34 @@ def test_no_positions_means_no_cells_key():
         assert "cells" not in s
 
 
+def test_ffilled_label_columns_never_become_numeric_series():
+    # The value-side ghost fix: a label-ish column (majority text among its
+    # RAW cells) that gets forward-filled must never profile numeric and
+    # become a row-year series — its sums would count merged-cell ghosts
+    # (one real 500 rendering as 1500). Label columns label; they are not
+    # data series.
+    df = pd.DataFrame([
+        ["Année", "PRODUCTION CPO (T)", "CHARGES OPEX", "SURFACE (HA)"],
+        [2023, 500, 90, 12],           # the ONLY real value in column B
+        [2023, None, 100, 12],
+        [2023, None, 95, 13],
+        [2024, None, 110, 13],
+        [2024, None, 105, 14],
+        [2025, "voir note", 120, 14],
+        [2025, "voir note", 115, 15],
+    ])
+    rep = _analyze(_book(("PROJECTIONS", df)))
+    chart = rep["sheets"][0]["tidy"]["summary"]["chart"]
+    labels = {s["label"] for s in chart["series_all"]}
+    assert "PRODUCTION CPO (T)" not in labels, labels
+    # and no ghost-inflated figure leaks into the model anywhere
+    for role, m in ((rep.get("model") or {}).get("metrics") or {}).items():
+        assert 1500.0 not in (m["values"] or []), (role, m)
+    # the honest series still sum their real cells
+    ser = {s["label"]: s for s in chart["series_all"]}
+    assert ser["CHARGES OPEX"]["values"] == [285, 215, 235]
+
+
 def test_ffilled_ghost_rows_block_the_citation():
     # A value forward-filled from a merged cell sits on a physically BLANK
     # cell. Citing it — or only the real subset of a summed period — would

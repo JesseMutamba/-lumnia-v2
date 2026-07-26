@@ -71,7 +71,7 @@ Cross-sheet ratios and monthly plan-vs-actual are BUILT (model.py `_supplement` 
 2. **Cross-WORKBOOK consolidation** (projections + journals uploaded as separate files, joined per client/period) — known limit, not built. Honest workaround: combine the sheets into one workbook per engagement before upload.
 3. **Analyses stored before an engine upgrade need a rerun** to grow new fields — the UI offers ↺; consider auto-rerun on open someday.
 4. Logged `# DEBT`: exec KPI tiles don't surface `dropped_outside_axis` (the Production statbar does); mapping.py restricts manual `volume_secondary` to identical axes; yearly-plan-phased-monthly comparison needs an explicit phasing rule to stay honest; the trace endpoint re-parses the workbook per click (cache when books grow).
-5. **Pre-existing, found in review:** a label-ish column that gets forward-filled can profile numeric and become a row-year series whose VALUES sum merged-cell ghosts (one real 500 can render as 1500). Citations for such periods are suppressed (`ghost_rows` in orient/charts) so no false proof ever shows, but the value-side fix — keeping ffilled label columns out of numeric series — is open and needs its own oracle.
+5. **FIXED:** the ghost-VALUES bug (a label-ish forward-filled column profiling numeric and summing merged-cell ghosts) — label columns are now excluded from numeric series entirely (`label_set` gate in `_extract_tidy_table`; oracle: `test_ffilled_label_columns_never_become_numeric_series`). `ghost_rows` citation suppression stays as defense-in-depth.
 
 ---
 

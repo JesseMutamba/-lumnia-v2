@@ -498,12 +498,16 @@ def _extract_tidy_table(df, kinds, meta, max_rows) -> dict:
 
     # Step 4: reconciliation checks over the numeric columns. Rows are labelled
     # by the first text column so findings point at "Semences, row 10", not
-    # just an index.
+    # just an index. LABEL columns never qualify: they were chosen for
+    # forward-fill because their raw cells are majority text, so a numeric
+    # profile there is an artifact of the ffill — summing it would count
+    # merged-cell ghosts (one real 500 rendering as 1500).
+    label_set = set(label_cols)
     numeric_cols = {
         name: [v if isinstance(v, (int, float)) and not isinstance(v, bool)
                else None for v in vals]
-        for acc, name, vals in zip(accs, names, col_values)
-        if acc.dtype() == "number"
+        for acc, name, vals, j in zip(accs, names, col_values, cols)
+        if acc.dtype() == "number" and j not in label_set
     }
     label_idx = next((k for k, a in enumerate(accs) if a.dtype() == "text"), None)
     row_labels = ([str(v) if v is not None else None
