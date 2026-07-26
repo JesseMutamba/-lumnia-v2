@@ -149,3 +149,136 @@ def test_unverifiable_mapping_is_kept_manual_but_never_inherited():
                       for i, v in enumerate([110, 230, 410, 760]))
     rep2 = _analyze((head + "\n" + body2 + "\n").encode(), "sans_temoin2.csv")
     assert rep2.get("mapping") is None                   # not inherited
+
+
+# ---------------------------------------------------------------------------
+# Monthly mapping: pins on date-axis series — the anchor extraction sheet
+# buries real harvest among cost-center rows whose labels fool the volume
+# regex ("Camion Citerne (Transfert CPO)" is a truck line, not tonnage).
+# ---------------------------------------------------------------------------
+import datetime as dt
+import io
+
+import pandas as pd
+
+MONTHS = [dt.date(2026, m, 28) for m in (1, 2, 3)]
+
+
+def _trap_book() -> bytes:
+    actuals = pd.DataFrame([
+        ["EXTRACTION MENSUELLE", None, None, None],
+        ["RUBRIQUE", *MONTHS],
+        ["Camion Citerne (Transfert CPO) / P40", 90000, 95000, 99000],
+        ["Récolte FFB (T) / P10a", 76, 80, 84],           # row 4
+        ["CPO Produits (T) / P30", 16, 17.5, 18.5],       # row 5
+        ["CHARGES SITE / SG", 14200, 16900, 15400],       # row 6
+    ])
+    budget = pd.DataFrame([
+        ["Metric", 2025, 2026, 2027],
+        ["FFB produced (t)", 3000, 3200, 4500],
+        ["CPO produced (t)", 650, 700, 990],
+        ["OPEX — production cost (USD)", 351000, 378000, 534600],
+    ])
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as w:
+        actuals.to_excel(w, sheet_name="EXTRACTION", header=False, index=False)
+        budget.to_excel(w, sheet_name="BUDGET 2026", header=False, index=False)
+    return buf.getvalue()
+
+
+MONTHLY_PINS = {
+    "volume": {"label": "Récolte FFB (T) / P10a", "sheet": "EXTRACTION"},
+    "volume_secondary": {"label": "CPO Produits (T) / P30",
+                         "sheet": "EXTRACTION"},
+    "opex": {"label": "CHARGES SITE / SG", "sheet": "EXTRACTION"},
+}
+
+
+def _trap_analysis() -> dict:
+    return client.post("/analyze", files={
+        "file": ("extraction.xlsx", _trap_book(),
+                 "application/octet-stream")}).json()
+
+
+def test_monthly_pins_override_the_heuristics():
+    rep = _trap_analysis()
+    # baseline: the regexes are fooled — this is WHY monthly pins exist
+    assert rep["model"]["monthly"]["metrics"]["volume"]["label"] \
+        == "Camion Citerne (Transfert CPO) / P40"
+
+    r = client.post(f"/analyses/{rep['id']}/mapping",
+                    json={"monthly": MONTHLY_PINS})
+    assert r.status_code == 200, r.text
+    mo = r.json()["model"]["monthly"]
+    met = mo["metrics"]
+    assert met["volume"]["label"] == "Récolte FFB (T) / P10a"
+    assert met["volume_secondary"]["label"] == "CPO Produits (T) / P30"
+    # provenance rides the pin: the harvest row's cells are cited
+    assert met["volume"]["cells"] == [["B4"], ["C4"], ["D4"]]
+    # derived arithmetic recomputes from the pinned series
+    assert mo["derived"]["volume_ratio"][0] == round(16 / 76, 4)
+    # and the vs-budget comparison lights against the year plan sheet
+    ub = mo["unit_cost_budget"]
+    assert ub["target"] == round(378000 / 700, 4)
+    assert ub["target_sources"]["opex"]["sheet"] == "BUDGET 2026"
+    # the year model stays heuristic — monthly pins touch monthly only
+    assert r.json()["model"]["source_sheet"] == "BUDGET 2026"
+
+
+def test_year_pin_no_longer_erases_the_monthly_block():
+    rep = _analyze(_csv(), "tresorerie_b2.csv")
+    r = client.post(f"/analyses/{rep['id']}/mapping", json={"mapping": GOOD})
+    assert r.status_code == 200
+    # this CSV has no monthly block; the trap book does — pin its year side
+    rep2 = _trap_analysis()
+    r2 = client.post(f"/analyses/{rep2['id']}/mapping", json={"mapping": {
+        "opex": {"label": "OPEX — production cost (USD)",
+                 "sheet": "BUDGET 2026"}}})
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["model"]["monthly"] is not None
+    assert r2.json()["model"]["monthly"]["metrics"]
+
+
+def test_monthly_mapping_survives_rerun():
+    rep = _trap_analysis()
+    client.post(f"/analyses/{rep['id']}/mapping", json={"monthly": MONTHLY_PINS})
+    r = client.post(f"/analyses/{rep['id']}/rerun")
+    assert r.status_code == 200
+    mo = r.json()["model"]["monthly"]
+    assert mo["metrics"]["volume"]["label"] == "Récolte FFB (T) / P10a"
+
+
+def test_contradicted_monthly_mapping_is_rejected():
+    rep = _trap_analysis()
+    # price × volume must equal revenue; pinning a revenue series that is
+    # wildly off the identity is refused — wrong pins never ship
+    bad_book = pd.DataFrame([
+        ["VENTES", None, None, None],
+        ["RUBRIQUE", *MONTHS],
+        ["Tonnage vendu / V1", 76, 80, 84],
+        ["Prix contractuel / V2", 820, 820, 820],
+        ["Encaissé réel / V3", 10, 10, 10],
+    ])
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as w:
+        bad_book.to_excel(w, sheet_name="VENTES", header=False, index=False)
+    rep = client.post("/analyze", files={
+        "file": ("ventes.xlsx", buf.getvalue(),
+                 "application/octet-stream")}).json()
+    r = client.post(f"/analyses/{rep['id']}/mapping", json={"monthly": {
+        "volume": {"label": "Tonnage vendu / V1", "sheet": "VENTES"},
+        "price": {"label": "Prix contractuel / V2", "sheet": "VENTES"},
+        "revenue": {"label": "Encaissé réel / V3", "sheet": "VENTES"},
+    }})
+    assert r.status_code == 422
+    detail = r.json()["detail"]
+    assert detail["reconciliation"]["ok"] is False
+
+
+def test_mapping_address_space_lists_monthly_series():
+    rep = _trap_analysis()
+    out = client.get(f"/analyses/{rep['id']}/mapping").json()
+    monthly_labels = {a["label"] for a in out["available_monthly"]}
+    assert "Récolte FFB (T) / P10a" in monthly_labels
+    yearly_labels = {a["label"] for a in out["available"]}
+    assert "CPO produced (t)" in yearly_labels

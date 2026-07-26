@@ -1113,6 +1113,7 @@ const STR = {
     up_pair_sub: "Projections are compared to actuals, never merged into them. Click the projections/budget workbook; the other file becomes the actuals. They combine into one engagement workbook.",
     up_analyzing_pair: (a, p) => `Analyzing ${a} + plan ${p}…`,
     up_too_many: "Drop at most two files — the actuals workbook, plus optionally a projections workbook.",
+    mp_yearly_k: "Yearly series", mp_monthly_k: "Monthly series",
     xt_insights: "Insights",
     xi_kicker: "Discussion agenda",
     xi_intro: "Questions worth raising with your team — computed from this workbook's own figures, each naming the number behind it. Nothing here is estimated.",
@@ -1689,6 +1690,7 @@ const STR = {
     up_pair_sub: "Les projections sont comparées au réel, jamais fusionnées avec lui. Cliquez le classeur de projections/budget ; l'autre fichier devient le réel. Ils se combinent en un classeur d'engagement.",
     up_analyzing_pair: (a, p) => `Analyse de ${a} + plan ${p}…`,
     up_too_many: "Déposez au plus deux fichiers — le classeur du réel, plus éventuellement un classeur de projections.",
+    mp_yearly_k: "Séries annuelles", mp_monthly_k: "Séries mensuelles",
     xt_insights: "Points clés",
     xi_kicker: "Ordre du jour",
     xi_intro: "Des questions à poser à votre équipe — calculées à partir des chiffres du classeur lui-même, chacune citant le chiffre qui la fonde. Rien ici n'est estimé.",
@@ -2457,12 +2459,15 @@ function availableTabs() {
 }
 
 /* the mapping's address space: every year-axis series in the workbook */
-function mappableSeries() {
+function mappableSeries(axis) {
+  // axis "year" (default) or "date" — the monthly address space
+  const wantYear = axis !== "date";
   const out = [];
   for (const s of REPORT.sheets || []) {
     const grab = t => {
       const c = t && t.summary && t.summary.chart;
-      if (c && c.kind === "timeseries" && c.axis === "year" && c.series_all)
+      if (c && c.kind === "timeseries" && (c.axis === "year") === wantYear
+          && c.series_all)
         for (const se of c.series_all) out.push({ sheet: s.name, label: se.label });
     };
     grab(s.tidy);
@@ -5890,7 +5895,8 @@ let MAP_EDIT = false;
 
 function mappingCard() {
   const avail = mappableSeries();
-  if (!avail.length) return "";
+  const availMo = mappableSeries("date");
+  if (!avail.length && !availMo.length) return "";
   const mp = REPORT.mapping;
   const prov = mp ? (mp.provenance || {}) : null;
   const rec = mp ? (mp.reconciliation || {}) : null;
@@ -5902,32 +5908,49 @@ function mappingCard() {
     ? `<span class="schip good">✓ ${T.mp_verified}</span>`
     : `<span class="schip warn">${T.mp_unverified}</span>`;
 
-  const current = {};
-  if (mp && mp.roles)
-    for (const [role, ref] of Object.entries(mp.roles)) current[role] = ref.label;
-  else if (REPORT.model)
+  const current = {}, currentMo = {};
+  if (mp && (mp.roles || mp.monthly)) {
+    for (const [role, ref] of Object.entries(mp.roles || {})) current[role] = ref.label;
+    for (const [role, ref] of Object.entries(mp.monthly || {})) currentMo[role] = ref.label;
+  } else if (REPORT.model) {
     for (const [role, s] of Object.entries(REPORT.model.metrics)) current[role] = s.label;
+    for (const [role, s] of Object.entries((REPORT.model.monthly || {}).metrics || {}))
+      currentMo[role] = s.label;
+  }
 
-  let body;
-  if (!MAP_EDIT) {
-    const rows = Object.entries(current).map(([role, label]) => `
+  const viewRows = (cur, kicker) => !Object.keys(cur).length ? "" :
+    (kicker ? `<div class="kicker" style="margin:12px 0 4px">${kicker}</div>` : "") +
+    Object.entries(cur).map(([role, label]) => `
       <div class="bar-row" style="display:flex;gap:10px;align-items:baseline">
         <span class="bl" style="min-width:150px">${ROLE_LABELS[role] || role}</span>
         <span class="bv">${esc(String(label).slice(0, 36))}</span></div>`).join("");
-    body = rows +
+  const editRows = (roleList, list, cur, attr, kicker) => {
+    if (!list.length) return "";
+    const opts = sel => `<option value="">${T.mp_auto}</option>` + list.map(a =>
+      `<option value="${esc(a.sheet)}|||${esc(a.label)}"${sel === a.label ? " selected" : ""}>${
+        esc(String(a.label).slice(0, 36))} — ${esc(String(a.sheet).slice(0, 18))}</option>`).join("");
+    return (kicker ? `<div class="kicker" style="margin:12px 0 6px">${kicker}</div>` : "") +
+      roleList.map(role => `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <span class="sln" style="min-width:150px">${ROLE_LABELS[role] || role}</span>
+        <select ${attr}="${role}" style="flex:1;font:inherit;font-size:12.5px;padding:5px 8px;
+          background:var(--card);border:1px solid var(--border);border-radius:6px;color:var(--ink)">${
+          opts(cur[role])}</select></div>`).join("");
+  };
+
+  let body;
+  if (!MAP_EDIT) {
+    body = viewRows(current, Object.keys(currentMo).length ? T.mp_yearly_k : "") +
+      viewRows(currentMo, T.mp_monthly_k) +
       `<div style="margin-top:10px"><button class="iconbtn" id="mp-edit">${T.mp_edit}</button>
        ${mp ? `<button class="iconbtn" id="mp-clear">${T.mp_clear}</button>` : ""}</div>`;
   } else {
-    const opts = sel => `<option value="">${T.mp_auto}</option>` + avail.map(a =>
-      `<option value="${esc(a.sheet)}|||${esc(a.label)}"${sel === a.label ? " selected" : ""}>${
-        esc(String(a.label).slice(0, 36))} — ${esc(String(a.sheet).slice(0, 18))}</option>`).join("");
-    const roles = ["revenue", "opex", "budget", "volume", "volume_secondary",
-                   "price", "capex", "area", "margin"];
-    body = roles.map(role => `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-        <span class="sln" style="min-width:150px">${ROLE_LABELS[role] || role}</span>
-        <select data-mprole="${role}" style="flex:1;font:inherit;font-size:12.5px;padding:5px 8px;
-          background:var(--card);border:1px solid var(--border);border-radius:6px;color:var(--ink)">${
-          opts(current[role])}</select></div>`).join("") +
+    const yearRoles = ["revenue", "opex", "budget", "volume", "volume_secondary",
+                       "price", "capex", "area", "margin"];
+    const moRoles = ["volume", "volume_secondary", "opex", "capex",
+                     "revenue", "price", "margin"];
+    body = editRows(yearRoles, avail, current, "data-mprole",
+                    availMo.length ? T.mp_yearly_k : "") +
+      editRows(moRoles, availMo, currentMo, "data-mprole-mo", T.mp_monthly_k) +
       `<div id="mp-error" class="chcap" style="color:var(--critical)"></div>
        <div style="margin-top:10px;display:flex;gap:8px">
          <button class="runbtn" id="mp-save" style="max-width:220px">${T.mp_save}</button>
@@ -5954,16 +5977,21 @@ function attachMapping() {
     renderAll();
   });
   on("#mp-save", async () => {
-    const mapping = {};
+    const mapping = {}, monthly = {};
     $$("select[data-mprole]").forEach(sel => {
       if (!sel.value) return;
       const [sheet, label] = sel.value.split("|||");
       mapping[sel.dataset.mprole] = { sheet, label };
     });
-    if (!Object.keys(mapping).length) return;
+    $$("select[data-mprole-mo]").forEach(sel => {
+      if (!sel.value) return;
+      const [sheet, label] = sel.value.split("|||");
+      monthly[sel.dataset.mproleMo] = { sheet, label };
+    });
+    if (!Object.keys(mapping).length && !Object.keys(monthly).length) return;
     const res = await fetch(`/analyses/${current}/mapping`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mapping }) });
+      body: JSON.stringify({ mapping, monthly }) });
     if (res.ok) {
       const out = await res.json();
       REPORT.model = out.model; REPORT.mapping = out.mapping;
