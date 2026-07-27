@@ -2,11 +2,14 @@
 pipeline's computed blocks — KPI strip, plan vs actual, conversion rate,
 cash split, monthly detail table.
 
-Deterministic end to end: every figure comes from the stored model (itself
-computed over the uploaded workbook), no AI anywhere, no scripts, no
-external fetches — charts are hand-built inline SVG in Lumnia's design
-language. A block the data cannot support is not rendered; the endpoint
-declares it as skipped instead.
+Deterministic figures end to end: every number comes from the stored model
+(itself computed over the uploaded workbook), no scripts, no external
+fetches — charts are hand-built inline SVG in Lumnia's design language.
+The one AI element is the optional ``narrative`` block, which reprints the
+STORED narrative verbatim (Claude phrased it from the pipeline's verified
+figures at generation time; nothing is generated or recomputed here). A
+block the data cannot support is not rendered; the endpoint declares it
+as skipped instead.
 """
 from __future__ import annotations
 
@@ -19,9 +22,9 @@ from pathlib import Path as _Path
 from typing import Any, Dict, List, Optional
 
 # selectable blocks, in reading order
-BLOCKS = ("kpi", "plan_progress", "plan_vs_actual", "unit_cost",
-          "conversion", "cash", "outlook", "net_cash", "breakdowns",
-          "monthly_table")
+BLOCKS = ("narrative", "dashboard", "kpi", "plan_progress",
+          "plan_vs_actual", "unit_cost", "conversion", "cash", "outlook",
+          "net_cash", "breakdowns", "monthly_table")
 
 GOLD, PALE, INK3 = "#a8821f", "#d5c391", "#99917e"
 CRIT, WARN, GOOD = "#a33b32", "#a07d1c", "#3e6f4e"
@@ -75,6 +78,15 @@ _STR = {
         "window": lambda a, b, n: f"{a} – {b} · {n} months",
         "of_plan_tile": lambda r: f"{r} — % of plan",
         "total_tile": lambda l: f"Total {l}",
+        "narr_t": "Executive narrative",
+        "narr_foot": ("AI-phrased from the audit's verified figures — the "
+                      "pipeline computed every number; the narrative only "
+                      "puts them in words."),
+        "dash_t": lambda a, b: f"Financial trajectory {a}–{b}",
+        "dash_t_plan": lambda a, b: f"Projection trajectory {a}–{b}",
+        "dash_total": lambda a, b: f"{a}–{b} total",
+        "dash_cap": ("Yearly totals as the model extracted them — revenue "
+                     "against operating and investment spend."),
         "pp_t": lambda y: f"Progress vs plan {y}",
         "pp_line": lambda a, p, exp, ph: (
             f"{a} of {p} planned · expected {exp} ({ph})"),
@@ -142,6 +154,16 @@ _STR = {
         "window": lambda a, b, n: f"{a} – {b} · {n} mois",
         "of_plan_tile": lambda r: f"{r} — % du plan",
         "total_tile": lambda l: f"Total {l}",
+        "narr_t": "Synthèse rédigée",
+        "narr_foot": ("Rédigée par IA à partir des chiffres vérifiés de "
+                      "l'audit — le pipeline a calculé chaque nombre ; la "
+                      "synthèse ne fait que les mettre en mots."),
+        "dash_t": lambda a, b: f"Trajectoire financière {a}–{b}",
+        "dash_t_plan": lambda a, b: f"Trajectoire des projections {a}–{b}",
+        "dash_total": lambda a, b: f"total {a}–{b}",
+        "dash_cap": ("Totaux annuels tels qu'extraits par le modèle — "
+                     "revenus contre dépenses d'exploitation et "
+                     "d'investissement."),
         "pp_t": lambda y: f"Avancement vs plan {y}",
         "pp_line": lambda a, p, exp, ph: (
             f"{a} sur {p} planifiés · attendu {exp} ({ph})"),
@@ -267,6 +289,11 @@ def available_blocks(report: Dict[str, Any]) -> List[str]:
     der = mo.get("derived") or {}
     pva = mo.get("plan_vs_actual") or {}
     out: List[str] = []
+    if (report.get("narrative") or {}).get("narrative"):
+        out.append("narrative")
+    if any((m.get("values") or []) for m in (model.get("metrics")
+                                             or {}).values()):
+        out.append("dashboard")
     if met:
         out.append("kpi")
     pp = model.get("plan_progress") or {}
@@ -441,6 +468,76 @@ def _tiles(mo: Dict[str, Any], lang: str) -> List[tuple]:
                       _pct(round(sum(known) / len(known) * 100, 1), lang),
                       s["conv_sub"](len(known)), ""))
     return tiles[:5]
+
+
+def _narrative_section(report: Dict[str, Any], lang: str) -> str:
+    """The stored AI narrative, reprinted verbatim with its provenance
+    stated. Nothing is generated here: no narrative stored -> no block."""
+    s = _STR[lang]
+    n = report.get("narrative") or {}
+    if not n.get("narrative"):
+        return ""
+    paras = "".join(f"<p>{_html.escape(p.strip())}</p>"
+                    for p in str(n["narrative"]).split("\n") if p.strip())
+    watch = "".join(f"<li>{_html.escape(str(w))}</li>"
+                    for w in (n.get("watchouts") or [])[:3])
+    body = (f'<p class="nhead">{_html.escape(str(n.get("headline", "")))}</p>'
+            f'{paras}'
+            + (f'<ul class="nwatch">{watch}</ul>' if watch else "")
+            + f'<p class="nfoot">{_html.escape(s["narr_foot"])}</p>')
+    return _blk(s["narr_t"], body, cls="blk wide")
+
+
+def _dashboard_section(model: Dict[str, Any], lang: str) -> str:
+    """Year-trajectory dashboard from the business model: one tile per
+    role (series total over the model years, plus the latest margin), and
+    revenue vs opex vs capex as grouped bars. Totals are sums of the
+    model's own series — aggregation of computed values, nothing new."""
+    from .pipeline.model import BUDGET_SHEET_RX
+    s, roles = _STR[lang], _ROLES[lang]
+    model = model or {}
+    met = model.get("metrics") or {}
+    periods = [str(p) for p in model.get("periods") or []]
+    if not periods or not any((m.get("values") or []) for m in met.values()):
+        return ""
+    a, b = periods[0], periods[-1]
+    plan_shaped = bool(BUDGET_SHEET_RX.search(
+        str(model.get("source_sheet") or "")))
+    title = (s["dash_t_plan"] if plan_shaped else s["dash_t"])(a, b)
+
+    tiles: List[str] = []
+    for role in ("revenue", "opex", "capex", "volume", "volume_secondary"):
+        m = met.get(role)
+        vals = [v for v in (m or {}).get("values") or [] if v is not None]
+        if not vals:
+            continue
+        tiles.append(
+            f'<div class="tile"><div class="tl">'
+            f'{_html.escape(roles.get(role, role))}</div>'
+            f'<div class="tv">{_fmt(sum(vals), lang)}</div>'
+            f'<div class="ts">{_html.escape(s["dash_total"](a, b))} · '
+            f'{_html.escape(str(m.get("label", ""))[:34])}</div></div>')
+    mpct = (model.get("derived") or {}).get("margin_pct") or []
+    last = next((i for i in range(len(mpct) - 1, -1, -1)
+                 if mpct[i] is not None), None)
+    if last is not None:
+        tiles.append(
+            f'<div class="tile"><div class="tl">'
+            f'{"Marge" if lang == "fr" else "Margin"}</div>'
+            f'<div class="tv">{_pct(mpct[last], lang)}</div>'
+            f'<div class="ts">{_html.escape(periods[last])}</div></div>')
+    tiles = tiles[:5]
+
+    bars = [(met[r]["values"], c) for r, c in
+            (("revenue", GOLD), ("opex", PALE), ("capex", INK3))
+            if met.get(r) and any(v is not None for v in met[r]["values"])]
+    names = [roles[r] for r, _ in
+             (("revenue", GOLD), ("opex", PALE), ("capex", INK3))
+             if met.get(r) and any(v is not None for v in met[r]["values"])]
+    svg = _svg_bars(periods, bars, lang, names=names) if bars else ""
+    cap = f'<p class="cap">{_html.escape(s["dash_cap"])}</p>' if svg else ""
+    return _blk(title, f'<div class="tiles">{"".join(tiles)}</div>'
+                       f'{svg}{cap}', cls="blk wide")
 
 
 def _plan_progress_section(model: Dict[str, Any], lang: str) -> str:
@@ -762,6 +859,10 @@ def render_report_html(report: Dict[str, Any], audit: Optional[Dict[str, Any]],
 
     model = report.get("model") or {}
     parts: List[str] = []
+    if "narrative" in blocks:
+        parts.append(_narrative_section(report, lang))
+    if "dashboard" in blocks:
+        parts.append(_dashboard_section(model, lang))
     if "kpi" in blocks:
         tile_html = []
         for k, v, sub, state in _tiles(mo, lang):
@@ -846,7 +947,14 @@ def render_report_html(report: Dict[str, Any], audit: Optional[Dict[str, Any]],
   details > summary::before {{ content:"▾"; color:var(--gold);
     font:10px var(--mono); margin-right:8px; vertical-align:1px; }}
   details:not([open]) > summary::before {{ content:"▸"; }}
-  details.wide {{ margin:30px 0 10px; }}
+  details.wide {{ margin:0 0 26px; }}
+  .nhead {{ font-family:var(--serif); font-size:19px; font-weight:600;
+    margin:2px 0 6px; line-height:1.4; }}
+  .nwatch {{ margin:10px 0 0; padding-left:18px; font-size:13px;
+    color:var(--ink2); }}
+  .nwatch li {{ margin-bottom:4px; }}
+  .nfoot {{ margin:12px 0 0; font:10px/1.6 var(--mono); letter-spacing:.08em;
+    text-transform:uppercase; color:var(--ink3); }}
   /* baked hover readouts: reveal on hover, nothing computed client-side */
   .b .tt {{ opacity:0; pointer-events:none; font:11px var(--mono);
     fill:var(--ink); paint-order:stroke; stroke:#fbf9f3;

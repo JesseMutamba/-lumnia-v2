@@ -92,7 +92,8 @@ def test_composed_report_is_versioned_scriptfree_and_deterministic():
     # blocks the data can't support are skipped, declared: no capex (cash),
     # no second volume (conversion), plan covers no extra months (outlook),
     # no yearly model (net_cash), no line items (breakdowns)
-    assert set(body["skipped"]) == {"plan_progress", "cash", "conversion",
+    assert set(body["skipped"]) == {"narrative", "dashboard",
+                                    "plan_progress", "cash", "conversion",
                                     "outlook", "net_cash", "breakdowns"}
 
     html = _hub_html("PVAK", "rapport@pvak.cd", "Operations report")
@@ -107,6 +108,47 @@ def test_composed_report_is_versioned_scriptfree_and_deterministic():
     r2 = client.post(f"/analyses/{aid}/compose-report",
                      json={"blocks": [], "lang": "en"})
     assert r2.json()["version"] == 2
+
+
+def test_narrative_and_dashboard_blocks():
+    """The narrative block reprints the STORED AI narrative verbatim with
+    its provenance line (never generated at compose time); the dashboard
+    block draws year-trajectory tiles + grouped bars from the model. Both
+    are honestly unavailable when their source is absent."""
+    from app import compose
+    report = {
+        "filename": "demo.xlsx", "n_sheets": 2, "sheets": [],
+        "narrative": {"headline": "Q1 spend reached 37.6% of the plan.",
+                      "narrative": "One paragraph of phrased figures.",
+                      "watchouts": ["11 broken relations need review."],
+                      "model": "test", "lang": "en"},
+        "model": {
+            "periods": ["2025", "2026"], "source_sheet": "PLAN · RECAP",
+            "metrics": {
+                "revenue": {"label": "REVENUS BRUTS",
+                            "values": [238939, 1075716]},
+                "opex": {"label": "SOUS-TOTAL OPEX",
+                         "values": [300000, 457300]},
+            },
+            "derived": {"margin_pct": [None, 57.5]},
+        },
+    }
+    avail = compose.available_blocks(report)
+    assert "narrative" in avail and "dashboard" in avail
+    html = compose.render_report_html(report, None, "Demo", "en",
+                                      ["narrative", "dashboard"])
+    assert "Q1 spend reached 37.6% of the plan." in html
+    assert "11 broken relations need review." in html
+    assert "AI-phrased from the audit" in html          # provenance stated
+    # plan-shaped spine -> the dashboard says projection, not actuals
+    assert "Projection trajectory 2025–2026" in html
+    assert "1,314,655" in html                          # revenue total
+    assert "57.5%" in html                              # latest margin
+    # no narrative stored / no model -> honestly unavailable
+    assert "narrative" not in compose.available_blocks(
+        {"model": report["model"]})
+    assert "dashboard" not in compose.available_blocks(
+        {"narrative": report["narrative"], "model": {}})
 
 
 def test_plan_progress_block_renders_pace_and_gaps():
