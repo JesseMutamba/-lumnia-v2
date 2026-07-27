@@ -108,6 +108,9 @@ _STR = {
             "operated the site — counted only over months where both "
             "sides are tracked."),
         "tbl_t": "Monthly detail",
+        "tbl_omitted": lambda n: (
+            f"{n} month{'' if n == 1 else 's'} with nothing tracked "
+            "omitted from this table."),
         "period": "Period", "actual": "Actual", "plan": "Plan",
         "pct": "% of plan",
         "opex_lbl": "Operating", "capex_lbl": "Invested",
@@ -185,6 +188,8 @@ _STR = {
             "a fait tourner le site — compté uniquement sur les mois où "
             "les deux volets sont suivis."),
         "tbl_t": "Détail mensuel",
+        "tbl_omitted": lambda n: (
+            f"{n} mois sans aucun suivi omis de ce tableau."),
         "period": "Période", "actual": "Réel", "plan": "Plan",
         "pct": "% du plan",
         "opex_lbl": "Exploitation", "capex_lbl": "Investi",
@@ -324,6 +329,19 @@ def available_blocks(report: Dict[str, Any]) -> List[str]:
     return out
 
 
+def _compact(v: float, lang: str) -> str:
+    """Short value labels for bars: 5227670 -> 5.23M, 870110 -> 870K,
+    4744 -> 4,744, 2.4 -> 2.4. Signed; deterministic."""
+    a = abs(v)
+    if a >= 1e6:
+        s = f"{v / 1e6:.2f}".rstrip("0").rstrip(".") + "M"
+    elif a >= 10_000:
+        s = f"{v / 1e3:.0f}K"
+    else:
+        s = _fmt(v, lang)
+    return s.replace(".", ",") if lang == "fr" and "M" in s else s
+
+
 def _svg_bars(periods: List[str], series: List[tuple], lang: str,
               w: int = 640, h: int = 200,
               refs: List[tuple] = (), colors: Optional[List] = None,
@@ -335,12 +353,17 @@ def _svg_bars(periods: List[str], series: List[tuple], lang: str,
     overrides the fill per cell for a single series; ``neg_ok`` keeps a
     zero baseline mid-chart so negative bars hang below it.
 
-    Every bar carries its value baked in twice — a native SVG <title>
-    tooltip and a hidden top-right readout revealed by CSS :hover (.tt).
-    ``names`` labels each series in those readouts (e.g. Plan / Actual).
+    This is a DOCUMENT chart, not a screen widget: every bar carries an
+    always-visible value label (horizontal when few bars, rotated when
+    dense), the y scale shows zero/mid/max gridlines, and ``names`` render
+    as a legend above the plot. Hover tooltips (<title> + the .tt readout)
+    stay as a bonus for screens, never as the only path to a number.
     Values are formatted here, at compose time; nothing recomputes in the
     browser and no script is involved."""
-    ml, mr, mt, mb = 8, 8, 16, 22
+    n = max(1, len(periods))
+    n_bars = n * len(series)
+    rotated = n_bars > 10
+    ml, mr, mt, mb = 8, 8, (46 if rotated else 22), 22
     pw, ph = w - ml - mr, h - mt - mb
     allv = [v for vals, _ in series for v in vals if v is not None]
     refv = [r[1] for r in refs if r[1] is not None]
@@ -351,7 +374,6 @@ def _svg_bars(periods: List[str], series: List[tuple], lang: str,
     span = mx - lo if mx > lo else mx
     y_of = lambda v: mt + ph - (v - lo) / span * ph  # noqa: E731
     y0 = y_of(0)
-    n = max(1, len(periods))
     group = pw / n
     bw = group * 0.72 / len(series)
     bars, labels = [], []
@@ -368,11 +390,26 @@ def _svg_bars(periods: List[str], series: List[tuple], lang: str,
             read = (f"{_period(p, lang)}"
                     + (f" · {name}" if name else "")
                     + f" · {_fmt(v, lang)}")
+            xc = x0 + k * bw + bw / 2
+            # the value, printed ON the page — hover is a bonus, never
+            # the only path to a number (print/PDF/mobile carry no hover)
+            cval = _html.escape(_compact(v, lang))
+            if rotated:
+                vy = top - 3 if v >= 0 else min(y_of(v) + 3, h - mb - 2)
+                anchor = "start" if v >= 0 else "end"
+                vlabel = (f'<text class="bv2" transform="rotate(-90 '
+                          f'{xc + 2.5:.1f} {vy:.1f})" x="{xc + 2.5:.1f}" '
+                          f'y="{vy:.1f}" text-anchor="{anchor}">{cval}</text>')
+            else:
+                vy = max(top - 4, mt + 8) if v >= 0 \
+                    else min(y_of(v) + 11, h - mb - 3)
+                vlabel = (f'<text class="bv2" x="{xc:.1f}" y="{vy:.1f}" '
+                          f'text-anchor="middle">{cval}</text>')
             bars.append(
                 f'<g class="b"><title>{_html.escape(read)}</title>'
                 f'<rect x="{x0 + k * bw:.1f}" y="{top:.1f}" '
                 f'width="{bw:.1f}" height="{abs(y_of(v) - y0):.1f}" '
-                f'fill="{fill}"/>'
+                f'fill="{fill}"/>{vlabel}'
                 f'<text class="tt" x="{w - mr}" y="12" text-anchor="end">'
                 f'{_html.escape(read)}</text></g>')
         step = 1 if n <= 8 else 2 if n <= 16 else 3
@@ -388,12 +425,24 @@ def _svg_bars(periods: List[str], series: List[tuple], lang: str,
         f'class="ax" fill="{rc}">{_html.escape(rl)} '
         f'{_html.escape(_fmt(rv, lang))}</text>'
         for rl, rv, rc in refs if rv is not None)
-    grid = (f'<line x1="{ml}" y1="{y0:.1f}" x2="{w - mr}" y2="{y0:.1f}" '
-            f'stroke="#ddd4bf"/>'
-            f'<text x="{ml}" y="{mt - 4}" class="ax">'
-            f'{_html.escape(_fmt(mx, lang))}</text>')
-    return (f'<svg viewBox="0 0 {w} {h}" role="img">'
-            f"{grid}{''.join(bars)}{ref_svg}{''.join(labels)}</svg>")
+    # y scale a reader can use: zero baseline + mid + max gridlines,
+    # each labelled (halo keeps them legible over bars)
+    gl = []
+    for gv in sorted({0.0, lo + span * 0.5, float(mx)}):
+        yv = y_of(gv)
+        gl.append(f'<line x1="{ml}" y1="{yv:.1f}" x2="{w - mr}" '
+                  f'y2="{yv:.1f}" stroke="#ddd4bf" '
+                  f'stroke-width="{1.4 if gv == 0 else 0.7}"/>')
+        gl.append(f'<text x="{ml + 2}" y="{yv - 3:.1f}" class="ax gv">'
+                  f'{_html.escape(_compact(gv, lang))}</text>')
+    legend = ""
+    if names:
+        legend = '<div class="lg">' + "".join(
+            f'<span><span class="sw" style="background:{c}"></span>'
+            f'{_html.escape(str(nm))}</span>'
+            for nm, (_, c) in zip(names, series)) + "</div>"
+    return (legend + f'<svg viewBox="0 0 {w} {h}" role="img">'
+            f"{''.join(gl)}{''.join(bars)}{ref_svg}{''.join(labels)}</svg>")
 
 
 def _blended_unit_cost(mo: Dict[str, Any]) -> Optional[float]:
@@ -492,7 +541,15 @@ def _dashboard_section(model: Dict[str, Any], lang: str) -> str:
     """Year-trajectory dashboard from the business model: one tile per
     role (series total over the model years, plus the latest margin), and
     revenue vs opex vs capex as grouped bars. Totals are sums of the
-    model's own series — aggregation of computed values, nothing new."""
+    model's own series — aggregation of computed values, nothing new.
+
+    # DEBT: the pipeline doesn't model series units (currency vs tonnes vs
+    # headcount), so tiles and charts can't print unit suffixes — money and
+    # volume sit unlabelled side by side. Needs a `unit` field on metrics,
+    # extracted from labels/headers, before any suffix can be honest.
+    # DEBT: all block headers share one type size — no visual hierarchy
+    # between decision blocks (plan progress) and reference blocks
+    # (monthly table); needs a deliberate type ramp, not an ad-hoc bump."""
     from .pipeline.model import BUDGET_SHEET_RX
     s, roles = _STR[lang], _ROLES[lang]
     model = model or {}
@@ -796,7 +853,7 @@ def _breakdown_section(model: Dict[str, Any], lang: str) -> str:
         return ""
     mx = max(abs(i["value"]) for i in items) or 1
     rows = "".join(
-        f'<div class="brow"><span class="bl">{_html.escape(str(i["label"])[:38])}</span>'
+        f'<div class="brow"><span class="bl">{_html.escape(str(i["label"])[:60])}</span>'
         f'<span class="btrack"><span style="width:{max(2, abs(i["value"]) / mx * 100):.0f}%"></span></span>'
         f'<span class="bv">{_html.escape(_fmt(i["value"], lang))}</span></div>'
         for i in items)
@@ -816,29 +873,46 @@ def _table_section(mo: Dict[str, Any], lang: str) -> str:
                          "revenue") if r in met]
     if not order:
         return ""
-    head = "".join(f"<th>{_html.escape(_period(p, lang))}</th>"
-                   for p in periods)
+    # a month column earns its place only when SOMETHING is tracked in it
+    # (actual or plan); empty months are dropped and the drop is declared —
+    # a 13-column table that is 70% em-dashes buries the three real months
+    def _has(i: int) -> bool:
+        if any((met[r]["values"][i] if i < len(met[r]["values"]) else None)
+               is not None for r in order):
+            return True
+        return any((v["plan"][i] if i < len(v["plan"]) else None) is not None
+                   for v in pva.values())
+    keep = [i for i in range(len(periods)) if _has(i)]
+    dropped = len(periods) - len(keep)
+    head = "".join(f"<th>{_html.escape(_period(periods[i], lang))}</th>"
+                   for i in keep)
     rows = []
     for role in order:
         m = met[role]
-        cells = "".join(f'<td>{_html.escape(_fmt(v, lang))}</td>'
-                        for v in m["values"])
+        cells = "".join(
+            f'<td>{_html.escape(_fmt(m["values"][i] if i < len(m["values"]) else None, lang))}</td>'
+            for i in keep)
         rows.append(f'<tr><td class="rl">{_html.escape(roles.get(role, role))}'
                     f' — {_html.escape(s["actual"])}</td>{cells}</tr>')
         v = pva.get(role)
         if v:
-            pcells = "".join(f'<td>{_html.escape(_fmt(p, lang))}</td>'
-                             for p in v["plan"])
+            pcells = "".join(
+                f'<td>{_html.escape(_fmt(v["plan"][i] if i < len(v["plan"]) else None, lang))}</td>'
+                for i in keep)
             rows.append(f'<tr class="mut"><td class="rl">'
                         f'{_html.escape(s["plan"])}</td>{pcells}</tr>')
-            xcells = "".join(f'<td>{_html.escape(_pct(p, lang))}</td>'
-                             for p in v["pct_of_plan"])
+            xcells = "".join(
+                f'<td>{_html.escape(_pct(v["pct_of_plan"][i] if i < len(v["pct_of_plan"]) else None, lang))}</td>'
+                for i in keep)
             rows.append(f'<tr class="mut"><td class="rl">'
                         f'{_html.escape(s["pct"])}</td>{xcells}</tr>')
+    note = (f'<p class="cap">{_html.escape(s["tbl_omitted"](dropped))}</p>'
+            if dropped else "")
     return _blk(s["tbl_t"],
-                f'<table><thead><tr><th class="rl">{_html.escape(s["period"])}'
+                f'<div class="tblwrap"><table><thead><tr>'
+                f'<th class="rl">{_html.escape(s["period"])}'
                 f'</th>{head}</tr></thead><tbody>{"".join(rows)}</tbody>'
-                f'</table>', cls="wide")
+                f'</table></div>{note}', cls="wide")
 
 
 def render_report_html(report: Dict[str, Any], audit: Optional[Dict[str, Any]],
@@ -961,9 +1035,11 @@ def render_report_html(report: Dict[str, Any], audit: Optional[Dict[str, Any]],
     stroke-width:3px; stroke-linejoin:round; }}
   .b:hover .tt {{ opacity:1; }}
   .b:hover rect {{ opacity:.8; }}
-  .brow {{ display:grid; grid-template-columns:minmax(110px,1fr) 2fr auto;
+  .brow {{ display:grid; grid-template-columns:minmax(110px,1.4fr) 2fr auto;
     gap:10px; align-items:center; padding:5px 0; font-size:12px; }}
-  .brow .bl {{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
+  /* row labels never truncate — a clipped label on the biggest cash row
+     hides exactly what the reader came for */
+  .brow .bl {{ line-height:1.3; overflow-wrap:break-word; }}
   .brow .btrack {{ height:8px; background:#eee6d2; display:block; }}
   .brow .btrack span {{ display:block; height:100%; background:{GOLD}; }}
   .brow .bv {{ font-variant-numeric:tabular-nums; white-space:nowrap; }}
@@ -971,7 +1047,18 @@ def render_report_html(report: Dict[str, Any], audit: Optional[Dict[str, Any]],
     text-transform:uppercase; color:var(--gold); margin:30px 0 10px; }}
   svg {{ display:block; width:100%; height:auto; background:#fbf9f3;
     border:1px solid var(--border); }}
-  .ax {{ font:10px var(--mono); fill:{INK3}; }}
+  /* document-first charts: axis text at readable contrast, values printed
+     on the page (bv2), gridline values haloed so bars never swallow them */
+  .ax {{ font:10px var(--mono); fill:#5c564a; }}
+  .gv {{ paint-order:stroke; stroke:#fbf9f3; stroke-width:3px;
+    stroke-linejoin:round; }}
+  .bv2 {{ font:8.5px var(--mono); fill:#3d3831; paint-order:stroke;
+    stroke:#fbf9f3; stroke-width:2.5px; stroke-linejoin:round; }}
+  .lg {{ display:flex; gap:16px; flex-wrap:wrap; margin:2px 0 6px;
+    font:10.5px var(--mono); letter-spacing:.04em; color:var(--ink2); }}
+  .lg .sw {{ display:inline-block; width:9px; height:9px; margin-right:5px;
+    vertical-align:-1px; }}
+  .tblwrap {{ overflow-x:auto; }}
   .cap {{ margin:8px 0 0; font-size:12.5px; color:var(--ink2);
     max-width:76ch; }}
   table {{ border-collapse:collapse; width:100%; font-size:12.5px;
@@ -986,7 +1073,15 @@ def render_report_html(report: Dict[str, Any], audit: Optional[Dict[str, Any]],
     padding-top:12px; font:10px/1.7 var(--mono);
     letter-spacing:.06em; text-transform:uppercase; color:var(--ink3); }}
   @media print {{ body {{ background:#fff; }} .page {{ padding:24px 0; }}
-    section {{ break-inside:avoid; }} }}
+    section, .blk, details {{ break-inside:avoid; }}
+    .tiles {{ break-inside:avoid; }}
+    /* value labels and gridlines carry the numbers on paper — force the
+       ink even when the browser strips backgrounds */
+    * {{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }} }}
+  @media (max-width:720px) {{
+    .page {{ padding:28px 16px 40px; }}
+    .grid {{ grid-template-columns:1fr; }}
+    .tile {{ flex-basis:110px; }} }}
 </style></head><body><div class="page">
   <span class="kicker">LUMNIA · {esc(s['kicker'])}</span>
   <h1>{esc(title)}</h1>
