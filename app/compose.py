@@ -19,8 +19,9 @@ from pathlib import Path as _Path
 from typing import Any, Dict, List, Optional
 
 # selectable blocks, in reading order
-BLOCKS = ("kpi", "plan_vs_actual", "unit_cost", "conversion", "cash",
-          "outlook", "net_cash", "breakdowns", "monthly_table")
+BLOCKS = ("kpi", "plan_progress", "plan_vs_actual", "unit_cost",
+          "conversion", "cash", "outlook", "net_cash", "breakdowns",
+          "monthly_table")
 
 GOLD, PALE, INK3 = "#a8821f", "#d5c391", "#99917e"
 CRIT, WARN, GOOD = "#a33b32", "#a07d1c", "#3e6f4e"
@@ -74,6 +75,15 @@ _STR = {
         "window": lambda a, b, n: f"{a} – {b} · {n} months",
         "of_plan_tile": lambda r: f"{r} — % of plan",
         "total_tile": lambda l: f"Total {l}",
+        "pp_t": lambda y: f"Progress vs plan {y}",
+        "pp_line": lambda a, p, exp, ph: (
+            f"{a} of {p} planned · expected {exp} ({ph})"),
+        "pp_phasing": {"linear": "linear pace",
+                       "monthly_plan": "phased by the monthly plan"},
+        "pp_journal": "verified journal",
+        "pp_over": "over pace", "pp_behind": "behind plan",
+        "pp_on": "on pace",
+        "pp_needs": lambda r: f"needs: {r}",
         "pva_t": lambda r: f"Plan vs actual — {r}",
         "pva_cap": lambda pct, n, al, pl: (
             f"{pct} of plan over {n} aligned month(s) — actual “{al}” "
@@ -132,6 +142,15 @@ _STR = {
         "window": lambda a, b, n: f"{a} – {b} · {n} mois",
         "of_plan_tile": lambda r: f"{r} — % du plan",
         "total_tile": lambda l: f"Total {l}",
+        "pp_t": lambda y: f"Avancement vs plan {y}",
+        "pp_line": lambda a, p, exp, ph: (
+            f"{a} sur {p} planifiés · attendu {exp} ({ph})"),
+        "pp_phasing": {"linear": "rythme linéaire",
+                       "monthly_plan": "phasé par le plan mensuel"},
+        "pp_journal": "journal vérifié",
+        "pp_over": "au-dessus du rythme", "pp_behind": "en retard sur le plan",
+        "pp_on": "dans le rythme",
+        "pp_needs": lambda r: f"requiert : {r}",
         "pva_t": lambda r: f"Plan vs réel — {r}",
         "pva_cap": lambda pct, n, al, pl: (
             f"{pct} du plan sur {n} mois alignés — réel « {al} » "
@@ -250,6 +269,9 @@ def available_blocks(report: Dict[str, Any]) -> List[str]:
     out: List[str] = []
     if met:
         out.append("kpi")
+    pp = model.get("plan_progress") or {}
+    if pp.get("roles") or pp.get("gaps"):
+        out.append("plan_progress")
     if pva:
         out.append("plan_vs_actual")
     if any(v is not None
@@ -419,6 +441,57 @@ def _tiles(mo: Dict[str, Any], lang: str) -> List[tuple]:
                       _pct(round(sum(known) / len(known) * 100, 1), lang),
                       s["conv_sub"](len(known)), ""))
     return tiles[:5]
+
+
+def _plan_progress_section(model: Dict[str, Any], lang: str) -> str:
+    """Part-year actuals against the plan year, role by role — the same
+    computed block the exec card shows: % of the plan year vs the declared
+    phased expectation, pace stated on the card's thresholds, source
+    named, gaps declared. Formatting only; nothing recomputed here."""
+    s, roles = _STR[lang], _ROLES[lang]
+    pp = (model or {}).get("plan_progress") or {}
+    entries = pp.get("roles") or {}
+    gaps = pp.get("gaps") or []
+    if not entries and not gaps:
+        return ""
+    rows: List[str] = []
+    for role, e in entries.items():
+        pct, exp = e.get("pct_of_year"), e.get("expected_pct")
+        over = exp is not None and pct is not None and pct > exp * 1.25
+        behind = exp is not None and pct is not None and pct < exp * 0.5
+        color = CRIT if over else WARN if behind else GOOD
+        chip = s["pp_over"] if over else \
+            s["pp_behind"] if behind else s["pp_on"]
+        fill = max(0.0, min(pct or 0.0, 100.0))
+        tick = max(0.0, min(exp or 0.0, 100.0))
+        line = s["pp_line"](_fmt(e.get("actual_to_date"), lang),
+                            _fmt(e.get("plan_year"), lang),
+                            _pct(exp, lang),
+                            s["pp_phasing"].get(e.get("phasing"),
+                                                str(e.get("phasing"))))
+        if e.get("source") == "journal":
+            line += f' · {s["pp_journal"]}'
+        rows.append(
+            f'<div style="margin:0 0 13px">'
+            f'<div class="brow" style="padding:2px 0 4px">'
+            f'<span class="bl"><b>{_html.escape(roles.get(role, role))}'
+            f'</b></span><span></span>'
+            f'<span class="bv"><b>{_pct(pct, lang)}</b> · '
+            f'<span style="color:{color};font-weight:650">'
+            f'{_html.escape(chip)}</span></span></div>'
+            f'<div style="height:8px;background:#eee6d2;position:relative">'
+            f'<span style="display:block;height:100%;width:{fill:.1f}%;'
+            f'background:{CRIT if over else GOLD}"></span>'
+            f'<span style="position:absolute;left:{tick:.1f}%;top:-2px;'
+            f'bottom:-2px;width:2px;background:{INK3}"></span></div>'
+            f'<p class="cap" style="margin-top:5px">{_html.escape(line)}</p>'
+            f'</div>')
+    gap_html = "".join(
+        f'<p class="cap">→ <b>{_html.escape(roles.get(g["role"], g["role"]))}'
+        f'</b> — {_html.escape(g["reason"])} · '
+        f'{_html.escape(s["pp_needs"](g["requires"]))}</p>'
+        for g in gaps)
+    return _blk(s["pp_t"](str(pp.get("year"))), "".join(rows) + gap_html)
 
 
 def _pva_sections(mo: Dict[str, Any], lang: str) -> str:
@@ -699,6 +772,8 @@ def render_report_html(report: Dict[str, Any], audit: Optional[Dict[str, Any]],
         if tile_html:
             parts.append(f'<div class="tiles">{"".join(tile_html)}</div>')
     cards: List[str] = []
+    if "plan_progress" in blocks:
+        cards.append(_plan_progress_section(model, lang))
     if "plan_vs_actual" in blocks:
         cards.append(_pva_sections(mo, lang))
     if "unit_cost" in blocks:

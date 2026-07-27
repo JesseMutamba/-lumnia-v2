@@ -92,8 +92,8 @@ def test_composed_report_is_versioned_scriptfree_and_deterministic():
     # blocks the data can't support are skipped, declared: no capex (cash),
     # no second volume (conversion), plan covers no extra months (outlook),
     # no yearly model (net_cash), no line items (breakdowns)
-    assert set(body["skipped"]) == {"cash", "conversion", "outlook",
-                                    "net_cash", "breakdowns"}
+    assert set(body["skipped"]) == {"plan_progress", "cash", "conversion",
+                                    "outlook", "net_cash", "breakdowns"}
 
     html = _hub_html("PVAK", "rapport@pvak.cd", "Operations report")
     assert "<script" not in html.lower()          # self-contained, script-free
@@ -107,6 +107,45 @@ def test_composed_report_is_versioned_scriptfree_and_deterministic():
     r2 = client.post(f"/analyses/{aid}/compose-report",
                      json={"blocks": [], "lang": "en"})
     assert r2.json()["version"] == 2
+
+
+def test_plan_progress_block_renders_pace_and_gaps():
+    """The composed report carries the plan-progress block verbatim from
+    the computed model: % of plan year, declared expectation + phasing,
+    pace on the exec card's thresholds, source named, gaps declared."""
+    from app import compose
+    report = {
+        "filename": "demo.xlsx", "n_sheets": 2, "sheets": [],
+        "model": {
+            "periods": ["2025", "2026"], "source_sheet": "PLAN · RECAP",
+            "metrics": {"opex": {"label": "SOUS-TOTAL OPEX",
+                                 "values": [84000, 130000]}},
+            "derived": {},
+            "plan_progress": {
+                "year": "2025",
+                "roles": {"opex": {
+                    "source": "journal", "window": ["2025-01", "2025-03"],
+                    "n_months": 3, "actual_to_date": 31581.0,
+                    "plan_year": 84000, "pct_of_year": 37.6,
+                    "expected_pct": 24.7, "phasing": "monthly_plan",
+                    "plan_sources": {}}},
+                "gaps": [{"role": "volume",
+                          "reason": "nothing in the actuals measures this "
+                                    "role monthly",
+                          "requires": "monthly volume actuals for 2025"}],
+            },
+        },
+    }
+    assert "plan_progress" in compose.available_blocks(report)
+    html = compose.render_report_html(report, None, "Demo", "en",
+                                      ["plan_progress"])
+    assert "Progress vs plan 2025" in html
+    assert "37.6%" in html and "24.7%" in html
+    assert "over pace" in html                  # 37.6 > 24.7 × 1.25
+    assert "verified journal" in html
+    assert "monthly volume actuals for 2025" in html
+    # no computed block -> honestly unavailable, never an empty section
+    assert "plan_progress" not in compose.available_blocks({"model": {}})
 
 
 def test_report_shell_brand_fonts_folding_and_hover():
