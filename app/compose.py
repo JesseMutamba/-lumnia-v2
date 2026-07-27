@@ -87,6 +87,7 @@ _STR = {
         "dash_total": lambda a, b: f"{a}–{b} total",
         "dash_cap": ("Yearly totals as the model extracted them — revenue "
                      "against operating and investment spend."),
+        "dash_cov": lambda k, n: f" {k} of {n} periods carry data.",
         "pp_t": lambda y: f"Progress vs plan {y}",
         "pp_line": lambda a, p, exp, ph: (
             f"{a} of {p} planned · expected {exp} ({ph})"),
@@ -167,6 +168,7 @@ _STR = {
         "dash_cap": ("Totaux annuels tels qu'extraits par le modèle — "
                      "revenus contre dépenses d'exploitation et "
                      "d'investissement."),
+        "dash_cov": lambda k, n: f" {k} périodes sur {n} renseignées.",
         "pp_t": lambda y: f"Avancement vs plan {y}",
         "pp_line": lambda a, p, exp, ph: (
             f"{a} sur {p} planifiés · attendu {exp} ({ph})"),
@@ -585,14 +587,22 @@ def _dashboard_section(model: Dict[str, Any], lang: str) -> str:
             f'<div class="ts">{_html.escape(periods[last])}</div></div>')
     tiles = tiles[:5]
 
-    bars = [(met[r]["values"], c) for r, c in
-            (("revenue", GOLD), ("opex", PALE), ("capex", INK3))
-            if met.get(r) and any(v is not None for v in met[r]["values"])]
-    names = [roles[r] for r, _ in
-             (("revenue", GOLD), ("opex", PALE), ("capex", INK3))
+    shown = [r for r, _ in (("revenue", GOLD), ("opex", PALE),
+                            ("capex", INK3))
              if met.get(r) and any(v is not None for v in met[r]["values"])]
+    palette = {"revenue": GOLD, "opex": PALE, "capex": INK3}
+    bars = [(met[r]["values"], palette[r]) for r in shown]
+    # the legend names the SOURCE series, not just the role — the reader
+    # sees exactly which workbook line each colour is
+    names = [f'{roles[r]} — {str(met[r].get("label", ""))[:24]}'
+             for r in shown]
     svg = _svg_bars(periods, bars, lang, names=names) if bars else ""
-    cap = f'<p class="cap">{_html.escape(s["dash_cap"])}</p>' if svg else ""
+    covered = sum(1 for i in range(len(periods))
+                  if any(i < len(met[r]["values"])
+                         and met[r]["values"][i] is not None for r in shown))
+    cap = (f'<p class="cap">{_html.escape(s["dash_cap"])}'
+           f'{_html.escape(s["dash_cov"](covered, len(periods)))}</p>'
+           if svg else "")
     return _blk(title, f'<div class="tiles">{"".join(tiles)}</div>'
                        f'{svg}{cap}', cls="blk wide")
 
@@ -917,15 +927,17 @@ def _table_section(mo: Dict[str, Any], lang: str) -> str:
 
 def render_report_html(report: Dict[str, Any], audit: Optional[Dict[str, Any]],
                        client_name: str, lang: str,
-                       blocks: List[str]) -> str:
-    """Typeset the composed report: pure HTML+CSS+SVG, script-free."""
+                       blocks: List[str],
+                       title: Optional[str] = None) -> str:
+    """Typeset the composed report: pure HTML+CSS+SVG, script-free.
+    ``title`` overrides the filename-derived default display title."""
     lang = lang if lang in _STR else "en"
     s = _STR[lang]
     esc = _html.escape
     mo = _monthly(report)
     periods = mo.get("periods") or []
     stem = str(report.get("filename") or "").rsplit(".", 1)[0]
-    title = s["title"](stem)
+    title = (title or "").strip() or s["title"](stem)
     window = s["window"](_period(periods[0], lang),
                          _period(periods[-1], lang), len(periods)) \
         if periods else ""
@@ -1052,7 +1064,7 @@ def render_report_html(report: Dict[str, Any], audit: Optional[Dict[str, Any]],
   .ax {{ font:10px var(--mono); fill:#5c564a; }}
   .gv {{ paint-order:stroke; stroke:#fbf9f3; stroke-width:3px;
     stroke-linejoin:round; }}
-  .bv2 {{ font:8.5px var(--mono); fill:#3d3831; paint-order:stroke;
+  .bv2 {{ font:9.5px var(--mono); fill:#3d3831; paint-order:stroke;
     stroke:#fbf9f3; stroke-width:2.5px; stroke-linejoin:round; }}
   .lg {{ display:flex; gap:16px; flex-wrap:wrap; margin:2px 0 6px;
     font:10.5px var(--mono); letter-spacing:.04em; color:var(--ink2); }}
