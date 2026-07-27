@@ -110,6 +110,31 @@ def test_composed_report_is_versioned_scriptfree_and_deterministic():
     assert r2.json()["version"] == 2
 
 
+def test_charts_read_as_documents_not_widgets():
+    """The deliverable is read as a document (print, PDF, phone): every bar
+    carries an always-visible value label, the y scale shows labelled
+    gridlines, series names render as a legend — hover stays a bonus,
+    never the only path to a number. Empty table months are dropped and
+    the omission is declared."""
+    from app import compose
+    svg = compose._svg_bars(
+        [str(y) for y in range(2025, 2031)],
+        [([238939, 1075716, 2000000, 3000000, 4000000, 5227670], "#a8821f"),
+         ([300000, 457300, 600000, 700000, 800000, 3100000], "#d5c391")],
+        "en", names=["Revenue", "Operating costs"])
+    assert 'class="lg"' in svg and "Operating costs" in svg   # legend
+    assert svg.count('class="bv2"') == 12          # every bar labelled
+    assert "5.23M" in svg                          # compact, on the page
+    assert 'class="ax gv"' in svg                  # labelled gridlines
+
+    mo = {"periods": [f"2026-{m:02d}-01" for m in range(1, 13)],
+          "metrics": {"opex": {"label": "OPEX", "values":
+                               [5795, 22719, 16109] + [None] * 9}}}
+    html = compose._table_section(mo, "en")
+    assert "9 months with nothing tracked omitted" in html
+    assert html.count("<th>") == 3                 # only tracked months
+
+
 def test_narrative_and_dashboard_blocks():
     """The narrative block reprints the STORED AI narrative verbatim with
     its provenance line (never generated at compose time); the dashboard
