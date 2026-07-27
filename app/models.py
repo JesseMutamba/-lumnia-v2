@@ -187,6 +187,9 @@ class DeliverableMeta(BaseModel):
 
 class ComposeReportRequest(BaseModel):
     """Compose the operations report from pipeline-computed blocks.
-    Empty ``blocks`` means every block the data supports."""
+    Empty ``blocks`` means every block the data supports. ``title``
+    overrides the report's display title (page <h1> and hub deliverable
+    name); empty means the filename-derived default."""
     blocks: List[str] = []
     lang: str = "en"
+    title: Optional[str] = None

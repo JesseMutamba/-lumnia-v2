@@ -169,6 +169,15 @@ def test_narrative_and_dashboard_blocks():
     assert "Projection trajectory 2025–2026" in html
     assert "1,314,655" in html                          # revenue total
     assert "57.5%" in html                              # latest margin
+    # the legend names the SOURCE series, and coverage is stated
+    assert "Revenue — REVENUS BRUTS" in html
+    assert "2 of 2 periods carry data." in html
+    # a custom title overrides the filename-derived default
+    titled = compose.render_report_html(report, None, "Demo", "en",
+                                        ["dashboard"],
+                                        title="PVAK — Q1 vs plan")
+    assert "PVAK — Q1 vs plan" in titled
+    assert "Operations report — demo" not in titled
     # no narrative stored / no model -> honestly unavailable
     assert "narrative" not in compose.available_blocks(
         {"model": report["model"]})

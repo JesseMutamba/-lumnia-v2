@@ -150,3 +150,27 @@ def test_trace_fails_honest():
     assert client.get(f"/analyses/{aid}/cells",
                       params={"sheet": "JOURNAL",
                               "refs": too_many}).status_code == 400
+
+
+def test_trace_parses_once_per_content(monkeypatch):
+    """The parsed-grid cache: repeat trace clicks re-read the STORED bytes
+    without re-parsing the workbook — and the cache key includes the
+    content hash, so a rerun with new bytes can never serve stale cells."""
+    import app.main as m
+    rep = _upload()
+    aid = rep["id"]
+    calls = {"n": 0}
+    real = m.read_upload
+
+    def counting(content, filename):
+        calls["n"] += 1
+        return real(content, filename)
+    monkeypatch.setattr(m, "read_upload", counting)
+    m._TRACE_CACHE.clear()
+    r1 = client.get(f"/analyses/{aid}/cells",
+                    params={"sheet": "JOURNAL", "refs": "B3"})
+    r2 = client.get(f"/analyses/{aid}/cells",
+                    params={"sheet": "JOURNAL", "refs": "C3,D3"})
+    assert r1.status_code == 200 and r2.status_code == 200
+    assert calls["n"] == 1, "second click must hit the cache"
+    assert r1.json()["cells"][0]["ref"] == "B3"

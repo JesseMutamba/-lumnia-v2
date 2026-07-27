@@ -16,9 +16,11 @@ Endpoints
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import mimetypes
 import re
+from collections import OrderedDict
 from pathlib import Path
 from typing import Optional
 
@@ -1019,11 +1021,14 @@ def compose_report(analysis_id: str, req: ComposeReportRequest) -> dict:
             + f" ({', '.join(avail) or '—'})")
     lang = req.lang if req.lang in ("en", "fr") else "en"
     agg = aggregate_findings(report)
-    html = compose.render_report_html(report, agg, label, lang, chosen)
+    custom = (req.title or "").strip()[:120] or None
+    html = compose.render_report_html(report, agg, label, lang, chosen,
+                                      title=custom)
     stem = _display_title(report.get("filename")) or analysis_id
     d = storage.add_file_deliverable(
         label, f"operations-report-{lang}.html", html.encode("utf-8"),
-        title=f"{compose._STR[lang]['kicker']} — {stem} ({lang.upper()})")
+        title=custom
+        or f"{compose._STR[lang]['kicker']} — {stem} ({lang.upper()})")
     if d is None:                      # label vanished mid-flight
         raise HTTPException(status_code=409, detail="Client no longer exists.")
     return {**d, "blocks": chosen, "skipped": skipped, "lang": lang}
@@ -1475,6 +1480,25 @@ def _clip(v):
     return v
 
 
+# parsed-grid cache for the trace endpoint: keyed by (analysis id, content
+# hash) so a rerun with new bytes can never serve stale cells. DataFrames
+# are only ever READ here (df.iat), so sharing across requests is safe.
+_TRACE_CACHE: "OrderedDict[tuple, dict]" = OrderedDict()
+_TRACE_CACHE_MAX = 8
+
+
+def _trace_sheets(analysis_id: str, filename: str, content: bytes) -> dict:
+    key = (analysis_id, hashlib.sha256(content).hexdigest())
+    if key in _TRACE_CACHE:
+        _TRACE_CACHE.move_to_end(key)
+        return _TRACE_CACHE[key]
+    sheets = read_upload(content, filename)
+    _TRACE_CACHE[key] = sheets
+    while len(_TRACE_CACHE) > _TRACE_CACHE_MAX:
+        _TRACE_CACHE.popitem(last=False)
+    return sheets
+
+
 @app.get("/analyses/{analysis_id}/cells", response_model=CellTraceResponse)
 def trace_cells(analysis_id: str, sheet: str, refs: str) -> CellTraceResponse:
     """Resolve A1 refs against the ORIGINAL uploaded bytes — the proof
@@ -1503,11 +1527,8 @@ def trace_cells(analysis_id: str, sheet: str, refs: str) -> CellTraceResponse:
         raise HTTPException(status_code=404,
                             detail=f"No analysis '{analysis_id}'.")
     filename, content = stored
-    # DEBT: re-parses the whole workbook (all sheets) on every trace click.
-    # Fine at demo scale; needs a per-analysis parsed-grid cache if books
-    # grow or tracing ever becomes client-facing.
     try:
-        sheets = read_upload(content, filename)
+        sheets = _trace_sheets(analysis_id, filename, content)
     except Exception as exc:
         raise HTTPException(status_code=422, detail=_bi(
             f"Could not re-read '{filename}'",
