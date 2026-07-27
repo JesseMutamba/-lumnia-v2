@@ -89,11 +89,21 @@ def test_engagement_upload_merges_and_compares():
 def test_engagement_upload_is_deterministic():
     # belt: the merge itself is byte-stable (the dedupe key hashes these)
     import hashlib
+    import io
+    import zipfile
     from app.pipeline.ingest import merge_engagement
     a, p = _actuals_book(), _plan_book()
-    h1 = hashlib.sha256(merge_engagement(a, "a.xlsx", p, "p.xlsx")).hexdigest()
+    m1 = merge_engagement(a, "a.xlsx", p, "p.xlsx")
+    h1 = hashlib.sha256(m1).hexdigest()
     h2 = hashlib.sha256(merge_engagement(a, "a.xlsx", p, "p.xlsx")).hexdigest()
     assert h1 == h2, "merge bytes differ between calls"
+    # the wall clock must never reach the bytes: openpyxl re-stamps
+    # dcterms:modified DURING save, which made two uploads straddling a
+    # second boundary hash differently (the flake this test kept catching)
+    import datetime as dt
+    core = zipfile.ZipFile(io.BytesIO(m1)).read("docProps/core.xml")
+    assert core.count(b"2000-01-01T00:00:00Z") == 2, core
+    assert str(dt.date.today().year).encode() not in core, core
     # suspenders: the endpoint dedupes the same pair to one analysis
     first = _post_pair().json()
     second = _post_pair().json()

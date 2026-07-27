@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import io
+import re as _re
 import zipfile
 from typing import Dict
 
@@ -79,7 +80,17 @@ def merge_engagement(actuals: bytes, actuals_name: str,
             zi = zipfile.ZipInfo(item.filename,
                                  date_time=(2000, 1, 1, 0, 0, 0))
             zi.compress_type = zipfile.ZIP_DEFLATED
-            dst.writestr(zi, src.read(item.filename))
+            data = src.read(item.filename)
+            if item.filename == "docProps/core.xml":
+                # openpyxl re-stamps dcterms:modified with the wall clock
+                # DURING save (after any value set on the workbook), so two
+                # merges straddling a second boundary hash differently and
+                # dedupe misses — pin it here, where the bytes are final
+                data = _re.sub(
+                    rb"<dcterms:modified[^>]*>[^<]*</dcterms:modified>",
+                    b'<dcterms:modified xsi:type="dcterms:W3CDTF">'
+                    b"2000-01-01T00:00:00Z</dcterms:modified>", data)
+            dst.writestr(zi, data)
     return out.getvalue()
 
 
